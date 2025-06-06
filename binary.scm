@@ -1,6 +1,21 @@
 (module binary
    (import leb128))
 
+(define (get-params/results l)
+   (define (get-results l)
+      (match-case l
+         (() '())
+         (((result ?t) . ?rst)
+          (append t (get-results rst)))))
+   (match-case l
+      (() (values '() '()))
+      ; we don't support named parameters yet, they are not used by bigloo
+      (((param . ?t) . ?rst)
+       (multiple-value-bind (p r)
+          (get-params/results rst)
+          (values (append t p) r)))
+      (else (values '() (get-results l)))))
+
 (define (write-string n out-port)
    (leb128-write-unsigned (string-length n) out-port)
    (display n out-port))
@@ -9,7 +24,7 @@
    (leb128-write-unsigned (length v) out-port)
    (for-each (lambda (x) (wr x out-port))))
 
-(define (write-valtype types t out-port)
+(define (write-valtype typeidxs t out-port)
    (match-case t
       ((i32) (write-byte #x7F out-port))
       ((i64) (write-byte #x7E out-port))
@@ -29,53 +44,41 @@
       ((i31) (write-byte #x6C out-port))
       ((struct) (write-byte #x6B out-port))
       ((array) (write-byte #x6A out-port))
-      ((? symbol?) (leb128-write-signed (hashtable-get types t) out-port))
+      ((? symbol?) (leb128-write-signed (hashtable-get typeidxs t) out-port))
       ((ref ?t) (begin (write-byte #x64 out-port)
-                       (write-valtype types t out-port)))
+                       (write-valtype typeidxs t out-port)))
       ((ref null ?t) (begin (write-byte #x63 out-port)
-                            (write-valtype types t out-port)))))
+                            (write-valtype typeidxs t out-port)))))
 
-(define (write-comptype types t out-port)
+(define (write-comptype typeidxs t out-port)
    (define (write-fieldtype t)
       (match-case t
-         ((mut ?t) (begin (write-valtype types t out-port)
+         ((mut ?t) (begin (write-valtype typeidxs t out-port)
                           (write-byte #x01 out-port)))
-         (else (write-valtype types t out-port))))
+         (else (write-valtype typeidxs t out-port))))
    (define (clean-field fd)
       (match-case fd
          ((or (field (? symbol?) ?ft) (field ?ft)) ft)))
-   (define (get-params/results::pair l)
-      (match-case l
-         (() (cons '() '()))
-         ; we don't support named parameters yet, they are not used by bigloo
-         (((param . ?p) . ?rst)
-          (let ((tl (get-params/results rst)))
-             (cons (append p (car tl)) (cdr tl))))
-         (((result . ?r) . ?rst)
-          (let ((tl (get-params/results rst)))
-             (cons (car tl) (append r (cdr tl)))))))
    (match-case t
       ((func . ?rst)
-       (let* ((p/r (get-params/results rst))
-              (p (car p/r))
-              (r (cdr p/r)))
+       (multiple-value-bind (p r) (get-params/results rst)
           (write-byte #x60 out-port)
-          (write-vec p (lambda (t) (write-valtype types t out-port)) out-port)
-          (write-vec r (lambda (t) (write-valtype types t out-port)) out-port)))
+          (write-vec p (lambda (t) (write-valtype typeidxs t out-port)) out-port)
+          (write-vec r (lambda (t) (write-valtype typeidxs t out-port)) out-port)))
       ((array ?t) (begin (write-byte #x5E out-port)
                          (write-fieldtype t)))
       ((struct . ?fds)
        (begin (write-byte #x5F out-port)
               (write-vec (map clean-field fds) write-fieldtype out-port)))))
 
-(define (write-subtype types st out-port)
+(define (write-subtype typeidxs st out-port)
    (define (get-typeidxs/comptype l)
       (match-case l
          ((?ct) (values '() ct))
          ((?x . ?rst)
           (multiple-value-bind (idxs ct)
              (get-typeidxs/comptype rst)
-             (values (cons (hashtable-get types x) idxs) ct)))))
+             (values (cons (hashtable-get typeidxs x) idxs) ct)))))
    (match-case st
       ((sub final . ?rst)
        (multiple-value-bind (idxs ct)
@@ -84,42 +87,90 @@
              (write-byte #x4F out-port)
              (write-vec idxs (lambda (x) (leb128-write-unsigned x out-port))
                         out-port))
-          (write-comptype types ct out-port)))
+          (write-comptype typeidxs ct out-port)))
       ((sub . ?rst)
        (multiple-value-bind (idxs ct)
           (get-typeidxs/comptype rst)
           (write-byte #x4F out-port)
           (write-vec idxs (lambda (x) (leb128-write-unsigned x out-port))
                      out-port)
-          (write-comptype types ct out-port)))
-      (else (write-comptype types st out-port))))
+          (write-comptype typeidxs ct out-port)))
+      (else (write-comptype typeidxs st out-port))))
 
-(define (write-rectype types rt out-port)
+(define (write-rectype typeidxs skipped-types rt out-port)
    (define (write-typedef td)
       (match-case td
-         ((or (type (? symbol?) ?st) (type ?st))
-          (write-subtype types st out-port))))
+         ((type (and (? symbol?) ?name) ?st)
+          (unless (hashtable-contains? skipped-types name)
+             (write-subtype typeidxs st out-port)))))
    (match-case rt
       ((rec . ?v) (begin (write-byte #x4E out-port)
                          (write-vec v write-typedef out-port)))
       (else (write-typedef rt))))
 
-(define (write-section secid in-port out-port)
+(define (write-globaltype typeidxs gt out-port)
+   (match-case gt
+      ((mut ?vt) (begin (write-valtype typeidxs vt out-port)
+                        (write-byte #x01 out-port)))
+      (else (write-valtype typeidxs gt out-port)
+            (write-byte #x00))))
+
+(define (write-section secid in-port out-port vec-len)
    (write-byte secid out-port)
-   (let* ((content (get-output-string in-port))
+   (let* ((len (call-with-output-string
+                  (lambda (p) (leb128-write-unsigned vec-len p))))
+          (content (append len (close-output-port in-port)))
           (size (string-length content)))
-      (unless (= size 0) ; empty sections can be omitted
+      ; only one byte indicates that we have a 0 length vector, which means we
+      ; can omit the section
+      (unless (= size 1)
          (write-byte secid out-port)
          (write-string content out-port))))
 
 (define (write-module m out-port)
    (let ((typep (open-output-string))
          (importp (open-output-string))
-         (types (make-hashtable))
+         (funcp (open-output-string))
+         (codep (open-output-string))
+         (typeidxs (make-hashtable))
+         (funcidxs (make-hashtable))
+         (skipped-types (make-hashtable))
+         (defined-types (create-hashtable :eqtest equal?))
          (ntypes 0)
          (nfuncs 0))
       (write "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
+      (define (write-typeuse! tu)
+         (match-case tu
+            ; to validate we should check that the eventual params/results are
+            ; correct
+            (((type ?x) . ?-)
+             (hashtable-get typeidxs x))
+            ; we have params/results
+            (else
+             (multiple-value-bind (p r)
+                (get-params/results tu)
+                (let* ((t `(func ,@p ,@r))
+                       (h (hashtable-get defined-types t)))
+                   (if h
+                       h
+                       (begin
+                          (hashtable-put! defined-types t ntypes)
+                          (set! ntypes (+ 1 ntypes))
+                          (write-comptype
+                              typeidxs `(func (param ,@p) (result ,@r))
+                              typep))))))))
+      (define (write-import-desc! d)
+         ; todo : tag memory table - not used in bigloo
+         (match-case d
+            ((or (func (? symbol?) . ?tu) (func . ?tu))
+             (begin (write-byte #x00 importp)
+                    (leb128-write-unsigned (write-typeuse! tu) importp)))
+            ((or (global (? symbol?) ?gt) (global ?gt))
+             (begin (write-byte #x03 importp)
+                    (write-globaltype typeidxs gt typep)))))
       (define (out-mod m)
          (match-case m
-            ((import) '())))
-      ))
+            ((import ?mod ?nm ?d)
+             (begin (write-string mod importp)
+                    (write-string nm importp)
+                    (write-import-desc! d)))))))
