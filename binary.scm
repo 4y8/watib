@@ -2,21 +2,65 @@
    (library srfi1)
    (import leb128))
 
-(define (get-params/results/tl l)
-   (define (get-results l)
-      (match-case l
-         (((result ?t) . ?rst)
-          (multiple-value-bind (r tl)
-             (get-results rst)
-             (values (append t r) tl)))
-         (else (values '() l))))
+(define dummy-integer 0)
+
+(define (fresh-var)
+   (set! dummy-integer (+ 1 dummy-integer))
+   (string->symbol (string-append "__bigloo_wasm_dummy_id_"
+                                  (number->string dummy-integer))))
+
+(define *valtype-symbols* (make-hashtable))
+
+(for-each (lambda (sym code) (hashtable-put! *valtype-symbols* sym code))
+          '((i32 . #x7F)
+            (i64 . #x7E)
+            (f32 . #x7D)
+            (f64 . #x7C)
+            (v128 . #x7B)
+            ; these two are not valtypes but we do not validate
+            (i8 . #x78)
+            (i16 . #x77)
+            (nofunc . #x73)
+            (noextern . #x72)
+            (none . #x71)
+            (func . #x70)
+            (extern . #x6F)
+            (any . #x6E)
+            (eq . #x6D)
+            (i31 . #x6C)
+            (struct . #x6B)
+            (array . #x6A)))
+
+(define (valtype-symbol? s)
+   (and (symbol? s) (hashtable-contains? *valtype-symbols* s)))
+
+(define (get-results l)
    (match-case l
-      ; we don't support named parameters yet, they are not used by bigloo
+      (((result . ?t) . ?rst)
+       (multiple-value-bind (r tl)
+          (get-results rst)
+          (values (append t r) tl)))
+      (else (values '() l))))
+
+(define (get-names/params/results/tl l)
+   (match-case l
+      (((param (and (? symbol?) ?name (not (? valtype-symbol?))) ?t) . ?rst)
+       (multiple-value-bind (n p r tl)
+          (get-names/params/results/tl rst)
+          (values (cons name n) (cons t p) r tl)))
       (((param . ?t) . ?rst)
-       (multiple-value-bind (p r tl)
-          (get-params/results/tl rst)
-          (values (append t p) r tl)))
-      (else (multiple-value-bind (r tl) (get-results l) (values '() r tl)))))
+       (multiple-value-bind (n p r tl)
+          (get-names/params/results/tl rst)
+          (values (cons (fresh-var) n) (append t p) r tl))
+      (else
+       (multiple-value-bind (r tl) (get-results l) (values '() '() r tl)))))
+
+(define (get-locals/tl l)
+   (match-case l
+      (((local (and (? symbol?) ?name) ?type) . ?rst)
+       (multiple-value-bind (n t tl) (get-locals/tl rst)
+          (values (cons name n) (const type t))))
+      (else (values '() '() l))))
 
 ; we do not support anonymous fields yet, they are not used by bigloo like named
 ; parameters, the only thing missing is a valtype? function which could be
@@ -51,24 +95,8 @@
 
 (define (write-valtype typeidxs t out-port)
    (match-case t
-      ((i32) (write-byte #x7F out-port))
-      ((i64) (write-byte #x7E out-port))
-      ((f32) (write-byte #x7D out-port))
-      ((f64) (write-byte #x7C out-port))
-      ((v128) (write-byte #x7B out-port))
-      ; these two are not valtypes but we do not validate
-      ((i8) (write-byte #x78 out-port))
-      ((i16) (write-byte #x77 out-port))
-      ((nofunc) (write-byte #x73 out-port))
-      ((noextern) (write-byte #x72 out-port))
-      ((none) (write-byte #x71 out-port))
-      ((func) (write-byte #x70 out-port))
-      ((extern) (write-byte #x6F out-port))
-      ((any) (write-byte #x6E out-port))
-      ((eq) (write-byte #x6D out-port))
-      ((i31) (write-byte #x6C out-port))
-      ((struct) (write-byte #x6B out-port))
-      ((array) (write-byte #x6A out-port))
+      ((? valtype-symbol?)
+       (write-byte (hashtable-get *valtype-symbols* t) out-port))
       ((? symbol?) (leb128-write-signed (hashtable-get typeidxs t) out-port))
       ((ref ?t)
        (write-byte #x64 out-port)
@@ -162,14 +190,17 @@
          (importp (open-output-string))
          (funcp (open-output-string))
          (codep (open-output-string))
+         (memp (open-output-string))
          (typeidxs (make-hashtable))
          (funcidxs (make-hashtable))
          (globalidxs (make-hashtable))
+         (memidxs (make-hashtable))
          (defined-types (create-hashtable :eqtest equal?))
          (ntypes 0)
          (nimports 0)
          (ncodes 0)
-         (nfuncs 0))
+         (nfuncs 0)
+         (nmems 0))
       (write "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
 
       (define (get-typeidx! t)
@@ -215,8 +246,7 @@
                 (values (hashtable-get typeidxs x) tl)))
             ; we have params/results
             (else
-             (multiple-value-bind (p r tl)
-                (get-params/results/tl tu)
+             (multiple-value-bind (p r tl) (get-params/results/tl tu)
                 (let* ((t `(func (param ,@p) (result ,@r)))
                        (id (get-typeidx! t)))
                    (if (= id (- ntypes 1)) ; has t already been defined ?
@@ -234,7 +264,6 @@
              (begin (write-byte #x03 importp)
                     (write-globaltype typeidxs gt typep)))))
 
-      ;;;; TO START
       (define (write-instruction! locals labls i)
          (define (go i)
             (write-instruction! locals labls i))
@@ -263,10 +292,10 @@
                              (id (get-typeidx! t)))
                          (if (= id (- ntypes 1)) ; has t already been defined ?
                              (write-comptype typeidxs t typep))
-                     (leb128-write-signed id p)))))))
+                         (leb128-write-signed id p)))))))
 
          (define (index x l i)
-            (cond ((null? l) (error "unknown identifier" x))
+            (cond ((null? l) (error "index" "unknown identifier" x))
                   ((eq? (car l) x) i)
                   (#t (index x (cdr l) (+ 1 i)))))
 
@@ -300,7 +329,7 @@
                 (display (write-blocktype! p r) codep)
                 (for-each go tl)
                 (write-byte #x0B codep)))
-            ((unreachable) (write-byte \0x00 codep))
+            ((unreachable) (write-byte #x00 codep))
             ((nop) (write-byte #x01 codep))
             ((br ?label)
              (write-byte #x0C codep)
@@ -333,8 +362,7 @@
             ((local.set (and (? symbol?) ?v) . ?tl)
              (for-each go tl)
              (write-byte #x24 codep)
-             (leb128-write-unsigned (localidx v) codep)
-             )))
+             (leb128-write-unsigned (localidx v) codep))))
 
       (define (out-mod m)
          (match-case m
@@ -343,7 +371,23 @@
                     (write-string nm importp)
                     (write-import-desc! d)))
             ((or (type . ?-) (rec . ?-))
-             (write-rectype typeidxs m typep))))
+             (write-rectype typeidxs m typep))
+            ((func (export (and ?nm (? symbol?))) . ?rst)
+             (out-mod `(func ,(fresh-var) (export ,nm) ,@rst)))
+            ((func (and ?id (? symbol?)) (export (and ?nm (? symbol?))) . ?rst)
+             (out-mod `(export ,nm (func ,id)))
+             (out-mod `(func ,id ,@rst)))
+            ((func (and (? symbol?) ?id) (import (and ?nm1 (? symbol?))
+                                                 (and ?nm2 (? symbol?))) . ?tu)
+             (out-mod `(import ,nm1 ,nm2 (func ,id ,@tu))))
+            ((func (and (? symbol?) ?id) (type x) . ?rst)
+             (multiple-value-bind (ln l body) (get-locals/tl tl)
+                (write-byte #x0B codep)))
+            ((func (and (? symbol?) ?id) . ?rst)
+             (multiple-value-bind (pn p r tl) (get-named-params/results/tl rst)
+                (let ((x (fresh-var)))
+                   (out-mod )))
+             )))
       (for-each out-mod (caddr m))
       (write-section #x01 typep out-port ntypes)
       (write-section #x02 importp out-port nimports)))
