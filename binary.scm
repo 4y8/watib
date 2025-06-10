@@ -12,7 +12,8 @@
 
 (define *valtype-symbols* (make-hashtable))
 
-(for-each (match-lambda ((?sym . ?code) (hashtable-put! *valtype-symbols* sym code)))
+(for-each (match-lambda ((?sym . ?code)
+                         (hashtable-put! *valtype-symbols* sym code)))
           '((i32 . #x7F)
             (i64 . #x7E)
             (f32 . #x7D)
@@ -34,7 +35,8 @@
 
 (define *simple-opcodes* (make-hashtable))
 
-(for-each (match-lambda ((?sym . ?code) (hashtable-put! *simple-opcodes* sym code)))
+(for-each (match-lambda ((?sym . ?code)
+                         (hashtable-put! *simple-opcodes* sym code)))
           '((return . #x0F)
 
             (i32.eqz  . #x45)
@@ -229,6 +231,7 @@
 ;; remove-names-comptype, i.e. (func (param ...) (result ...)),
 ;; (struct (field ...)), or (array ...)
 (define (write-comptype typeidxs t out-port)
+   (display t)
    (define (write-fieldtype t out-port)
       (match-case t
          ((mut ?t)
@@ -294,7 +297,6 @@
             (write-byte #x00))))
 
 (define (write-section secid in-port out-port vec-len)
-   (write-byte secid out-port)
    (let* ((len (call-with-output-string
                   (lambda (p) (leb128-write-unsigned vec-len p))))
           (content (string-append len (close-output-port in-port)))
@@ -539,6 +541,8 @@
                                  (write-byte #x0B p))))
                           (cont (string-append loc-decl code)))
                       (write-string cont codep)))))))
+
+      (for-each update-tables! (cddr m))
 
       (for-each out-mod (cddr m))
 
