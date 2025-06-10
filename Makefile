@@ -7,4 +7,4 @@ as: binary.o leb128.o
 	bigloo binary.o leb128.o -o as
 
 %.o : %.scm
-	bigloo -c $< -o $@
+	bigloo -c $< -o $@ -g
