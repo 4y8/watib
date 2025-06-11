@@ -608,16 +608,22 @@
              (write-export-desc d))
             ((or (type . ?-) (rec . ?-))
              (write-rectype typeidxs m typep))
-            ((func (and (? symbol?) ?id) . ?rst)
+            ;; todo : rewrite, maybe put in a biger function
+            ((func (? symbol?) . ?rst)
              (multiple-value-bind (id par-nms tl) (write-typeuse! rst)
                 (multiple-value-bind (loc-nms loc-tys body)
                                      (get-names/locals/tl tl)
                    (leb128-write-unsigned id funcp)
+                   ; we are wasting space on local declaration, as two i32
+                   ; variables will be declared as one i32 local twice (that's
+                   ; what indicates the write-byte 1), instead of being a single
+                   ; declaration of two i32 locals
                    (let* ((loc-decl
                            (call-with-output-string
                               (lambda (p)
                                  (write-vec loc-tys
                                     (lambda (t p)
+                                       (write-byte #x01 p)
                                        (write-valtype typeidxs t p)) p))))
                           (code
                            (call-with-output-string
@@ -630,7 +636,19 @@
                                  (write-byte #x0B p))))
                           (cont (string-append loc-decl code)))
                       (write-string cont codep)))))
-            ))
+            ((global (? symbol?) ?gt . ?expr)
+             (write-globaltype typeidxs gt globalp)
+             (for-each (lambda (i) (write-instruction! '() '() i globalp)) expr)
+             (write-byte #x0B globalp))
+            ((or (memory (? symbol?) (and (? number?) ?n))
+                 (memory (and (? number?) ?n)))
+             (write-byte #x00 memp)
+             (leb128-write-unsigned n memp))
+            ((or (memory (? symbol?) (and (? number?) ?n) (and (? number?) ?m))
+                 (memory (and (? number?) ?n) (and (? number?) ?m)))
+             (write-byte #x01 memp)
+             (leb128-write-unsigned n memp)
+             (leb128-write-unsigned m memp))))
 
       (let ((desuggared-mods (map update-tables! (cddr m))))
          (for-each (lambda (l) (for-each out-mod l)) desuggared-mods))
@@ -642,8 +660,7 @@
       (write-section #x05 memp out-port nmems)
       (write-section #x06 globalp out-port nglobals)
       (write-section #x07 exportp out-port nexports)
-      (write-section #x0A codep out-port ncodes)
-      ))
+      (write-section #x0A codep out-port ncodes)))
 
 (define (main argv)
    (call-with-input-file (cadr argv)
