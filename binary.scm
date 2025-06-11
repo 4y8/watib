@@ -37,7 +37,11 @@
 
 (for-each (match-lambda ((?sym . ?code)
                          (hashtable-put! *simple-opcodes* sym code)))
-          '((return . #x0F)
+          '((unreachable . #x00)
+            (nop . #x01)
+            (return . #x0F)
+
+            (drop . #x1A)
 
             (i32.eqz  . #x45)
             (i32.eq   . #x46)
@@ -231,7 +235,6 @@
 ;; remove-names-comptype, i.e. (func (param ...) (result ...)),
 ;; (struct (field ...)), or (array ...)
 (define (write-comptype typeidxs t out-port)
-   (display t)
    (define (write-fieldtype t out-port)
       (match-case t
          ((mut ?t)
@@ -340,7 +343,7 @@
          (match-case m
             ; only support named imports for the moment (didn't find a use-case
             ; yet for unnamed imports)
-            ((import ?- ?- (func (and ?id (? symbol?) . ?-)))
+            ((import ?- ?- (func (and ?id (? symbol?)) . ?-))
              (hashtable-put! funcidxs id nfuncs)
              (set! nfuncs (+ 1 nfuncs))
              (set! nimports (+ 1 nimports))
@@ -401,25 +404,25 @@
                 (begin (write-byte #x04 out-port)
                        (display bt out-port)
                        (for-each go body)))
-               (('else . ?body)
-                (begin (write-byte #x04 out-port)
+               (((kwote else) . ?body)
+                (begin (write-byte #x05 out-port)
                        (for-each go body)))
                (else (go b))))
 
          (define (compile-blocktype! p r)
             (match-case (cons p r)
-               ((() ()) "\x40")
-               ((() (?vt))
+               ((() . ()) "\x40")
+               ((() . (?vt))
                 (call-with-output-string
                    (lambda (p) (write-valtype typeidxs vt p))))
                (else
                 (call-with-output-string
-                   (lambda (p)
+                   (lambda (op)
                       (let* ((t `(func (param ,@p) (result ,@r)))
                              (id (get-typeidx! t)))
                          (if (= id (- ntypes 1)) ; has t already been defined ?
                              (write-comptype typeidxs t typep))
-                         (leb128-write-signed id p)))))))
+                         (leb128-write-signed id op)))))))
 
          (define (index x l i)
             (cond ((null? l) (error "index" "unknown identifier" x))
@@ -459,8 +462,6 @@
                 (display (compile-blocktype! p r) out-port)
                 (for-each go tl)
                 (write-byte #x0B out-port)))
-            ((unreachable) (write-byte #x00 out-port))
-            ((nop) (write-byte #x01 out-port))
             ((br ?label)
              (write-byte #x0C out-port)
              (leb128-write-unsigned (labelidx label) out-port))
@@ -548,7 +549,7 @@
 
       (write-section #x01 typep out-port ntypes)
       (write-section #x02 importp out-port nimports)
-      (write-section #x03 funcp out-port nfuncs)
+      (write-section #x03 funcp out-port ncodes)
       (write-section #x0A codep out-port ncodes)))
 
 (define (main argv)
