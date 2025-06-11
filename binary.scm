@@ -3,6 +3,8 @@
    (main main)
    (import leb128))
 
+;;; we currently miss table and elem - they are not used by bigloo
+
 (define dummy-integer 0)
 
 (define (fresh-var)
@@ -147,7 +149,11 @@
             (f64.div      . #xA3)
             (f64.min      . #xA4)
             (f64.max      . #xA5)
-            (f64.copysign . #xA6)))
+            (f64.copysign . #xA6)
+
+            (ref.is_null     . #xD1)
+            (ref.eq          . #xD3)
+            (ref.as_non_null . #xD4)))
 
 (define (valtype-symbol? s)
    (and (symbol? s) (hashtable-contains? *valtype-symbols* s)))
@@ -184,17 +190,23 @@
           (values (cons name n) (cons type t) tl)))
       (((local . ?types) . ?rst)
        (multiple-value-bind (n t tl) (get-names/locals/tl rst)
-          (values (append (map (lambda (-) (fresh-var)) types))
+          (values (append (map (lambda (-) (fresh-var)) types) n)
                   (append types t) tl)))
       (else (values '() '() l))))
 
-; we do not support anonymous fields yet, they are not used by bigloo like named
-; parameters, the only thing missing is a valtype? function which could be
-; easily implemented by replacing the match in the write-valtype function by a
-; hashtable ; however, we use anonymous fields internally, with the next
-; function
+(define (get-fieldnames l)
+   (match-case l
+      (((field (and (? symbol?) ?name (not (? valtype-symbol?))) ?-) . ?rst)
+       (cons name (get-fieldnames rst)))
+      (((field ?types) . ?rst)
+       (append (map (lambda (-) (fresh-var)) types) (get-fieldnames rst)))))
+
 (define (get-fields l)
-   (map caddr l))
+  (match-case l
+      (((field (and (? symbol?) (not (? valtype-symbol?))) ?t) . ?rst)
+       (cons t (get-fields rst)))
+      (((field ?types) . ?rst)
+       (append types (get-fields rst)))))
 
 (define (remove-names-comptype t)
    (match-case t
@@ -219,6 +231,8 @@
    (leb128-write-unsigned (length v) out-port)
    (for-each (lambda (x) (wr x out-port)) v))
 
+;; actually also works on heap types to avoid other boilerplate functions, might
+;; change that
 (define (write-valtype typeidxs t out-port)
    (match-case t
       ((? valtype-symbol?)
@@ -314,7 +328,9 @@
    (let ((typep (open-output-string))
          (importp (open-output-string))
          (funcp (open-output-string))
+         (exportp (open-output-string))
          (codep (open-output-string))
+         (globalp (open-output-string))
          (memp (open-output-string))
          (typeidxs (make-hashtable))
          (funcidxs (make-hashtable))
@@ -326,8 +342,32 @@
          (nimports 0)
          (ncodes 0)
          (nfuncs 0)
+         (nexports 0)
+         (nglobals 0)
          (nmems 0))
-      (display "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
+
+      (define (index x l i)
+            (cond ((null? l) (error "index" "unknown identifier" x))
+                  ((eq? (car l) x) i)
+                  (#t (index x (cdr l) (+ 1 i)))))
+
+      (define (fieldidx t f)
+         (index f (hashtable-get fieldidxs t) 0))
+
+      (define (funcidx f)
+         (cond ((symbol? f) (hashtable-get funcidxs f))
+               ((number? f) f)
+               (#t (error "funcidx" "unknown function" f))))
+
+      (define (globalidx x)
+         (cond ((symbol? x) (hashtable-get globalidxs x))
+               ((number? x) x)
+               (#t (error "globalidx" "unknown global" x))))
+
+      (define (memidx x)
+         (cond ((symbol? x) (hashtable-get memidxs x))
+               ((number? x) x)
+               (#t (error "memidx" "unknown memory" x))))
 
       (define (get-typeidx! t)
          (let ((h (hashtable-get defined-types t)))
@@ -348,20 +388,43 @@
              (set! nfuncs (+ 1 nfuncs))
              (set! nimports (+ 1 nimports))
              (list m))
+            ((export . ?-)
+             (set! nexports (+ 1 nexports)))
             ((type ?name ?st)
              (let* ((t (remove-names-subtype st))
                     (id (get-typeidx! t)))
                 (hashtable-put! typeidxs name id)
+                (match-case st
+                   ((or (sub final (struct . ?fds)) (sub (struct . ?fds))
+                        (struct . ?fds))
+                    (hashtable-put! fieldidxs name (get-fieldnames fds))))
                 (if (= id (- ntypes 1)) ; has t already been defined ?
                     (list `(type ,name ,t))
                     '())))
             ((rec . ?lst)
              (list `(rec ,@(map car (remove null? (map update-tables! lst))))))
+            ((func (export (and ?nm (? string?))) . ?rst)
+             (update-tables! `(func ,(fresh-var) (export ,nm) ,@rst)))
+            ((func (and (? symbol?) ?id) (export (and ?nm (? string?))) . ?rst)
+             (append (update-tables! `(export ,nm (func ,id)))
+                     (update-tables! `(func ,id ,@rst))))
+            ((func (and (? symbol?) ?id) (import (and ?nm1 (? string?))
+                                                 (and ?nm2 (? string?))) . ?tu)
+             (update-tables! `(import ,nm1 ,nm2 (func ,id ,@tu))))
             ((func (and ?id (? symbol?)) . ?-)
              (hashtable-put! funcidxs id nfuncs)
              (set! nfuncs (+ 1 nfuncs))
              (set! ncodes (+ 1 ncodes))
-             (list m))))
+             (list m))
+            ((global (and (? symbol?) ?id) (import (and ?nm1 (? string?))
+                                                   (and ?nm2 (? string?)) ?gt))
+             (update-tables! `(import ,nm1 ,nm2 (global ,id ,gt))))
+            ((global (export (and ?nm (? string?))) . ?rst)
+             (update-tables! `(global ,(fresh-var) (export ,nm) ,@rst)))
+            ((global (and (? symbol?) ?id) (export (and ?nm (? string?))) .
+                     ?rst)
+             (append (update-tables! `(export ,nm (global ,id)))
+                     (update-tables! `(global ,id ,@rst))))))
 
       ;; returns an id for the typeuse, a list of names for the parameters and
       ;; the rest of the program
@@ -394,9 +457,28 @@
              (begin (write-byte #x03 importp)
                     (write-globaltype typeidxs gt typep)))))
 
+      (define (write-export-desc d)
+         ; todo : tag table - not used in bigloo
+         (match-case d
+            ((func ?f)
+             (write-byte #x00 exportp)
+             (leb128-write-unsigned (funcidx f) exportp))
+            ((memory ?m)
+             (write-byte #x01 exportp)
+             (leb128-write-unsigned (memidx m) exportp))
+            ((global ?x)
+             (write-byte #x03 exportp)
+             (leb128-write-unsigned (globalidx x) exportp))))
+
       (define (write-instruction! locals labls i out-port)
          (define (go i)
             (write-instruction! locals labls i out-port))
+
+         (define (labelidx lab)
+            (index lab labls 0))
+
+         (define (localidx v)
+            (index v locals 0))
 
          (define (write-if-branch! bt b)
             (match-case b
@@ -423,17 +505,6 @@
                          (if (= id (- ntypes 1)) ; has t already been defined ?
                              (write-comptype typeidxs t typep))
                          (leb128-write-signed id op)))))))
-
-         (define (index x l i)
-            (cond ((null? l) (error "index" "unknown identifier" x))
-                  ((eq? (car l) x) i)
-                  (#t (index x (cdr l) (+ 1 i)))))
-
-         (define (labelidx lab)
-            (index lab labls 0))
-
-         (define (localidx v)
-            (index v locals 0))
 
          (match-case i
             ((if (and (? symbol?) ?label) . ?rst)
@@ -462,8 +533,12 @@
                 (display (compile-blocktype! p r) out-port)
                 (for-each go tl)
                 (write-byte #x0B out-port)))
-            ((br ?label)
+            ((br (and (? symbol?) ?label))
              (write-byte #x0C out-port)
+             (leb128-write-unsigned (labelidx label) out-port))
+            ((br_if (and (? symbol?) ?label) . ?tl)
+             (for-each go tl)
+             (write-byte #x0D out-port)
              (leb128-write-unsigned (labelidx label) out-port))
             ((br_table . ?rst)
              (define (get-labls/default/tl l)
@@ -480,6 +555,15 @@
                            (lambda (l p) (leb128-write-unsigned (labelidx l) p))
                            out-port)
                 (leb128-write-unsigned (labelidx def) out-port)))
+            ((call ?f . ?tl)
+             (for-each go tl)
+             (write-byte #x10 out-port)
+             (leb128-write-unsigned (funcidx f) out-port))
+            ((return_call ?f . ?tl)
+             (for-each go tl)
+             (write-byte #x12 out-port)
+             (leb128-write-unsigned (funcidx f) out-port))
+
             ((global.get (and (? symbol?) ?v))
              (write-byte #x23 out-port)
              (leb128-write-unsigned (hashtable-get globalidxs v) out-port))
@@ -494,32 +578,36 @@
              (for-each go tl)
              (write-byte #x21 out-port)
              (leb128-write-unsigned (localidx v) out-port))
+
             ((i32.const (and (? number?) ?n))
              (write-byte #x41 out-port)
              (leb128-write-signed n out-port))
             ((i64.const (and (? number?) ?n))
              (write-byte #x42 out-port)
              (leb128-write-signed n out-port))
+
+            ((ref.null ?ht)
+             (write-byte #xD0 out-port)
+             (write-valtype typeidxs ht out-port))
+            ((ref.func (and (? symbol?) ?f))
+             (write-byte #xD2 out-port)
+             (leb128-write-unsigned (funcidx f) out-port))
+
             (((and ?op (? symbol?)) . ?tl)
              (for-each go tl)
              (write-byte (hashtable-get *simple-opcodes* op) out-port))))
 
       (define (out-mod m)
          (match-case m
-            ((import ?mod ?nm ?d)
-             (begin (write-string mod importp)
-                    (write-string nm importp)
-                    (write-import-desc! d)))
+            ((import (and ?mod (? string?)) (and ?nm (? string?)) ?d)
+             (write-string mod importp)
+             (write-string nm importp)
+             (write-import-desc! d))
+            ((export (and ?nm (? string?)) ?d)
+             (write-string nm exportp)
+             (write-export-desc d))
             ((or (type . ?-) (rec . ?-))
              (write-rectype typeidxs m typep))
-            ((func (export (and ?nm (? symbol?))) . ?rst)
-             (out-mod `(func ,(fresh-var) (export ,nm) ,@rst)))
-            ((func (and ?id (? symbol?)) (export (and ?nm (? symbol?))) . ?rst)
-             (out-mod `(export ,nm (func ,id)))
-             (out-mod `(func ,id ,@rst)))
-            ((func (and (? symbol?) ?id) (import (and ?nm1 (? symbol?))
-                                                 (and ?nm2 (? symbol?))) . ?tu)
-             (out-mod `(import ,nm1 ,nm2 (func ,id ,@tu))))
             ((func (and (? symbol?) ?id) . ?rst)
              (multiple-value-bind (id par-nms tl) (write-typeuse! rst)
                 (multiple-value-bind (loc-nms loc-tys body)
@@ -541,16 +629,21 @@
                                    body)
                                  (write-byte #x0B p))))
                           (cont (string-append loc-decl code)))
-                      (write-string cont codep)))))))
+                      (write-string cont codep)))))
+            ))
 
-      (for-each update-tables! (cddr m))
+      (let ((desuggared-mods (map update-tables! (cddr m))))
+         (for-each (lambda (l) (for-each out-mod l)) desuggared-mods))
 
-      (for-each out-mod (cddr m))
-
+      (display "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
       (write-section #x01 typep out-port ntypes)
       (write-section #x02 importp out-port nimports)
       (write-section #x03 funcp out-port ncodes)
-      (write-section #x0A codep out-port ncodes)))
+      (write-section #x05 memp out-port nmems)
+      (write-section #x06 globalp out-port nglobals)
+      (write-section #x07 exportp out-port nexports)
+      (write-section #x0A codep out-port ncodes)
+      ))
 
 (define (main argv)
    (call-with-input-file (cadr argv)
