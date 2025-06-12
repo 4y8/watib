@@ -497,7 +497,8 @@
                   (#t (index x (cdr l) (+ 1 i)))))
 
       (define (fieldidx t f)
-         (index f (hashtable-get fieldidxs t) 0))
+         (if (number? f) f
+             (index f (hashtable-get fieldidxs t) 0)))
 
       (define (funcidx f)
          (cond ((and (symbol? f) (hashtable-contains? funcidxs f))
@@ -745,10 +746,11 @@
                 (let ((bt (compile-blocktype! p r)))
                    (for-each (lambda (b) (write-if-branch! bt b)) tl)
                    (write-byte #x0B out-port))))
-            ((throw (and (? idx?) ?exn) . ?tl)
+            ((throw (and (? idx?) ?x) . ?tl)
              (for-each go tl)
-             (write-byte #x08)
-             (leb128-write-unsigned (tagidx exn) out-port))
+             (write-byte #x08 out-port)
+             (print (tagidx x))
+             (leb128-write-unsigned (tagidx x) out-port))
             ((br (and (? idx?) ?label))
              (write-byte #x0C out-port)
              (leb128-write-unsigned (labelidx label) out-port))
@@ -981,10 +983,10 @@
       (write-section #x02 importp out-port nimports)
       (write-section #x03 funcp out-port ncodes)
       (write-section #x05 memp out-port nmems)
+      (write-section #x0D tagp out-port ntags)
       (write-section #x06 globalp out-port ndefglobals)
       (write-section #x07 exportp out-port nexports)
-      (write-section #x0A codep out-port ncodes)
-      (write-section #x0D tagp out-port ntags)))
+      (write-section #x0A codep out-port ncodes)))
 
 (define (main argv)
    (call-with-input-file (cadr argv)
