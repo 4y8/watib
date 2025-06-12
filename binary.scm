@@ -332,9 +332,9 @@
    (match-case t
       ((func . ?rst)
        (multiple-value-bind (- p r -)
-          (get-names/params/results/tl t)
+          (get-names/params/results/tl rst)
           `(func (param ,@p) (result ,@r))))
-      ((struct . ?fds) `(struct (field ,@(get-fields fds))))
+     ; ((struct . ?fds) `(struct (field ,@(get-fields fds))))
       (else t)))
 
 (define (remove-names-subtype st)
@@ -396,9 +396,9 @@
       ((array ?t)
        (write-byte #x5E out-port)
        (write-fieldtype t out-port))
-      ((struct (field . ?fds))
+      ((struct . ?fds)
        (write-byte #x5F out-port)
-       (write-vec fds write-fieldtype out-port))))
+       (write-vec (get-fields fds) write-fieldtype out-port))))
 
 (define (write-subtype typeidxs st out-port)
    (match-case st
@@ -534,13 +534,9 @@
 
       (define (get-typeidx! t)
          (let ((h (hashtable-get defined-types t)))
-            (display h)
-            (display "\n")
             (if h
                 h
                 (begin
-                   (write t)
-            (display "\n")
                    (hashtable-put! defined-types t ntypes)
                    (set! ntypes (+ 1 ntypes))
                    (set! nrecs (+ 1 nrecs))
@@ -565,6 +561,7 @@
              (list m))
             ((type ?name ?st)
              (let* ((t (remove-names-subtype st))
+                    (old-ntypes ntypes)
                     (id (get-typeidx! t)))
                 (hashtable-put! typeidxs name id)
                 (match-case st
@@ -572,15 +569,17 @@
                         (sub ??- (struct . ?fds))
                         (struct . ?fds))
                     (hashtable-put! fieldidxs name (get-fieldnames fds))))
-                (if (= id (- ntypes 1)) ; has t already been defined ?
-                    (list `(type ,name ,t))
-                    '())))
+                (if (= old-ntypes ntypes) ; has t already been defined ?
+                    '()
+                    (list `(type ,name ,t)))))
             ((rec . ?lst)
              (let ((saved-nrecs nrecs)
                    (l (remove null? (map update-tables! lst))))
                 (set! nrecs (+ 1 saved-nrecs))
                 (if (null? l)
-                    '()
+                    (begin
+                       (set! nrecs (- nrecs 1))
+                       '())
                     (list `(rec ,@(map car l))))))
             ((func (export (and ?nm (? string?))) . ?rst)
              (update-tables! `(func ,(fresh-var) (export ,nm) ,@rst)))
@@ -647,8 +646,9 @@
             (else
              (multiple-value-bind (n p r tl) (get-names/params/results/tl tu)
                 (let* ((t `(func (param ,@p) (result ,@r)))
+                       (old-ntypes ntypes)
                        (id (get-typeidx! t)))
-                   (if (= id (- ntypes 1)) ; has t already been defined ?
+                   (unless (= old-ntypes ntypes) ; has t already been defined ?
                        (write-comptype typeidxs t typep))
                    (values id n tl))))))
 
@@ -711,8 +711,9 @@
                 (call-with-output-string
                    (lambda (op)
                       (let* ((t `(func (param ,@p) (result ,@r)))
+                             (old-ntypes ntypes)
                              (id (get-typeidx! t)))
-                         (if (= id (- ntypes 1)) ; has t already been defined ?
+                         (if (= old-ntypes ntypes) ; has t already been defined ?
                              (write-comptype typeidxs t typep))
                          (leb128-write-signed id op)))))))
 
@@ -965,7 +966,7 @@
                 (leb128-write-unsigned id tagp)))))
 
       (let ((desuggared-mods (map update-tables! (cddr m))))
-         (for-each (lambda (l) (for-each out-mod l)) desuggared-mods))
+         (for-each (lambda (l) (print l) (for-each out-mod l)) desuggared-mods))
 
       (display "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
       (write-section #x01 typep out-port nrecs)
