@@ -195,8 +195,7 @@
             ; we do not support offset/alignment yet
             (i32.load8_s . (#x2C 0 4))
             (i32.load8_u . (#x2D 0 4))
-            (i32.store8  . (#x3A 0 4))
-            ))
+            (i32.store8  . (#x3A 0 4))))
 
 (define (opcode? o)
    (and (symbol? o) (hashtable-contains? *simple-opcodes* o)))
@@ -228,9 +227,9 @@
 
 (define (wnumber? n)
    (cond ((number? n) #t)
-         ((eq? n 'inf) #t)
-         ((eq? n '-inf) #t)
-         ((eq? n 'nan) #t)
+         ((equal? n 'inf) #t)
+         ((equal? n '-inf) #t)
+         ((equal? n 'nan) #t)
          ((symbol? n)
           (let ((s (symbol->string n)))
              (if (and (>= (string-length s) 2) (substring-at? s "0x" 0))
@@ -240,9 +239,9 @@
 
 (define (wnumber->number n)
    (cond ((number? n) n)
-         ((eq? n 'inf) +inf.0)
-         ((eq? n '-inf) -inf.0)
-         ((eq? n 'nan) +nan.0)
+         ((equal? n 'inf) +inf.0)
+         ((equal? n '-inf) -inf.0)
+         ((equal? n 'nan) +nan.0)
          (#t
           (string->number (substring (symbol->string n) 2) 16))))
 
@@ -411,17 +410,21 @@
              (write-vec
               idxs
               (lambda (x p)
-                 (leb128-write-unsigned (hashtable-get typeidxs x) p))
+                 (if (hashtable-contains? typeidxs x)
+                     (leb128-write-unsigned (hashtable-get typeidxs x) p)
+                     (error "write-subtype" "unknown type" x)))
               out-port))
           (write-comptype typeidxs ct out-port)))
       ((sub . ?rst)
        (multiple-value-bind (idxs ct)
           (get-typeidxs/comptype rst)
-          (write-byte #x4F out-port)
+          (write-byte #x50 out-port)
           (write-vec
            idxs
            (lambda (x p)
-              (leb128-write-unsigned (hashtable-get typeidxs x) p))
+              (if (hashtable-contains? typeidxs x)
+                  (leb128-write-unsigned (hashtable-get typeidxs x) p)
+                  (error "write-subtype" "unknown type" x)))
            out-port)
           (write-comptype typeidxs ct out-port)))
       (else (write-comptype typeidxs st out-port))))
@@ -452,9 +455,11 @@
                   (lambda (p) (leb128-write-unsigned vec-len p))))
           (content (string-append len (close-output-port in-port))))
       (unless (= vec-len 0)
-         (display secid)
          (write-byte secid out-port)
          (write-string content out-port))))
+
+(define (hack-hash x)
+  (get-hashnumber (with-output-to-string (lambda () (display x)))))
 
 (define (write-module m out-port)
    (let ((typep (open-output-string))
@@ -473,8 +478,9 @@
          (memidxs (make-hashtable))
          (fieldidxs (make-hashtable))
          (dataidxs (make-hashtable))
-         (defined-types (create-hashtable :eqtest equal?))
+         (defined-types (create-hashtable :eqtest equal? :hash hack-hash))
          (ntypes 0)
+         (nrecs 0)
          (nimports 0)
          (ncodes 0)
          (nfuncs 0)
@@ -487,24 +493,27 @@
 
       (define (index x l i)
             (cond ((null? l) (error "index" "unknown identifier" x))
-                  ((eq? (car l) x) i)
+                  ((equal? (car l) x) i)
                   (#t (index x (cdr l) (+ 1 i)))))
 
       (define (fieldidx t f)
          (index f (hashtable-get fieldidxs t) 0))
 
       (define (funcidx f)
-         (cond ((symbol? f) (hashtable-get funcidxs f))
+         (cond ((and (symbol? f) (hashtable-contains? funcidxs f))
+                (hashtable-get funcidxs f))
                ((number? f) f)
                (#t (error "funcidx" "unknown function" f))))
 
       (define (typeidx t)
-         (cond ((symbol? t) (hashtable-get typeidxs t))
+         (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
+                (hashtable-get typeidxs t))
                ((number? t) t)
                (#t (error "typeidx" "unknown type" t))))
 
       (define (globalidx x)
-         (cond ((symbol? x) (hashtable-get globalidxs x))
+         (cond ((and (symbol? x) (hashtable-contains? globalidxs x))
+                (hashtable-get globalidxs x))
                ((number? x) x)
                (#t (error "globalidx" "unknown global" x))))
 
@@ -525,11 +534,16 @@
 
       (define (get-typeidx! t)
          (let ((h (hashtable-get defined-types t)))
+            (display h)
+            (display "\n")
             (if h
                 h
                 (begin
+                   (write t)
+            (display "\n")
                    (hashtable-put! defined-types t ntypes)
                    (set! ntypes (+ 1 ntypes))
+                   (set! nrecs (+ 1 nrecs))
                    (- ntypes 1)))))
 
       (define (update-tables! m)
@@ -562,7 +576,12 @@
                     (list `(type ,name ,t))
                     '())))
             ((rec . ?lst)
-             (list `(rec ,@(map car (remove null? (map update-tables! lst))))))
+             (let ((saved-nrecs nrecs)
+                   (l (remove null? (map update-tables! lst))))
+                (set! nrecs (+ 1 saved-nrecs))
+                (if (null? l)
+                    '()
+                    (list `(rec ,@(map car l))))))
             ((func (export (and ?nm (? string?))) . ?rst)
              (update-tables! `(func ,(fresh-var) (export ,nm) ,@rst)))
             ((func (and (? symbol?) ?id) (export (and ?nm (? string?))) . ?rst)
@@ -949,7 +968,7 @@
          (for-each (lambda (l) (for-each out-mod l)) desuggared-mods))
 
       (display "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
-      (write-section #x01 typep out-port ntypes)
+      (write-section #x01 typep out-port nrecs)
       (write-section #x02 importp out-port nimports)
       (write-section #x03 funcp out-port ncodes)
       (write-section #x05 memp out-port nmems)
