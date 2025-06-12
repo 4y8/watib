@@ -2,21 +2,26 @@
    (export (leb128-write-signed n out-port)
            (leb128-write-unsigned n out-port)))
 
+(define (new-write-byte b out-port)
+   (if (elong? b)
+       (write-byte (elong->fixnum b) out-port)
+       (write-byte b out-port)))
+
 ;; see section 5.2.2 of wasm spec and https://en.wikipedia.org/wiki/LEB128
 (define (leb128-write-unsigned n out-port)
    (if (< n 128)
-       (write-byte n out-port)
+       (new-write-byte n out-port)
        (begin
-          (write-byte (+ 128 (modulo n 128)) out-port)
+          (new-write-byte (+ 128 (modulo n 128)) out-port)
           (leb128-write-unsigned (quotient n 128) out-port))))
 
 (define (leb128-write-signed n out-port)
    (cond
       ((and (<= 0 n) (> 64 n))
-       (write-byte n out-port))
+       (new-write-byte n out-port))
       ((and (> 0 n) (<= -64 n))
-       (write-byte (+ 128 n) out-port))
+       (new-write-byte (+ 128 n) out-port))
       (#t
-       (let ((m (modulo n 128)))
-          (write-byte (+ 128 (modulo n 128)) out-port)
+       (let* ((m (modulo n 128)))
+          (new-write-byte (+ 128 m) out-port)
           (leb128-write-signed (quotient (- n m) 128) out-port)))))
