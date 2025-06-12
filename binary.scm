@@ -387,7 +387,8 @@
           (write-valtype typeidxs t out-port)
           (write-byte #x01 out-port))
          (else
-          (write-valtype typeidxs t out-port))))
+          (write-valtype typeidxs t out-port)
+          (write-byte #x00 out-port))))
    (match-case t
       ((func (param . ?p) (result . ?r))
        (write-byte #x60 out-port)
@@ -444,16 +445,14 @@
        (write-valtype typeidxs vt out-port)
        (write-byte #x01 out-port))
       (else (write-valtype typeidxs gt out-port)
-            (write-byte #x00))))
+            (write-byte #x00 out-port))))
 
 (define (write-section secid in-port out-port vec-len)
    (let* ((len (call-with-output-string
                   (lambda (p) (leb128-write-unsigned vec-len p))))
-          (content (string-append len (close-output-port in-port)))
-          (size (string-length content)))
-      ; only one byte indicates that we have a 0 length vector (the only byte is
-      ; the size of the vector), which means we can omit the section
-      (unless (= size 1)
+          (content (string-append len (close-output-port in-port))))
+      (unless (= vec-len 0)
+         (display secid)
          (write-byte secid out-port)
          (write-string content out-port))))
 
@@ -481,6 +480,7 @@
          (nfuncs 0)
          (nexports 0)
          (nglobals 0)
+         (ndefglobals 0)
          (nmems 0)
          (ndata 0)
          (ntags 0))
@@ -554,7 +554,8 @@
                     (id (get-typeidx! t)))
                 (hashtable-put! typeidxs name id)
                 (match-case st
-                   ((or (sub final ??- (struct . ?fds)) (sub ??- (struct . ?fds))
+                   ((or (sub final ??- (struct . ?fds))
+                        (sub ??- (struct . ?fds))
                         (struct . ?fds))
                     (hashtable-put! fieldidxs name (get-fieldnames fds))))
                 (if (= id (- ntypes 1)) ; has t already been defined ?
@@ -587,6 +588,7 @@
             ((global (and (? symbol?) ?id) . ?-)
              (hashtable-put! globalidxs id nglobals)
              (set! nglobals (+ 1 nglobals))
+             (set! ndefglobals (+ 1 ndefglobals))
              (list m))
             ((memory (and (? symbol?) ?id) . ?limits)
              (hashtable-put! memidxs id nmems)
@@ -640,7 +642,7 @@
                 (leb128-write-unsigned id importp)))
             ((or (global (? symbol?) ?gt) (global ?gt))
              (begin (write-byte #x03 importp)
-                    (write-globaltype typeidxs gt typep)))))
+                    (write-globaltype typeidxs gt importp)))))
 
       (define (write-export-desc d)
          ; todo : tag table - not used in bigloo
@@ -951,7 +953,7 @@
       (write-section #x02 importp out-port nimports)
       (write-section #x03 funcp out-port ncodes)
       (write-section #x05 memp out-port nmems)
-      (write-section #x06 globalp out-port nglobals)
+      (write-section #x06 globalp out-port ndefglobals)
       (write-section #x07 exportp out-port nexports)
       (write-section #x0A codep out-port ncodes)
       (write-section #x0D tagp out-port ntags)))
