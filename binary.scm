@@ -670,7 +670,7 @@
              (write-byte #x00 exportp)
              (leb128-write-unsigned (funcidx f) exportp))
             ((memory ?m)
-             (write-byte #x01 exportp)
+             (write-byte #x02 exportp)
              (leb128-write-unsigned (memidx m) exportp))
             ((global ?x)
              (write-byte #x03 exportp)
