@@ -713,8 +713,9 @@
                       (let* ((t `(func (param ,@p) (result ,@r)))
                              (old-ntypes ntypes)
                              (id (get-typeidx! t)))
-                         (if (= old-ntypes ntypes) ; has t already been defined ?
-                             (write-comptype typeidxs t typep))
+                         ; has t already been defined ?
+                         (unless (= old-ntypes ntypes)
+                            (write-comptype typeidxs t typep))
                          (leb128-write-signed id op)))))))
 
          (match-case i
@@ -835,8 +836,8 @@
                            (double->ieee-string (fixnum->flonum m))
                            (double->ieee-string m))))
                 (do ((i 3 (- i 1)))
-                    (>= i 0)
-                   (write-byte (char->integer (string-ref s i))))))
+                    ((< i 0))
+                   (write-byte (char->integer (string-ref s i)) out-port))))
             ((f64.const (and (? wnumber?) ?n))
              (write-byte #x44 out-port)
              (let* ((m (wnumber->number n))
@@ -844,8 +845,8 @@
                            (double->ieee-string (fixnum->flonum m))
                            (double->ieee-string m))))
                 (do ((i 7 (- i 1)))
-                    (>= i 0)
-                   (write-byte (char->integer (string-ref s i))))))
+                    ((< i 0))
+                   (write-byte (char->integer (string-ref s i)) out-port))))
 
             ((ref.null ?ht)
              (write-byte #xD0 out-port)
@@ -907,6 +908,11 @@
 
             (else (error "write-instruction" "unknown instruction" i))))
 
+      (define (out-mod-pre m)
+         (match-case m
+            ((or (type . ?-) (rec . ?-))
+             (write-rectype typeidxs m typep))))
+
       (define (out-mod m)
          (match-case m
             ((import (and ?mod (? string?)) (and ?nm (? string?)) ?d)
@@ -917,7 +923,7 @@
              (write-string nm exportp)
              (write-export-desc d))
             ((or (type . ?-) (rec . ?-))
-             (write-rectype typeidxs m typep))
+             #f)
             ;; todo : rewrite, maybe put in a function aside
             ((func (? symbol?) . ?rst)
              (multiple-value-bind (id par-nms tl) (write-typeuse! rst)
@@ -965,8 +971,10 @@
                 (write-byte #x00 tagp)
                 (leb128-write-unsigned id tagp)))))
 
+
       (let ((desuggared-mods (map update-tables! (cddr m))))
-         (for-each (lambda (l) (print l) (for-each out-mod l)) desuggared-mods))
+         (for-each (lambda (l) (for-each out-mod-pre l)) desuggared-mods)
+         (for-each (lambda (l) (for-each out-mod l)) desuggared-mods))
 
       (display "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
       (write-section #x01 typep out-port nrecs)
