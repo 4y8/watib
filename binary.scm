@@ -253,7 +253,7 @@
           (string->number (substring (symbol->string n) 2) 16))))
 
 (define (idx? x)
-   (or (symbol? x) (number? x)))
+   (or (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0))) (number? x)))
 
 (define (get-results l)
    (match-case l
@@ -268,7 +268,7 @@
 ; necessary
 (define (get-names/params/results/tl l)
    (match-case l
-      (((param (and (? symbol?) ?name (not (? valtype-symbol?))) ?t) . ?rst)
+      (((param (and (? idx?) ?name) ?t) . ?rst)
        (multiple-value-bind (n p r tl)
           (get-names/params/results/tl rst)
           (values (cons name n) (cons t p) r tl)))
@@ -310,7 +310,7 @@
 
 (define (get-names/locals/tl l)
    (match-case l
-      (((local (and (? symbol?) ?name (not (? valtype-symbol?))) ?type) . ?rst)
+      (((local (and (? idx?) ?name) ?type) . ?rst)
        (multiple-value-bind (n t tl) (get-names/locals/tl rst)
           (values (cons name n) (cons type t) tl)))
       (((local . ?types) . ?rst)
@@ -321,7 +321,7 @@
 
 (define (get-fieldnames l)
    (match-case l
-      (((field (and (? symbol?) ?name (not (? valtype-symbol?))) ?-) . ?rst)
+      (((field (and (? idx?) ?name) ?-) . ?rst)
        (cons name (get-fieldnames rst)))
       (((field . ?types) . ?rst)
        (append (map (lambda (-) (fresh-var)) types) (get-fieldnames rst)))
@@ -487,6 +487,7 @@
          (fieldtypes (make-hashtable))
          (arraytypes (make-hashtable))
          (dataidxs (make-hashtable))
+         (funcrefs '())
          (defined-types (create-hashtable :eqtest equal? :hash hack-hash))
          (ntypes 0)
          (nrecs 0)
@@ -551,6 +552,10 @@
                    (set! ntypes (+ 1 ntypes))
                    (set! nrecs (+ 1 nrecs))
                    (- ntypes 1)))))
+
+      (define (add-funcref! f)
+         (unless (member f funcrefs)
+            (set! funcrefs (cons f funcrefs))))
 
       (define (update-tables! m)
          (match-case m
@@ -876,6 +881,7 @@
              (write-valtype typeidxs ht out-port))
             ((ref.func (and (? idx?) ?f))
              (write-byte #xD2 out-port)
+             (add-funcref! (funcidx f))
              (leb128-write-unsigned (funcidx f) out-port))
             (((? ref-instruction-typeidx?) ?x . ?tl)
              (for-each go tl)
@@ -1027,12 +1033,21 @@
       (write-section #x0D tagp out-port ntags)
       (write-section #x06 globalp out-port ndefglobals)
       (write-section #x07 exportp out-port nexports)
+      (unless (null? funcrefs)
+         (write-byte #x09 out-port)
+         (write-string
+          (call-with-output-string
+             (lambda (p)
+                (leb128-write-unsigned 1 p)
+                (leb128-write-unsigned 3 p)
+                (write-byte #x00 p)
+                (write-vec funcrefs leb128-write-unsigned p))) out-port))
       (unless (= 0 ndata)
-        (write-byte #x0C out-port)
-        (write-string
-         (call-with-output-string
-          (lambda (p) (leb128-write-unsigned ndata p)))
-         out-port))
+         (write-byte #x0C out-port)
+         (write-string
+          (call-with-output-string
+             (lambda (p) (leb128-write-unsigned ndata p)))
+          out-port))
       (write-section #x0A codep out-port ncodes)
       (write-section #x0B datap out-port ndata)))
 
