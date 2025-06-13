@@ -216,8 +216,6 @@
 (define (ref-instruction-typeidx? i)
    (hashtable-contains? *ref-instructions* i))
 
-;; actually it would be sufficient to check if the first character of the
-;; symbol, is a $ or not
 (define (valtype-symbol? s)
    (and (symbol? s) (hashtable-contains? *valtype-symbols* s)))
 
@@ -253,7 +251,8 @@
           (string->number (substring (symbol->string n) 2) 16))))
 
 (define (idx? x)
-   (or (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0))) (number? x)))
+   (or (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0)))
+       (number? x)))
 
 (define (get-results l)
    (match-case l
@@ -811,9 +810,6 @@
              (write-byte #x15 out-port)
              (leb128-write-unsigned (typeidx t) out-port))
             ((try_table (and (? symbol?) ?label) . ?rst)
-             (write-instruction! locals (cons label labls)
-                                 `(try_table ,@rst) out-port))
-            ((try_table . ?rst)
              (write-byte #x1F out-port)
              (multiple-value-bind (- p r tl) (get-names/params/results/tl rst)
                 (display (compile-blocktype! p r) out-port)
@@ -826,8 +822,10 @@
                        (leb128-write-unsigned (labelidx (cdr c)) out-port)))
                 (multiple-value-bind (c tl) (get-catches/tl tl)
                    (write-vec c write-catch out-port)
-                   (for-each go tl)
+                   (for-each (go-new-labels (cons label labls)) tl)
                    (write-byte #x0B out-port))))
+            ((try_table . ?rst)
+             (go `(try_table ,(fresh-var) ,@rst)))
 
             ((global.get ?v . ?tl)
              (for-each go tl)
@@ -996,8 +994,11 @@
                                       (append par-nms loc-nms) '() i p))
                                    body)
                                  ;;;;; quick hack -----
-                                 (if (unreachable-body-end body)
-                                     (write-byte #x00 p))
+                                 (multiple-value-bind
+                                    (- - r -) (get-names/params/results/tl rst)
+                                    (if (and (unreachable-body-end body)
+                                             (not (null? r)))
+                                        (write-byte #x00 p)))
                                  (write-byte #x0B p))))
                           (cont (string-append loc-decl code)))
                       (write-string cont codep)))))
