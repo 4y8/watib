@@ -681,6 +681,10 @@
          (define (go i)
             (write-instruction! locals labls i out-port))
 
+         (define (go-new-labels labls)
+            (lambda (i)
+              (write-instruction! locals labls i out-port)))
+
          (define (labelidx lab)
             (if (number? lab)
                 lab
@@ -691,15 +695,15 @@
                 v
                 (index v locals 0)))
 
-         (define (write-if-branch! bt b)
+         (define (write-if-branch! labls bt b)
             (match-case b
                ((then . ?body)
                 (begin (write-byte #x04 out-port)
                        (display bt out-port)
-                       (for-each go body)))
+                       (for-each (go-new-labels labls) body)))
                (((kwote else) . ?body)
                 (begin (write-byte #x05 out-port)
-                       (for-each go body)))
+                       (for-each (go-new-labels labls) body)))
                (else (go b))))
 
          (define (compile-blocktype! p r)
@@ -721,35 +725,32 @@
 
          (match-case i
             ((block (and (? symbol?) ?label) . ?rst)
-             (write-instruction! locals (cons label labls)
-                                 `(block ,@rst) out-port))
-            ((block . ?rst)
              (multiple-value-bind (- p r tl) (get-names/params/results/tl rst)
                 (write-byte #x02 out-port)
                 (display (compile-blocktype! p r) out-port)
-                (for-each go tl)
+                (for-each (go-new-labels (cons label labls)) tl)
                 (write-byte #x0B out-port)))
+            ((block . ?rst)
+             (go `(block ,(fresh-var) ,@rst)))
             ((loop (and (? symbol?) ?label) . ?rst)
-             (write-instruction! locals (cons label labls)
-                                 `(loop ,@rst) out-port))
-            ((loop . ?rst)
              (multiple-value-bind (- p r tl) (get-names/params/results/tl rst)
                 (write-byte #x03 out-port)
                 (display (compile-blocktype! p r) out-port)
-                (for-each go tl)
+                (for-each (go-new-labels (cons label labls)) tl)
                 (write-byte #x0B out-port)))
+            ((loop . ?rst)
+             (go `(loop ,(fresh-var) ,@rst)))
             ((if (and (? symbol?) ?label) . ?rst)
-             (write-instruction! locals (cons label labls)
-                                 `(if ,@rst) out-port))
-            ((if . ?rst)
              (multiple-value-bind (- p r tl) (get-names/params/results/tl rst)
                 (let ((bt (compile-blocktype! p r)))
-                   (for-each (lambda (b) (write-if-branch! bt b)) tl)
+                   (for-each
+                    (lambda (b) (write-if-branch! (cons label labls) bt b)) tl)
                    (write-byte #x0B out-port))))
+            ((if . ?rst)
+             (go `(if ,(fresh-var) ,@rst)))
             ((throw (and (? idx?) ?x) . ?tl)
              (for-each go tl)
              (write-byte #x08 out-port)
-             (print (tagidx x))
              (leb128-write-unsigned (tagidx x) out-port))
             ((br (and (? idx?) ?label))
              (write-byte #x0C out-port)
@@ -826,8 +827,13 @@
              (leb128-write-unsigned (localidx v) out-port))
 
             ((i32.const (and (? wnumber?) ?n))
-             (write-byte #x41 out-port)
-             (leb128-write-signed (wnumber->number n) out-port))
+             (let ((n (wnumber->number n)))
+               (if (> n 2147483647)
+                   (begin (print "quick hack")
+                          (go `(i32.const ,(- n (* 2 2147483648)))))
+                   (begin
+                     (write-byte #x41 out-port)
+                     (leb128-write-signed (wnumber->number n) out-port)))))
             ((i64.const (and (? wnumber?) ?n))
              (write-byte #x42 out-port)
              (leb128-write-signed (wnumber->number n) out-port))
@@ -986,10 +992,17 @@
       (write-section #x0D tagp out-port ntags)
       (write-section #x06 globalp out-port ndefglobals)
       (write-section #x07 exportp out-port nexports)
-      (write-section #x0A codep out-port ncodes)))
+      (unless (= 0 ndata)
+        (write-byte #x0C out-port)
+        (write-string
+         (call-with-output-string
+          (lambda (p) (leb128-write-unsigned ndata p)))
+         out-port))
+      (write-section #x0A codep out-port ncodes)
+      (write-section #x0B datap out-port ndata)))
 
 (define (main argv)
-   (call-with-input-file (cadr argv)
+   (call-with-input-file (caddr argv) ; for the -all argument, quick hack
      (lambda (ip)
         (call-with-output-file "out.wasm"
            (lambda (op)
