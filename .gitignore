@@ -2,3 +2,4 @@
 as
 opt
 *.escm
+*.wasm

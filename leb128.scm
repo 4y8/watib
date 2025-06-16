@@ -2,12 +2,6 @@
    (export (leb128-write-signed n out-port)
            (leb128-write-unsigned n out-port)))
 
-(define (number->byte b)
-   (cond
-    ((elong? b) (elong->fixnum b))
-    ((bignum? b) (bignum->fixnum b))
-    (#t b)))
-
 (define (new-write-byte b out-port)
    (cond ((elong? b)
           (write-byte (elong->fixnum b) out-port))
