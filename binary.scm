@@ -34,6 +34,16 @@
 (read-table *type-abbreviations* "type-abbreviations.sch")
 
 (define wasm-as-compat #t)
+(define keep-going #f)
+(define error-encountered? #f)
+(define output-file "a.out.wasm")
+
+(define (report fun s obj)
+   (if keep-going
+       (begin
+          (set! error-encountered? #t)
+          (warning fun s obj))
+       (error fun s obj)))
 
 (define (valtype-symbol? s)
    (and (symbol? s) (hashtable-contains? *valtype-symbols* s)))
@@ -196,7 +206,7 @@
       ((? symbol?)
        (if (hashtable-contains? typeidxs t)
            (leb128-write-signed (hashtable-get typeidxs t) out-port)
-           (error "write-valtype" "unknown type" t)))
+           (report "write-valtype" "unknown type" t)))
       ((? wnumber?)
        (leb128-write-signed (wnumber->number t) out-port))
       ((ref ?t)
@@ -286,7 +296,7 @@
       (cond ((and (symbol? x) (hashtable-contains? ,table x))
              (leb128-write-unsigned (hashtable-get ,table x) out-port))
            ((number? x) (leb128-write-unsigned x out-port))
-           (#t (error ,name ,(string-append "unknown " name) x)))))
+           (#t (report ,name ,(string-append "unknown " name) x)))))
 
 (define-globalidx "func" funcidxs)
 (define-globalidx "global" globalidxs)
@@ -302,12 +312,12 @@
           (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
                  (hashtable-get typeidxs t))
                 ((number? t) t)
-                (#t (error "typeidx" "unknown type" t)))))
+                (#t (report "typeidx" "unknown type" t) 0))))
       (leb128-write-unsigned idx out-port)
       (set! last-type idx)))
 
 (define (index x l i)
-   (cond ((null? l) (error "index" "unknown identifier" x))
+   (cond ((null? l) (report "index" "unknown identifier" x) 0)
          ((equal? (car l) x) i)
          (#t (index x (cdr l) (+ 1 i)))))
 
@@ -385,7 +395,7 @@
              (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
                     (hashtable-get typeidxs t))
                    ((number? t) t)
-                   (#t (error "typeidx" "unknown type" t))))
+                   (#t (report "typeidx" "unknown type" t) 0)))
        (begin
          (leb128-write-unsigned 2 out-port)
           (typeidx locals labls t out-port))))
@@ -406,7 +416,7 @@
    (let ((idx (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
                     (hashtable-get typeidxs t))
                    ((number? t) t)
-                   (#t (error "typeidx" "unknown type" t)))))
+                   (#t (report "typeidx" "unknown type" t) 0))))
       (if wasm-as-compat
           (begin
              (match-case (hashtable-get arraytypes idx)
@@ -457,7 +467,7 @@
          (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
                 (hashtable-get typeidxs t))
                ((number? t) t)
-               (#t (error "typeidx" "unknown type" t))))
+               (#t (report "typeidx" "unknown type" t))))
 
       (define (get-typeidx! t)
          (let ((h (hashtable-get defined-types t)))
@@ -566,7 +576,7 @@
             ((data . ?-)
              (set! ndata (+ 1 ndata))
              (list m))
-            (else (error "update-table!" "unknown declaration" m))))
+            (else (report "update-table!" "unknown declaration" m))))
 
       ;; returns an id for the typeuse, a list of names for the parameters and
       ;; the rest of the program
@@ -737,7 +747,7 @@
                    (write-byte #x0B out-port))))
             ((try_table . ?rst)
              (go `(try_table ,(fresh-var) ,@rst)))
-            (else (error "write-instruction" "unknown instruction" i)))))
+            (else (report "write-instruction" "unknown instruction" i)))))
 
       (define (write-func rst)
         (multiple-value-bind (id par-nms tl) (write-typeuse! rst othertypes)
@@ -807,36 +817,48 @@
       (let ((desuggared-mods (map update-tables! (cddr m))))
          (for-each (lambda (l) (for-each out-mod l)) desuggared-mods))
 
-      (display "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
-      (display (close-output-port othertypes) typep)
-      (write-section #x01 typep out-port nrecs)
-      (write-section #x02 importp out-port nimports)
-      (write-section #x03 funcp out-port ncodes)
-      (write-section #x05 memp out-port nmems)
-      (write-section #x0D tagp out-port ntags)
-      (write-section #x06 globalp out-port ndefglobals)
-      (write-section #x07 exportp out-port nexports)
-      (unless (or (null? funcrefs) (not wasm-as-compat))
-         (write-byte #x09 out-port)
-         (write-string
-          (call-with-output-string
+      (unless error-encountered?
+         (display "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
+         (display (close-output-port othertypes) typep)
+         (write-section #x01 typep out-port nrecs)
+         (write-section #x02 importp out-port nimports)
+         (write-section #x03 funcp out-port ncodes)
+         (write-section #x05 memp out-port nmems)
+         (write-section #x0D tagp out-port ntags)
+         (write-section #x06 globalp out-port ndefglobals)
+         (write-section #x07 exportp out-port nexports)
+         (unless (or (null? funcrefs) (not wasm-as-compat))
+           (write-byte #x09 out-port)
+           (write-string
+            (call-with-output-string
              (lambda (p)
-                (leb128-write-unsigned 1 p)
-                (leb128-write-unsigned 3 p)
-                (write-byte #x00 p)
-                (write-vec funcrefs leb128-write-unsigned p))) out-port))
-      (unless (= 0 ndata)
-         (write-byte #x0C out-port)
-         (write-string
-          (call-with-output-string
+               (leb128-write-unsigned 1 p)
+               (leb128-write-unsigned 3 p)
+               (write-byte #x00 p)
+               (write-vec funcrefs leb128-write-unsigned p))) out-port))
+         (unless (= 0 ndata)
+           (write-byte #x0C out-port)
+           (write-string
+            (call-with-output-string
              (lambda (p) (leb128-write-unsigned ndata p)))
-          out-port))
-      (write-section #x0A codep out-port ncodes)
-      (write-section #x0B datap out-port ndata)))
+            out-port))
+         (write-section #x0A codep out-port ncodes)
+         (write-section #x0B datap out-port ndata))))
 
 (define (main argv)
-   (call-with-input-file (caddr argv) ; for the -all argument, quick hack
+   (define input-file #f)
+   (args-parse (cdr argv)
+      (("-o" ?file (help "The output file"))
+       (set! output-file file))
+      (("-all") #f)
+      (("-k") (set! keep-going #t))
+      (("--wasm-as-compat") (set! wasm-as-compat #t))
+      (else
+       (set! input-file else)))
+   (call-with-input-file input-file
      (lambda (ip)
-        (call-with-output-file "out.wasm"
+        (call-with-output-file output-file
            (lambda (op)
-              (write-module (read ip) op))))))
+              (write-module (read ip) op)))))
+   (if error-encountered?
+       (exit 1)))
