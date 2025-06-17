@@ -19,47 +19,21 @@
 
 (define (fresh-var) (gensym "__bigloo_wasm_dummy_id_"))
 
-(define *valtype-symbols* (make-hashtable))
+(define-macro (read-table name f)
+   (call-with-input-file f
+      (lambda (p)
+         `(define ,name
+             (let ((h (make-hashtable)))
+                (for-each
+                 (match-lambda
+                   ((?sym . ?cont) (hashtable-put! h sym cont)))
+                 ,(read p))
+                h)))))
+
+(read-table *valtype-symbols* "valtype-symbols.sch")
+(read-table *type-abbreviations* "type-abbreviations.sch")
 
 (define wasm-as-compat #t)
-
-(for-each (match-lambda ((?sym . ?code)
-                         (hashtable-put! *valtype-symbols* sym code)))
-          '((i32 . #x7F)
-            (i64 . #x7E)
-            (f32 . #x7D)
-            (f64 . #x7C)
-            (v128 . #x7B)
-            ; these two are not valtypes but we do not validate
-            (i8 . #x78)
-            (i16 . #x77)
-            (nofunc . #x73)
-            (noextern . #x72)
-            (none . #x71)
-            (func . #x70)
-            (exn . #x69)
-            (extern . #x6F)
-            (any . #x6E)
-            (eq . #x6D)
-            (i31 . #x6C)
-            (struct . #x6B)
-            (array . #x6A)))
-
-(define *type-abbreviations* (make-hashtable))
-
-(for-each (match-lambda ((?sym . ?code)
-                         (hashtable-put! *type-abbreviations* sym code)))
-          '((anyref . (ref null any))
-            (eqref  . (ref null eq))
-            (i31ref . (ref null i31))
-            (structref . (ref null struct))
-            (arrayref . (ref null array))
-            (funcref . (ref null func))
-            (exnref . (ref null exn))
-            (externref . (ref null extern))
-            (nullref . (ref null none))
-            (nullfuncref . (ref null nofunc))
-            (nullexternref . (reff null noextern))))
 
 (define (valtype-symbol? s)
    (and (symbol? s) (hashtable-contains? *valtype-symbols* s)))
@@ -453,21 +427,11 @@
                    funcrefs)))
    (funcidx locals labls f out-port))
 
-(define-macro (read-opcodes f)
-   (call-with-input-file f
-      (lambda (p)
-         `(define *opcodes*
-             (let ((h (make-hashtable)))
-                (for-each
-                 (match-lambda
-                   ((?sym . ?cont) (hashtable-put! h sym cont)))
-                 ,(read p))
-                h)))))
-
-(read-opcodes "opcodes.sch")
+(read-table *opcodes* "opcodes.sch")
 
 (define (write-module m out-port)
    (let ((typep (open-output-string))
+         (othertypes (open-output-string))
          (importp (open-output-string))
          (funcp (open-output-string))
          (exportp (open-output-string))
@@ -606,7 +570,7 @@
 
       ;; returns an id for the typeuse, a list of names for the parameters and
       ;; the rest of the program
-      (define (write-typeuse! tu)
+      (define (write-typeuse! tu out-port)
          (match-case tu
             ; to validate we should check that the eventual params/results are
             ; correct, when no params/results are given, we should generate
@@ -622,14 +586,14 @@
                        (old-ntypes ntypes)
                        (id (get-typeidx! t)))
                    (unless (= old-ntypes ntypes) ; has t already been defined ?
-                       (write-comptype t typep))
+                       (write-comptype t out-port))
                    (values id n tl))))))
 
       (define (write-import-desc! d)
          ; todo : tag memory table - not used in bigloo
          (match-case d
             ((or (func (? symbol?) . ?tu) (func . ?tu))
-             (multiple-value-bind (id - -) (write-typeuse! tu)
+             (multiple-value-bind (id - -) (write-typeuse! tu othertypes)
                 (write-byte #x00 importp)
                 (leb128-write-unsigned id importp)))
             ((or (global (? symbol?) ?gt) (global ?gt))
@@ -693,7 +657,7 @@
                              (id (get-typeidx! t)))
                          ; has t already been defined ?
                          (unless (= old-ntypes ntypes)
-                            (write-comptype t typep))
+                            (write-comptype t othertypes))
                          (leb128-write-signed id op)))))))
 
          (if (hashtable-contains? *opcodes* (car i))
@@ -734,7 +698,7 @@
                 (let ((bt (compile-blocktype! p r)))
                    (for-each
                     (lambda (b)
-                       (write-if-branch! (null? r) (cons label labls) bt b))
+                       (write-if-branch! (not (null? r)) (cons label labls) bt b))
                     tl)
                    (write-byte #x0B out-port))))
             ((if . ?rst)
@@ -775,10 +739,38 @@
              (go `(try_table ,(fresh-var) ,@rst)))
             (else (error "write-instruction" "unknown instruction" i)))))
 
-      (define (out-mod-pre m)
-         (match-case m
-            ((or (type . ?-) (rec . ?-))
-             (write-rectype typeidxs m typep))))
+      (define (write-func rst)
+        (multiple-value-bind (id par-nms tl) (write-typeuse! rst othertypes)
+           (multiple-value-bind (loc-nms loc-tys body) (get-names/locals/tl tl)
+              (leb128-write-unsigned id funcp)
+              ; we are wasting space on local declaration, as two i32 variables
+              ; will be declared as one i32 local twice (that's what indicates
+              ; the write-byte 1), instead of being a single declaration of two
+              ; i32 locals
+              (let* ((loc-decl
+                      (call-with-output-string
+                       (lambda (p)
+                         (write-vec loc-tys
+                                    (lambda (t p) (write-byte #x01 p)
+                                            (write-valtype t p)) p))))
+                     (code
+                      (call-with-output-string
+                       (lambda (p)
+                         (for-each
+                          (lambda (i)
+                             (new-write-instruction! (append par-nms loc-nms)
+                                                     '() i p))
+                          body)
+                         ;;;;; quick hack
+                         (if wasm-as-compat
+                             (multiple-value-bind (- - r -)
+                                (get-names/params/results/tl rst)
+                                (if (and (unreachable-body-end body)
+                                         (not (null? r)))
+                                    (write-byte #x00 p))))
+                         (write-byte #x0B p))))
+                     (cont (string-append loc-decl code)))
+                (write-string cont codep)))))
 
       (define (out-mod m)
          (match-case m
@@ -789,41 +781,9 @@
             ((export (and ?nm (? string?)) ?d)
              (write-string nm exportp)
              (write-export-desc d))
-            ((or (type . ?-) (rec . ?-)) #f)
-            ;; todo : rewrite, maybe put in a function aside
+            ((or (type . ?-) (rec . ?-)) (write-rectype typeidxs m typep))
             ((func (? symbol?) . ?rst)
-             (multiple-value-bind (id par-nms tl) (write-typeuse! rst)
-                (multiple-value-bind (loc-nms loc-tys body)
-                                     (get-names/locals/tl tl)
-                   (leb128-write-unsigned id funcp)
-                   ; we are wasting space on local declaration, as two i32
-                   ; variables will be declared as one i32 local twice (that's
-                   ; what indicates the write-byte 1), instead of being a single
-                   ; declaration of two i32 locals
-                   (let* ((loc-decl
-                           (call-with-output-string
-                              (lambda (p)
-                                 (write-vec loc-tys
-                                    (lambda (t p)
-                                       (write-byte #x01 p)
-                                       (write-valtype t p)) p))))
-                          (code
-                           (call-with-output-string
-                              (lambda (p)
-                                 (for-each
-                                  (lambda (i)
-                                     (new-write-instruction!
-                                      (append par-nms loc-nms) '() i p))
-                                   body)
-                                 ;;;;; quick hack
-                                 (multiple-value-bind
-                                    (- - r -) (get-names/params/results/tl rst)
-                                    (if (and (unreachable-body-end body)
-                                             (not (null? r)))
-                                        (write-byte #x00 p)))
-                                 (write-byte #x0B p))))
-                          (cont (string-append loc-decl code)))
-                      (write-string cont codep)))))
+             (write-func rst))
             ((global (? symbol?) ?gt . ?expr)
              (write-globaltype gt globalp)
              (for-each (lambda (i) (new-write-instruction! '() '() i globalp))
@@ -840,16 +800,15 @@
              (leb128-write-unsigned 1 datap)
              (write-string (apply string-append d) datap))
             ((tag . ?tu)
-             (multiple-value-bind (id - -) (write-typeuse! tu)
+             (multiple-value-bind (id - -) (write-typeuse! tu othertypes)
                 (write-byte #x00 tagp)
                 (leb128-write-unsigned id tagp)))))
 
-
       (let ((desuggared-mods (map update-tables! (cddr m))))
-         (for-each (lambda (l) (for-each out-mod-pre l)) desuggared-mods)
          (for-each (lambda (l) (for-each out-mod l)) desuggared-mods))
 
       (display "\x00asm\x01\x00\x00\x00" out-port) ; magic and version
+      (display (close-output-port othertypes) typep)
       (write-section #x01 typep out-port nrecs)
       (write-section #x02 importp out-port nimports)
       (write-section #x03 funcp out-port ncodes)

@@ -7,7 +7,7 @@ as: binary.o leb128.o
 	bigloo binary.o leb128.o -o as
 
 %.o : %.scm
-	bigloo -c $< -o $@ -O2 -g
+	bigloo -c $< -o $@ -O2
 
 clean:
 	rm -f *.o
