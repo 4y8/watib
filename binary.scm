@@ -13,9 +13,15 @@
 (define dataidxs (make-hashtable))
 (define fieldidxs (make-hashtable))
 
+(define fieldtypes (make-hashtable))
+(define arraytypes (make-hashtable))
+(define funcrefs '())
+
 (define (fresh-var) (gensym "__bigloo_wasm_dummy_id_"))
 
 (define *valtype-symbols* (make-hashtable))
+
+(define wasm-as-compat #t)
 
 (for-each (match-lambda ((?sym . ?code)
                          (hashtable-put! *valtype-symbols* sym code)))
@@ -183,7 +189,6 @@
        (multiple-value-bind (- p r -)
           (get-names/params/results/tl rst)
           `(func (param ,@p) (result ,@r))))
-     ; ((struct . ?fds) `(struct (field ,@(get-fields fds))))
       (else t)))
 
 (define (remove-names-subtype st)
@@ -218,6 +223,8 @@
        (if (hashtable-contains? typeidxs t)
            (leb128-write-signed (hashtable-get typeidxs t) out-port)
            (error "write-valtype" "unknown type" t)))
+      ((? wnumber?)
+       (leb128-write-signed (wnumber->number t) out-port))
       ((ref ?t)
        (write-byte #x64 out-port)
        (write-valtype t out-port))
@@ -319,10 +326,10 @@
 (define (typeidx - - t out-port)
    (let ((idx
           (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
-                (hashtable-get typeidxs t))
+                 (hashtable-get typeidxs t))
                 ((number? t) t)
                 (#t (error "typeidx" "unknown type" t)))))
-      (leb128-write-unsigned t out-port)
+      (leb128-write-unsigned idx out-port)
       (set! last-type idx)))
 
 (define (index x l i)
@@ -330,36 +337,36 @@
          ((equal? (car l) x) i)
          (#t (index x (cdr l) (+ 1 i)))))
 
-(define (fieldidx - - f out-port)
+(define (fieldidx locals labls f out-port)
    (if (number? f)
        (leb128-write-unsigned f out-port)
        (leb128-write-unsigned
-        (index f (hashtable-get fieldidxs (last-type)) 0) out-port)))
+        (index f (hashtable-get fieldidxs last-type) 0) out-port)))
 
-(define (labelidx - labls lab out-port)
+(define (labelidx locals labls lab out-port)
    (if (number? lab)
        (leb128-write-unsigned lab out-port)
        (leb128-write-unsigned (index lab labls 0) out-port)))
 
-(define (localidx locals - v out-port)
+(define (localidx locals labls v out-port)
    (if (number? v)
       (leb128-write-unsigned v out-port)
       (leb128-write-unsigned (index v locals 0) out-port)))
 
-(define (heaptype - - ht out-port)
+(define (heaptype locals labls ht out-port)
    (write-valtype ht out-port))
 
-(define (i32 - - n out-port)
+(define (i32 locals labls n out-port)
    (let ((n (wnumber->number n)))
      (if (> n 2147483647)
          (begin (print "quick hack")
                 (leb128-write-signed (- n (* 2 2147483648)) out-port))
          (leb128-write-signed (wnumber->number n) out-port))))
 
-(define (i64 - - n out-port)
+(define (i64 locals labls n out-port)
    (leb128-write-signed (wnumber->number n) out-port))
 
-(define (f32 - - n out-port)
+(define (f32 locals labls n out-port)
    (let* ((m (wnumber->number n))
           (s (if (fixnum? m)
                  (float->ieee-string (fixnum->flonum m))
@@ -368,19 +375,19 @@
          ((< i 0))
        (write-byte (char->integer (string-ref s i)) out-port))))
 
-(define (f64 - - n out-port)
+(define (f64 locals labls n out-port)
    (let* ((m (wnumber->number n))
           (s (if (fixnum? m)
                  (double->ieee-string (fixnum->flonum m))
                  (double->ieee-string m))))
-     (do ((i 7 (- i 1)))
-         ((< i 0))
-       (write-byte (char->integer (string-ref s i)) out-port))))
+      (do ((i 7 (- i 1)))
+          ((< i 0))
+        (write-byte (char->integer (string-ref s i)) out-port))))
 
-(define (u32 - - n out-port)
+(define (u32 locals labls n out-port)
    (leb128-write-unsigned n out-port))
 
-(define (ref.test-heaptype - - t out-port)
+(define (ref.test-heaptype locals labls t out-port)
    (match-case t
       ((ref ?ht)
        (leb128-write-unsigned 20 out-port)
@@ -389,7 +396,7 @@
        (leb128-write-unsigned 21 out-port)
        (write-valtype ht out-port))))
 
-(define (ref.cast-heaptype - - t out-port)
+(define (ref.cast-heaptype locals labls t out-port)
    (match-case t
       ((ref ?ht)
        (leb128-write-unsigned 22 out-port)
@@ -398,6 +405,54 @@
        (leb128-write-unsigned 23 out-port)
        (write-valtype ht out-port))))
 
+(define (struct.get-typeidx locals labls t out-port)
+   (if wasm-as-compat
+       (set! last-type
+             (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
+                    (hashtable-get typeidxs t))
+                   ((number? t) t)
+                   (#t (error "typeidx" "unknown type" t))))
+       (begin
+         (leb128-write-unsigned 2 out-port)
+          (typeidx locals labls t out-port))))
+
+(define (struct.get-fieldidx locals labls f out-port)
+   (if wasm-as-compat
+       (let ((idx (if (number? f)
+                      f
+                      (index f (hashtable-get fieldidxs last-type) 0))))
+          (match-case (list-ref (hashtable-get fieldtypes last-type) idx)
+             ((or i8 i16) (leb128-write-unsigned 4 out-port))
+             (else (leb128-write-unsigned 2 out-port)))
+          (leb128-write-unsigned last-type out-port)
+          (leb128-write-unsigned idx out-port))
+       (fieldidx locals labls f out-port)))
+
+(define (array.get-typeidx locals labls t out-port)
+   (let ((idx (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
+                    (hashtable-get typeidxs t))
+                   ((number? t) t)
+                   (#t (error "typeidx" "unknown type" t)))))
+      (if wasm-as-compat
+          (begin
+             (match-case (hashtable-get arraytypes idx)
+                ((or i8 i16 (mut i8) (mut i16))
+                 (leb128-write-unsigned 13 out-port))
+                (else (leb128-write-unsigned 11 out-port)))
+             (leb128-write-unsigned idx out-port))
+          (begin
+             (leb128-write-unsigned 11 out-port)
+             (typeidx locals labls t out-port)))))
+
+(define (ref.func-funcidx locals labls f out-port)
+   (if wasm-as-compat
+       (set! funcrefs
+             (cons (if (and (symbol? f) (hashtable-contains? funcidxs f))
+                       (hashtable-get funcidxs f)
+                       f)
+                   funcrefs)))
+   (funcidx locals labls f out-port))
+
 (define-macro (read-opcodes f)
    (call-with-input-file f
       (lambda (p)
@@ -405,7 +460,7 @@
              (let ((h (make-hashtable)))
                 (for-each
                  (match-lambda
-                   ((?sym . ?cont) (hashtable-put! *opcodes* sym cont)))
+                   ((?sym . ?cont) (hashtable-put! h sym cont)))
                  ,(read p))
                 h)))))
 
@@ -421,9 +476,6 @@
          (memp (open-output-string))
          (tagp (open-output-string))
          (datap (open-output-string))
-         (fieldtypes (make-hashtable))
-         (arraytypes (make-hashtable))
-         (funcrefs '())
          (defined-types (create-hashtable :eqtest equal? :hash hack-hash))
          (ntypes 0)
          (nrecs 0)
@@ -489,7 +541,7 @@
                    ((or (sub final ??- (array ?t))
                         (sub ??- (array ?t))
                         (array ?t))
-                    (hashtable-put! arraytypes name t)))
+                    (hashtable-put! arraytypes id t)))
                 (if (= old-ntypes ntypes) ; has t already been defined ?
                     '()
                     (list `(type ,name ,t)))))
@@ -602,7 +654,7 @@
          (if (=fx 0 k)
              (values '() l)
              (multiple-value-bind (tk drp) (take/drop (cdr l) (-fx k 1))
-                                  (values (cons tk (car l)) drp))))
+                                  (values (cons (car l) tk) drp))))
 
       (define (new-write-instruction! locals labls i out-port)
          (define (go i)
@@ -618,15 +670,13 @@
                 (begin (write-byte #x04 out-port)
                        (display bt out-port)
                        (for-each (go-new-labels labls) body)
-                       ;(if (and ret? (unreachable-body-end body))
-                       ;    (write-byte #x00 out-port))
-                       ))
+                       (if (and wasm-as-compat ret? (unreachable-body-end body))
+                           (write-byte #x00 out-port))))
                (((kwote else) . ?body)
                 (begin (write-byte #x05 out-port)
                        (for-each (go-new-labels labls) body)
-                       ;(if (and ret? (unreachable-body-end body))
-                       ;    (write-byte #x00 out-port))
-                       ))
+                       (if (and wasm-as-compat ret? (unreachable-body-end body))
+                           (write-byte #x00 out-port))))
                (else (go b))))
 
          (define (compile-blocktype! p r)
@@ -652,7 +702,7 @@
                 (bytes (cdr t)))
             (multiple-value-bind (vals tl) (take/drop (cdr i) (length args))
                (for-each go tl)
-               (for-each (lambda (b) (display b out-port)) bytes)
+               (display bytes out-port)
                (for-each
                 (lambda (f v)
                     (f locals labls v out-port)) args vals)))
@@ -662,7 +712,8 @@
                 (write-byte #x02 out-port)
                 (display (compile-blocktype! p r) out-port)
                 (for-each (go-new-labels (cons label labls)) tl)
-                (if (and (not (null? r)) (unreachable-body-end tl))
+                (if (and wasm-as-compat (not (null? r))
+                         (unreachable-body-end tl))
                     (write-byte #x00 out-port))
                 (write-byte #x0B out-port)))
             ((block . ?rst)
@@ -672,8 +723,9 @@
                 (write-byte #x03 out-port)
                 (display (compile-blocktype! p r) out-port)
                 (for-each (go-new-labels (cons label labls)) tl)
-                ;(if (and (not (null? r)) (unreachable-body-end tl))
-                ;    (write-byte #x00 out-port))
+                (if (and wasm-as-compat (not (null? r))
+                         (unreachable-body-end tl))
+                    (write-byte #x00 out-port))
                 (write-byte #x0B out-port)))
             ((loop . ?rst)
              (go `(loop ,(fresh-var) ,@rst)))
@@ -681,7 +733,9 @@
              (multiple-value-bind (- p r tl) (get-names/params/results/tl rst)
                 (let ((bt (compile-blocktype! p r)))
                    (for-each
-                    (lambda (b) (write-if-branch! #t (cons label labls) bt b)) tl)
+                    (lambda (b)
+                       (write-if-branch! (null? r) (cons label labls) bt b))
+                    tl)
                    (write-byte #x0B out-port))))
             ((if . ?rst)
              (go `(if ,(fresh-var) ,@rst)))
@@ -713,9 +767,9 @@
                 (multiple-value-bind (c tl) (get-catches/tl tl)
                    (write-vec c write-catch out-port)
                    (for-each (go-new-labels (cons label labls)) tl)
-                   ;;(if (and (not (null? r)) (unreachable-body-end tl))
-                       ;;(write-byte #x00 out-port))
-                   ;;(write-byte #x00 out-port)
+                   (if (and wasm-as-compat (not (null? r))
+                            (unreachable-body-end tl))
+                       (write-byte #x00 out-port))
                    (write-byte #x0B out-port))))
             ((try_table . ?rst)
              (go `(try_table ,(fresh-var) ,@rst)))
@@ -772,7 +826,8 @@
                       (write-string cont codep)))))
             ((global (? symbol?) ?gt . ?expr)
              (write-globaltype gt globalp)
-             (for-each (lambda (i) (new-write-instruction! '() '() i globalp)) expr)
+             (for-each (lambda (i) (new-write-instruction! '() '() i globalp))
+                       expr)
              (write-byte #x0B globalp))
             ((memory (and (? number?) ?n))
              (write-byte #x00 memp)
@@ -802,7 +857,7 @@
       (write-section #x0D tagp out-port ntags)
       (write-section #x06 globalp out-port ndefglobals)
       (write-section #x07 exportp out-port nexports)
-      (unless (null? funcrefs)
+      (unless (or (null? funcrefs) (not wasm-as-compat))
          (write-byte #x09 out-port)
          (write-string
           (call-with-output-string

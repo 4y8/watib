@@ -155,7 +155,8 @@
 
   (ref.null           . ((,heaptype) . "\xD0"))
   (ref.is_null        . (() . "\xD1"))
-  (ref.func           . ((,funcidx) . "\xD2"))
+  ; needed for the automatic addition to elem
+  (ref.func           . ((,ref.func-funcidx) . "\xD2"))
   (ref.eq             . (() . "\xD3"))
   (ref.as_non_null    . (() . "\xD4"))
   (struct.new         . ((,typeidx) . "\xFB\x00"))
@@ -175,9 +176,13 @@
   (array.len          . (() . "\xFB\x0F"))
   (array.fill         . ((,typeidx) . "\xFB\x10"))
   (array.copy         . ((,typeidx ,typeidx) . "\xFB\x11"))
-                                        ; the opcode depends on the argument
+  ; the opcode depends on the argument
   (ref.test           . ((,ref.test-heaptype) . "\xFB"))
   (ref.cast           . ((,ref.cast-heaptype) . "\xFB"))
+  ; we need that to allow the use of get on i8/i16 like wasm-as
+  (array.get           . ((,array.get-typeidx) . "\xFB"))
+  (struct.get          . ((,struct.get-typeidx ,struct.get-fieldidx) . "\xFB"))
+
   (ref.i31            . (() . "\xFB\x1C"))
   (i31.get_s          . (() . "\xFB\x1D"))
   (i31.get_u          . (() . "\xFB\x1E"))
