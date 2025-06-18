@@ -1,6 +1,11 @@
 (module validate
+   (library srfi1)
    (include "read-table.sch")
    (main main))
+
+;;; we force everywhere the number of type indices after sub final? to be one;
+;;; even though forms with more than one type are syntactically correct, they
+;;; are never valid
 
 (define (report f msg obj)
    (if (epair? obj)
@@ -10,16 +15,37 @@
 (read-table *numtypes* "numtypes.sch")
 (define (numtype? t)
    (hashtable-contains? *numtypes* t))
+(read-table *vectypes* "vectypes.sch")
+(define (vectype? t)
+   (hashtable-contains? *vectypes* t))
+(read-table *packedtypes* "packedtypes.sch")
+(define (packedtype? t)
+   (hashtable-contains? *packedtypes* t))
+(define (reftype? t)
+   (and (pair? t) (equal? 'ref (car t))))
+(define (valtype? t)
+   (or (reftype? t) (numtype? t) (vectype? t)))
 
+(define (ident? x)
+   (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0))))
+
+(define (idx? x)
+   (or (ident? x)
+       (number? x)))
+
+;; section 3.1.6
 (define-struct env
    (ntypes 0)
    (types-table (make-hashtable)) ; to access with the names
+   ; maps type indices to names, for error reporting purposes
+   (types-names (make-vector 0))
    (types-vector (make-vector 0)) ; to access with the index
-   )
 
-(define (idx? x)
-   (or (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0)))
-       (number? x)))
+   (locals-names '())
+   ; relevant information can only be accessed by index ; find the index of a
+   ; name first to access by name
+   (locals-init (make-vector 0))
+   (locals-types (make-vector 0)))
 
 (define (get-type env t)
    (cond
@@ -27,26 +53,111 @@
      (if (< t (env-ntypes env))
          (vector-ref (env-types-vector env) t)
          (raise `(typeidx-out-of-range ,(env-ntypes env) ,t))))
-    ((equal? #\$ (string-ref (symbol->string t) 0))
+    ((ident? t)
      (if (hashtable-contains? (env-types-table env) t)
          (hashtable-get (env-types-table env) t)
          (raise `(unknown-type ,t))))
     (#t (raise `(expected-type ,t)))))
 
-;; deftypes (rec subtypes*).i are represented as (deftype . (subtypes* . i))
+(define (local-ident-idx env l)
+   (define (index lst i)
+      (cond ((null? lst) (raise `(unknown-local ,l)))
+            ((equal? (car lst) l) i)
+            (#t (index (cdr lst) (+ 1 i)))))
+   (index (env-locals-names env) 0))
+
+(define (local-init! env l)
+   '())
+
+(define (local-init? env l)
+   (cond
+    ((number? l)
+     (if (< l (vector-length (env-locals-init env)))
+         (vector-ref (env-locals-init env) l)
+         (raise `(localidx-out-of-range ,(env-locals-init env) ,l))))
+    ((ident? l)
+     (vector-ref (env-locals-init env) (local-ident-idx env l)))
+    (#t `(expected-local ,l))))
+
+;; deftypes (rec subtypes*).i are represented as (deftype subtypes* i))
+;; (rec i) are represented as (rec i)
 (define (deftype? t)
    (and (pair? t) (equal? 'deftype (car t))))
 
+(define (rectype? t)
+   (and (pair? t) (equal? 'rec (car t))))
+
 (define (deftype-head t)
-   (match-case (list-ref (cadr t) (cddr t))
+   (match-case (list-ref (cadr t) (caddr t))
       ((or (sub final ?- (?hd . ?-))
            (sub final (?hd . ?-))
            (sub ?- (?hd . ?-))
            (sub (?hd . ?-)))
        hd)
       (else
-       (report "deftype-head" "internal error, unexpected deftype form" t))))
+       (raise `(expected-deftype t)))))
 
+;; we could do the equality check respecting all the structure but we can use
+;; our representations slopiness to do things shorter
+(define (eq-clos-ct? env t1 t2)
+   #f)
+(define (eq-clos-ht? env t1 t2)
+   #f)
+
+(define (structural-eq-clos-st? env t1 t2)
+   (match-case (cons t1 t2)
+      ((or ((sub final ?ht1 ?cts1) . (sub final ?ht2 ?cts2))
+           ((sub (and (not final) ?ht1) ?cts1) .
+            (sub (and (not final) ?ht2) ?cts2)))
+       (and (eq-clos-ht? env ht1 ht2)
+            (every (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2)))
+      ((or ((sub final ?cts1) . (sub final ?cts2)) ((sub ?cts1) . (sub ?cts2)))
+       (every (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2))
+      (else #f)))
+
+(define (eq-clos-st? env t1 t2)
+   (cond
+      ((symbol? t1) (equal? t1 t2))
+      ((idx? t1) (eq-clos-st? env (get-type env t1) t2))
+      ((idx? t2) (eq-clos-st? env t1 (get-type env t2)))
+      ; we suppose defined types are already closed, i.e. we have to put closed
+      ; types in the context, otherwise, we may have to close the whole context
+      ; each time we want to close a type
+      ((or (deftype? t1) (rectype? t1) (deftype? t2) (rectype? t2))
+       (equal? (cdr t1) (cdr t2)))
+      ((and (pair? t1) (pair? t2))
+       (every (lambda (t1 t2) eq-clos-st? env t1 t2) t1 t2))
+      (#t #f)))
+
+(define (eq-clos-dt? env t1 t2)
+   (match-case (cons t1 t2)
+      (((deftype ?sts1 ?i) . (deftype ?sts2 ?i))
+       (every (lambda (st1 st2) eq-clos-st? env st1 st2) sts1 sts2))
+      (else #f)))
+
+;; section 3.1.3
+
+;; we use the same slopiness as in eq-clos-st?
+(define (unroll-st sts st)
+   (cond ((or (symbol? st) (idx? st)) st)
+         ((and (rectype? st)) `(deftype ,sts ,(cadr st)))
+         ((pair? st) (map (lambda (st) (unroll-st sts st)) st))
+         (#t (report "unroll-subtype" "unexpected form" st))))
+
+(define (unroll-dt t)
+   (unroll-st (cadr t) (list-ref (cadr t) (caddr t))))
+
+;; subtyping relation return only a boolean, which is good if it is true, but in
+;; case of failure we might want a reason to explain it (kind of a constructive
+;; proof that not (t1 < t2), could thus be solved by writing a function not-<
+;; that returns #f in case t1 < t2 and a reason for why it is not the case
+;; otherwise)
+;;
+;; we could probably speed up the subtyping comparaisons by inserting eq?
+;; shortcuts at the write place, the official validation tool does it for
+;; defined types; we probably need benchmarks for that
+
+;; section 3.3.3
 (define (<ht= env t1 t2)
    (cond ((equal? t1 t2) #t)
          ((equal? t1 'bot) #t)
@@ -64,6 +175,161 @@
          ((equal? 'nofunc t1) (<ht= env t2 'func))
          ((equal? 'noextern t1) (<ht= env t2 'extern))
          (#t #f)))
+
+(define (nullable? rt)
+   (equal? (cadr rt) 'null))
+
+(define (reftype->heaptype rt)
+   (if (nullable? rt)
+       (caddr rt)
+       (cadr rt)))
+
+;; actually does redundant checks, could be expanded to avoid them
+;; section 3.3.4
+(define (<rt= env t1 t2)
+   (and (or (nullable? t2) (not (nullable? t1)))
+        (<ht= env (reftype->heaptype t1) (reftype->heaptype t2))))
+
+;; section 3.3.5
+(define (<vt= env t1 t2)
+   (or (equal? t1 'bot)
+       (and (numtype? t1) (numtype? t2) (equal? t1 t2))
+       (and (reftype? t1) (reftype? t2) (<rt= env t1 t2))))
+
+;; section 3.3.6
+(define (<res= env l1 l2)
+   (every (lambda (t1 t2) (<vt= env t1 t2)) l1 l2))
+
+;; instruction types [t1*] --->x* [t2*] are represented as (t1* t2* x*),
+;; where x is the index (as an integer of the variable)
+
+;; we do not need to prefix it with a special symbol (what we did for deftypes),
+;; because instruction types are not added as an option for another kind of type
+;; (i.e. there is no t ::= ... | instrtype in the spec)
+
+;; section 3.3.7
+(define (<it= env t1 t2)
+   (let* ((t11 (car t1))
+          (t12 (cadr t1))
+          (x1  (caddr t1))
+          (tt21 (car t2))
+          (tt22 (cadr t2))
+          (x2  (caddr t2))
+          (n11 (length t11))
+          (n12 (length t12))
+          (n21 (length tt21))
+          (n22 (length tt22)))
+      (and
+      ; bind some values and use split to avoid redundant computations ?
+       (and (equal? (- n21 n11) (- n22 n12))
+            (equal? (take tt21 (- n22 n12)) (take tt22 (- n22 n12))))
+       (<res= env (drop tt21 (- n22 n12)) t11)
+       (<res= env t12 (drop tt22 (- n22 n11)))
+       (every (lambda (x) (or (member x x1) (local-init? env x))) x2))))
+
+;; function types are represented like instruction types but without the locals
+
+;; section 3.3.8
+(define (<funct= env t1 t2)
+   (let ((t11 (car t1))
+         (t12 (cadr t1))
+         (t21 (car t2))
+         (t22 (cadr t2)))
+      (and
+       (<res= env t21 t11)
+       (<res= env t12 t22))))
+
+;; section 3.3.10
+(define (<fldt= env t1 t2)
+   (define (<st= t1 t2)
+     (or
+      (and (packedtype? t1) (equal? t1 t2))
+      (and (valtype? t1) (valtype? t2) (<vt= env t1 t2))))
+   (match-case (cons t1 t2)
+      (((const ?st1) . (const ?st2))
+       (<st= st1 st2))
+      (((var ?st1) . (var ?st2))
+       (and (<st= st1 st2) (<st= st2 st1)))
+      (else #f)))
+
+;; section 3.3.9
+(define (<ct= env t1 t2)
+   (match-case (cons t1 t2)
+      (((array ?fldt1) . (array ?fldt2))
+       (<fldt= env fldt1 fldt2))
+      (((func . ?funct1) . (func . ?funct2))
+       (<funct= env funct1 funct2))
+      (((struct . ?fldts1) . (struct . ?fldts2))
+       (let ((n1 (length fldts1))
+             (n2 (length fldts2)))
+          (and (<= n2 n1)
+               (every (lambda (fldt1 fldt2) (<fldt= env fldt1 fldt2))
+                      fldts1 fldts2))))
+      (else #f)))
+
+;; section 3.3.11
+(define (get-sub-heaptype st)
+   (match-case (cdr st)
+      ((or (final ?ht ?-)
+           ((and (not final) ?ht) ?-))
+       ht)
+      (else #f)))
+
+(define (<dt= env t1 t2)
+   (if (eq-clos-dt? env t1 t2)
+       #t
+       (let ((ht (get-sub-heaptype (unroll-dt t1))))
+          (and ht (<ht= env ht t2)))))
+
+;; section 3.3.12
+
+;; limits are represented as (min . max) when there is a max and (min . #f)
+;; otherwise
+(define (<lim= l1 l2)
+   (and (<= (car l2) (car l1))
+        (if (cdr l2)
+            (and (cdr l1) (<= (cdr l1) (cdr l2)))
+            #t)))
+
+;; section 3.3.13
+(define (<tt= env t1 t2)
+   (match-case (cons t1 t2)
+      (((at? l1? rt1?) . (at? l2? rt2?))
+       (and (<lim= l1 l2)
+            (<rt= env l1 l2)
+            (<rt= env l2 l1)))
+      (else #f)))
+
+;; section 3.3.14
+(define (<mt= t1 t2)
+   (match-case (cons t1 t2)
+      (((at? l1?) . (at? l2?))
+       (<lim= l1 l2))))
+
+;; section 3.3.15
+(define (<gt= env t1 t2)
+   ; when the underlying types are valtypes matching for fieldtypes and global
+   ; types are the same
+   (<fldt= env t1 t2))
+
+;; section 3.3.16
+(define (<tagt= env t1 t2)
+   (and (<dt= env t1 t2) (<dt= env t2 t1)))
+
+;; section 3.3.17
+(define (<et= env t1 t2)
+   (match-case (cons t1 t2)
+      (((func ?ft1) . (func ?ft2))
+       (<funct= env ft1 ft2))
+      (((table ?tt1) . (table ?tt2))
+       (<tt= env tt1 tt2))
+      (((mem ?mt1) . (mem ?mt2))
+       (<mt= env mt1 mt2))
+      (((global ?gt1) . (global ?gt2))
+       (<gt= env gt1 gt2))
+      (((tag ?tagt1) . (tag ?tagt2))
+       (<tagt= env tagt1 tagt2))
+      (else #f)))
 
 (define (main argv)
    (display argv))

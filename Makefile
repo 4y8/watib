@@ -9,7 +9,7 @@ as: binary.o leb128.o opcodes.sch
 val: validate.o type-abbreviations.sch numtypes.sch vectypes.sch
 
 %.o : %.scm
-	bigloo -c $< -o $@ -O2
+	bigloo -c $< -o $@ -O2 -unsafe
 
 clean:
 	rm -f *.o
