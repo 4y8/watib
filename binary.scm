@@ -1,6 +1,7 @@
 (module binary
    (library srfi1)
    (main main)
+   (include "read-table.sch")
    (import leb128))
 
 ;;; we currently miss table and elem - they are not used by bigloo
@@ -18,17 +19,6 @@
 (define funcrefs '())
 
 (define (fresh-var) (gensym "__bigloo_wasm_dummy_id_"))
-
-(define-macro (read-table name f)
-   (call-with-input-file f
-      (lambda (p)
-         `(define ,name
-             (let ((h (make-hashtable)))
-                (for-each
-                 (match-lambda
-                   ((?sym . ?cont) (hashtable-put! h sym cont)))
-                 ,(read p))
-                h)))))
 
 (read-table *valtype-symbols* "valtype-symbols.sch")
 (read-table *type-abbreviations* "type-abbreviations.sch")
@@ -848,15 +838,15 @@
 (define (main argv)
    (define input-file #f)
    (args-parse (cdr argv)
-      (("--help" "-h") (help "Display this help message")
+      ((("--help" "-h") (help "Display this help message"))
        (args-parse-usage #f))
       (("-o" ?file (help "Write output to file"))
        (set! output-file file))
       (("-all") #f)
-      (("-k") (help "Keep going when encoutering errors")
+      (("-k" (help "Keep going when encoutering errors"))
        (set! keep-going #t))
-      (("--wasm-as-compat")
-       (help "Assure compatibility with binaryen's wasm-as")
+      (("--wasm-as-compat"
+        (help "Assure compatibility with binaryen's wasm-as"))
        (set! wasm-as-compat #t))
       (else
        (set! input-file else)))
