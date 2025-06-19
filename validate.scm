@@ -21,6 +21,9 @@
 (read-table *packedtypes* "packedtypes.sch")
 (define (packedtype? t)
    (hashtable-contains? *packedtypes* t))
+(read-table *absheaptype* "absheaptypes.sch")
+(define (absheaptype? t)
+   (hashtable-contains? *absheaptype* t))
 (define (reftype? t)
    (and (pair? t) (equal? 'ref (car t))))
 (define (valtype? t)
@@ -57,7 +60,7 @@
      (if (hashtable-contains? (env-types-table env) t)
          (hashtable-get (env-types-table env) t)
          (raise `(unknown-type ,t))))
-    (#t (raise `(expected-type ,t)))))
+    (#t (raise `(expected-heaptype ,t)))))
 
 (define (local-ident-idx env l)
    (define (index lst i)
@@ -294,7 +297,7 @@
 ;; section 3.3.13
 (define (<tt= env t1 t2)
    (match-case (cons t1 t2)
-      (((at? l1? rt1?) . (at? l2? rt2?))
+      (((?at ?l1 ?rt1) . (?at ?l2 ?rt2))
        (and (<lim= l1 l2)
             (<rt= env l1 l2)
             (<rt= env l2 l1)))
@@ -303,7 +306,7 @@
 ;; section 3.3.14
 (define (<mt= t1 t2)
    (match-case (cons t1 t2)
-      (((at? l1?) . (at? l2?))
+      (((?at ?l1) . (?at ?l2))
        (<lim= l1 l2))))
 
 ;; section 3.3.15
@@ -324,12 +327,35 @@
       (((table ?tt1) . (table ?tt2))
        (<tt= env tt1 tt2))
       (((mem ?mt1) . (mem ?mt2))
-       (<mt= env mt1 mt2))
+       (<mt= mt1 mt2))
       (((global ?gt1) . (global ?gt2))
        (<gt= env gt1 gt2))
       (((tag ?tagt1) . (tag ?tagt2))
        (<tagt= env tagt1 tagt2))
       (else #f)))
+
+(define (valid-ht env t)
+   (unless (absheaptype? t)
+      ; will raise an exception if t is not a valid type index
+      (get-type env t)))
+
+(define (valid-rt env t)
+   (match-case t
+      ((or (ref ?ht) (ref null ?ht))
+       (with-handler
+          (match-lambda
+             ((expected-heaptype ?t) (raise `(expected-reftype ,t)))
+             (?e (raise e)))
+          (valid-ht env ht)))
+      (else (raise `(expected-reftype ,t)))))
+
+(define (valid-vt env t)
+   (unless (or (vectype? t) (numtype? t))
+      (with-handler
+          (match-lambda
+             ((expected-reftype ?t) (raise `(expected-valtype ,t)))
+             (?e (raise e)))
+          (valid-rt env t))))
 
 (define (main argv)
    (display argv))
