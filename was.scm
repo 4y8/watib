@@ -33,7 +33,13 @@
        (begin
           (set! error-encountered? #t)
           (warning fun s obj))
-       (error fun s obj)))
+       (if (epair? obj)
+       (match-case (cer obj)
+          ((at ?file ?line)
+           (error/location fun s obj file line))
+          (else
+           (error fun s obj)))
+       (error fun s obj))))
 
 (define (valtype-symbol? s)
    (and (symbol? s) (hashtable-contains? *valtype-symbols* s)))
@@ -812,6 +818,9 @@
                 (write-byte #x00 tagp)
                 (leb128-write-unsigned id tagp)))))
 
+      (unless (pair? m)
+     (error "was" "wrong module" m))
+
       (let ((desuggared-mods (map update-tables! (cddr m))))
          (for-each (lambda (l) (for-each out-mod l)) desuggared-mods))
 
@@ -863,6 +872,6 @@
          (lambda (ip)
             (call-with-output-file output-file
               (lambda (op)
-                (write-module (read ip) op))))))
+                (write-module (read ip #t) op))))))
    (if error-encountered?
        (exit 1)))
