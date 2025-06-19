@@ -787,7 +787,8 @@
              (write-string nm exportp)
              (write-export-desc d))
             ((elem declare func . ?lst)
-             (set! funcrefs (append lst funcrefs)))
+             (unless wasm-as-compat
+               (set! funcrefs (append lst funcrefs))))
             ((or (type . ?-) (rec . ?-)) (write-rectype typeidxs m typep))
             ((func (? symbol?) . ?rst)
              (write-func rst))
@@ -857,10 +858,11 @@
        (set! wasm-as-compat #t))
       (else
        (set! input-file else)))
-   (call-with-input-file input-file
-     (lambda (ip)
-        (call-with-output-file output-file
-           (lambda (op)
-              (write-module (read ip) op)))))
+   (if input-file
+       (call-with-input-file input-file
+         (lambda (ip)
+            (call-with-output-file output-file
+              (lambda (op)
+                (write-module (read ip) op))))))
    (if error-encountered?
        (exit 1)))
