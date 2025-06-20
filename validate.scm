@@ -13,21 +13,28 @@
        (error f msg obj)))
 
 (read-table *numtypes* "numtypes.sch")
-(define (numtype? t)
+(define (numtype?::bool t)
    (hashtable-contains? *numtypes* t))
 (read-table *vectypes* "vectypes.sch")
-(define (vectype? t)
+(define (vectype?::bool t)
    (hashtable-contains? *vectypes* t))
 (read-table *packedtypes* "packedtypes.sch")
-(define (packedtype? t)
+(define (packedtype?::bool t)
    (hashtable-contains? *packedtypes* t))
 (read-table *absheaptype* "absheaptypes.sch")
-(define (absheaptype? t)
+(define (absheaptype?::bool t)
    (hashtable-contains? *absheaptype* t))
-(define (reftype? t)
+(define (reftype?::bool t)
    (and (pair? t) (equal? 'ref (car t))))
-(define (valtype? t)
+(define (valtype?::bool t)
    (or (reftype? t) (numtype? t) (vectype? t)))
+
+(define (type-size::bint t)
+   (match-case t
+      (i8 8)
+      (i16 16)
+      (i32 32)
+      (i64 64)))
 
 (define (ident? x)
    (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0))))
@@ -50,7 +57,7 @@
    (locals-init (make-vector 0))
    (locals-types (make-vector 0)))
 
-(define (get-type-list env t)
+(define (get-type-list::pair env t)
    (cond
     ((number? t)
      (if (< t (env-ntypes env))
@@ -62,23 +69,23 @@
          (raise `(unknown-type ,t))))
     (#t (raise `(expected-heaptype ,t)))))
 
-(define (get-type env t)
+(define (get-type env::struct t)
    (car (get-type-list env t)))
 
-(define (get-type-index env t)
+(define (get-type-index::bint env t)
    (caddr (get-type-list env t)))
 
-(define (local-ident-idx env l)
+(define (local-ident-idx env::struct l)
    (define (index lst i)
       (cond ((null? lst) (raise `(unknown-local ,l)))
             ((equal? (car lst) l) i)
             (#t (index (cdr lst) (+ 1 i)))))
    (index (env-locals-names env) 0))
 
-(define (local-init! env l)
+(define (local-init! env::struct l)
    '())
 
-(define (local-init? env l)
+(define (local-init?::bool env::struct l)
    (cond
     ((number? l)
      (if (< l (vector-length (env-locals-init env)))
@@ -90,10 +97,10 @@
 
 ;; deftypes (rec subtypes*).i are represented as (deftype subtypes* i))
 ;; (rec i) are represented as (rec i)
-(define (deftype? t)
+(define (deftype?::bool t)
    (and (pair? t) (equal? 'deftype (car t))))
 
-(define (rectype? t)
+(define (rectype?::bool t)
    (and (pair? t) (equal? 'rec (car t))))
 
 (define (deftype-head t)
@@ -107,12 +114,12 @@
 
 ;; we could do the equality check respecting all the structure but we can use
 ;; our representations slopiness to do things shorter
-(define (eq-clos-ct? env t1 t2)
+(define (eq-clos-ct? env::struct t1 t2)
    #f)
-(define (eq-clos-ht? env t1 t2)
+(define (eq-clos-ht? env::struct t1 t2)
    #f)
 
-(define (structural-eq-clos-st? env t1 t2)
+(define (structural-eq-clos-st? env::struct t1 t2)
    (match-case (cons t1 t2)
       ((or ((sub final ?ht1 ?cts1) . (sub final ?ht2 ?cts2))
            ((sub (and (not final) ?ht1) ?cts1) .
@@ -124,7 +131,7 @@
       (else #f)))
 ;;;;;;;;;;
 
-(define (eq-clos-st? env t1 t2)
+(define (eq-clos-st?::bool env::struct t1 t2)
    (cond
       ((symbol? t1) (equal? t1 t2))
       ((idx? t1) (eq-clos-st? env (get-type env t1) t2))
@@ -138,7 +145,7 @@
        (every (lambda (t1 t2) eq-clos-st? env t1 t2) t1 t2))
       (#t #f)))
 
-(define (eq-clos-dt? env t1 t2)
+(define (eq-clos-dt?::bool env::struct t1 t2)
    (match-case (cons t1 t2)
       (((deftype ?sts1 ?i) . (deftype ?sts2 ?i))
        (every (lambda (st1 st2) eq-clos-st? env st1 st2) sts1 sts2))
@@ -167,7 +174,7 @@
 ;; defined types; we probably need benchmarks for that
 
 ;; section 3.3.3
-(define (<ht= env t1 t2)
+(define (<ht=::bool env::struct t1 t2)
    (cond ((equal? t1 t2) #t)
          ((equal? t1 'bot) #t)
          ((idx? t1) (<ht= env (get-type env t1) t2))
@@ -185,7 +192,7 @@
          ((equal? 'noextern t1) (<ht= env t2 'extern))
          (#t #f)))
 
-(define (nullable? rt)
+(define (nullable?::bool rt)
    (equal? (cadr rt) 'null))
 
 (define (reftype->heaptype rt)
@@ -195,18 +202,18 @@
 
 ;; actually does redundant checks, could be expanded to avoid them
 ;; section 3.3.4
-(define (<rt= env t1 t2)
+(define (<rt=::bool env::struct t1 t2)
    (and (or (nullable? t2) (not (nullable? t1)))
         (<ht= env (reftype->heaptype t1) (reftype->heaptype t2))))
 
 ;; section 3.3.5
-(define (<vt= env t1 t2)
+(define (<vt=::bool env::struct t1 t2)
    (or (equal? t1 'bot)
        (and (numtype? t1) (numtype? t2) (equal? t1 t2))
        (and (reftype? t1) (reftype? t2) (<rt= env t1 t2))))
 
 ;; section 3.3.6
-(define (<res= env l1 l2)
+(define (<res=::bool env l1 l2)
    (every (lambda (t1 t2) (<vt= env t1 t2)) l1 l2))
 
 ;; instruction types [t1*] --->x* [t2*] are represented as (t1* t2* x*),
@@ -217,7 +224,7 @@
 ;; (i.e. there is no t ::= ... | instrtype in the spec)
 
 ;; section 3.3.7
-(define (<it= env t1 t2)
+(define (<it=::bool env::struct t1 t2)
    (let* ((t11 (car t1))
           (t12 (cadr t1))
           (x1  (caddr t1))
@@ -239,7 +246,7 @@
 ;; function types are represented like instruction types but without the locals
 
 ;; section 3.3.8
-(define (<funct= env t1 t2)
+(define (<funct=::bool env::struct t1 t2)
    (let ((t11 (car t1))
          (t12 (cadr t1))
          (t21 (car t2))
@@ -249,8 +256,8 @@
        (<res= env t12 t22))))
 
 ;; section 3.3.10
-(define (<fldt= env t1 t2)
-   (define (<st= t1 t2)
+(define (<fldt=::bool env::struct t1 t2)
+   (define (<st=::bool t1 t2)
      (or
       (and (packedtype? t1) (equal? t1 t2))
       (and (valtype? t1) (valtype? t2) (<vt= env t1 t2))))
@@ -262,7 +269,7 @@
       (else #f)))
 
 ;; section 3.3.9
-(define (<ct= env t1 t2)
+(define (<ct=::bool env::struct t1 t2)
    (match-case (cons t1 t2)
       (((array ?fldt1) . (array ?fldt2))
        (<fldt= env fldt1 fldt2))
@@ -284,7 +291,7 @@
        ht)
       (else #f)))
 
-(define (<dt= env t1 t2)
+(define (<dt=::bool env::struct t1 t2)
    (if (eq-clos-dt? env t1 t2)
        #t
        (let ((ht (get-sub-heaptype (unroll-dt t1))))
@@ -294,14 +301,14 @@
 
 ;; limits are represented as (min . max) when there is a max and (min . #f)
 ;; otherwise
-(define (<lim= l1 l2)
+(define (<lim=::bool l1 l2)
    (and (<= (car l2) (car l1))
         (if (cdr l2)
             (and (cdr l1) (<= (cdr l1) (cdr l2)))
             #t)))
 
 ;; section 3.3.13
-(define (<tt= env t1 t2)
+(define (<tt=::bool env::struct t1 t2)
    (match-case (cons t1 t2)
       (((?at ?l1 ?rt1) . (?at ?l2 ?rt2))
        (and (<lim= l1 l2)
@@ -310,23 +317,23 @@
       (else #f)))
 
 ;; section 3.3.14
-(define (<mt= t1 t2)
+(define (<mt=::bool t1 t2)
    (match-case (cons t1 t2)
       (((?at ?l1) . (?at ?l2))
        (<lim= l1 l2))))
 
 ;; section 3.3.15
-(define (<gt= env t1 t2)
+(define (<gt=::bool env::struct t1 t2)
    ; when the underlying types are valtypes matching for fieldtypes and global
    ; types are the same
    (<fldt= env t1 t2))
 
 ;; section 3.3.16
-(define (<tagt= env t1 t2)
+(define (<tagt=::bool env::struct t1 t2)
    (and (<dt= env t1 t2) (<dt= env t2 t1)))
 
 ;; section 3.3.17
-(define (<et= env t1 t2)
+(define (<et=::bool env::struct t1 t2)
    (match-case (cons t1 t2)
       (((func ?ft1) . (func ?ft2))
        (<funct= env ft1 ft2))
@@ -341,13 +348,13 @@
       (else #f)))
 
 ;; section 3.2.3
-(define (valid-ht env t)
+(define (valid-ht env::struct t)
    (unless (absheaptype? t)
       ; will raise an exception if t is not a valid type index
       (get-type env t)))
 
 ;; section 3.2.4
-(define (valid-rt env t)
+(define (valid-rt env::struct t)
    (match-case t
       ((or (ref ?ht) (ref null ?ht))
        (with-handler
@@ -358,7 +365,7 @@
       (else (raise `(expected-reftype ,t)))))
 
 ;; sections 3.2.1, 3.2.2, and 3.2.5
-(define (valid-vt env t)
+(define (valid-vt env::struct t)
    (unless (or (vectype? t) (numtype? t))
       (with-handler
           (match-lambda
@@ -367,14 +374,14 @@
           (valid-rt env t))))
 
 ;; section 3.2.7
-(define (valid-res env l)
+(define (valid-res env::struct l)
    ; this check might be useless, see later
    (if (list? l)
        (for-each (lambda (t) (valid-vt env t)) l)
        (raise `(expected-resulttype ,l))))
 
 ;; section 3.2.8
-(define (valid-it env t)
+(define (valid-it env::struct t)
    (match-case t ; the shape test might be useless
       ((?t1 ?t2 ?x)
        (valid-res env t1)
@@ -385,7 +392,7 @@
       (else (raise `(expected-instructiontype ,t)))))
 
 ;; section 3.2.9
-(define (valid-funct env t)
+(define (valid-funct env::struct t)
    (match-case t
       ((?t1 ?t2)
        (valid-res env t1)
@@ -393,7 +400,7 @@
       (else (raise `(expected-functiontype ,t)))))
 
 ;; section 3.2.11
-(define (valid-fldt env t)
+(define (valid-fldt env::struct t)
    (define (valid-st t)
       (unless (packedtype? t)
          (with-handler
@@ -406,7 +413,7 @@
       (else (raise `(expected-fieldtype ,t)))))
 
 ;; section 3.2.10
-(define (valid-ct env t)
+(define (valid-ct env::struct t)
    (match-case t
       ((func . ?funct) (valid-funct env funct))
       ((array ?fldt) (valid-fldt env fldt))
@@ -417,7 +424,7 @@
       (else (raise `(expected-comptype ,t)))))
 
 ;; section 3.2.12
-(define (valid-rect env t x)
+(define (valid-rect env::struct t x)
    (define (valid-st t x)
       (match-case t
          ((sub final . ?rst) (valid-st `(sub ,@rst) x))
@@ -445,7 +452,10 @@
       (else (raise `(expected-rectype ,t)))))
 
 ;; section 3.2.14
+(define (valid-lim l k)
+   ; no shape check
+   (and (<= (car l) k) (or (null? (cdr l)) (<= (cdr l) k))))
 
-
+;; section 3.2.15
 (define (main argv)
    (display argv))
