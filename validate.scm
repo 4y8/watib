@@ -28,13 +28,22 @@
    (and (pair? t) (equal? 'ref (car t))))
 (define (valtype?::bool t)
    (or (reftype? t) (numtype? t) (vectype? t)))
+(define (addrtype?::bool t)
+   (or (equal? t 'i32) (equal? t 'i64)))
 
-(define (type-size::bint t)
+(define-macro (replace-exception e e' . body)
+   `(with-handler
+       (match-lambda
+         ((,e . ?tl) (raise (cons ,e' tl)))
+         (?e (raise e)))
+       ,@body))
+
+(define (type-size::llong t)
    (match-case t
-      (i8 8)
-      (i16 16)
-      (i32 32)
-      (i64 64)))
+      (i8 #l8)
+      (i16 #l16)
+      (i32 #l32)
+      (i64 #l64)))
 
 (define (ident? x)
    (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0))))
@@ -160,8 +169,18 @@
          ((pair? st) (map (lambda (st) (unroll-st sts st)) st))
          (#t (report "unroll-subtype" "unexpected form" st))))
 
-(define (unroll-dt t)
+;; expects well formed arguments
+(define (unroll-dt::pair t::pair)
    (unroll-st (cadr t) (list-ref (cadr t) (caddr t))))
+
+(define (expand t)
+   (match-case (unroll-dt t)
+      ((or (sub final ?- (?hd . ?-))
+           (sub final (?hd . ?-))
+           (sub ?- (?hd . ?-))
+           (sub (?hd . ?-)))
+       hd)
+      (else (raise `(expected-deftype t)))))
 
 ;; subtyping relation return only a boolean, which is good if it is true, but in
 ;; case of failure we might want a reason to explain it (kind of a constructive
@@ -192,17 +211,17 @@
          ((equal? 'noextern t1) (<ht= env t2 'extern))
          (#t #f)))
 
-(define (nullable?::bool rt)
+(define (nullable?::bool rt::pair)
    (equal? (cadr rt) 'null))
 
-(define (reftype->heaptype rt)
+(define (reftype->heaptype rt::pair)
    (if (nullable? rt)
        (caddr rt)
        (cadr rt)))
 
 ;; actually does redundant checks, could be expanded to avoid them
 ;; section 3.3.4
-(define (<rt=::bool env::struct t1 t2)
+(define (<rt=::bool env::struct t1::pair t2::pair)
    (and (or (nullable? t2) (not (nullable? t1)))
         (<ht= env (reftype->heaptype t1) (reftype->heaptype t2))))
 
@@ -224,7 +243,7 @@
 ;; (i.e. there is no t ::= ... | instrtype in the spec)
 
 ;; section 3.3.7
-(define (<it=::bool env::struct t1 t2)
+(define (<it=::bool env::struct t1::pair t2::pair)
    (let* ((t11 (car t1))
           (t12 (cadr t1))
           (x1  (caddr t1))
@@ -246,7 +265,7 @@
 ;; function types are represented like instruction types but without the locals
 
 ;; section 3.3.8
-(define (<funct=::bool env::struct t1 t2)
+(define (<funct=::bool env::struct t1::pair t2::pair)
    (let ((t11 (car t1))
          (t12 (cadr t1))
          (t21 (car t2))
@@ -256,7 +275,7 @@
        (<res= env t12 t22))))
 
 ;; section 3.3.10
-(define (<fldt=::bool env::struct t1 t2)
+(define (<fldt=::bool env::struct t1::pair t2::pair)
    (define (<st=::bool t1 t2)
      (or
       (and (packedtype? t1) (equal? t1 t2))
@@ -269,7 +288,7 @@
       (else #f)))
 
 ;; section 3.3.9
-(define (<ct=::bool env::struct t1 t2)
+(define (<ct=::bool env::struct t1::pair t2::pair)
    (match-case (cons t1 t2)
       (((array ?fldt1) . (array ?fldt2))
        (<fldt= env fldt1 fldt2))
@@ -301,14 +320,14 @@
 
 ;; limits are represented as (min . max) when there is a max and (min . #f)
 ;; otherwise
-(define (<lim=::bool l1 l2)
+(define (<lim=::bool l1::pair l2::pair)
    (and (<= (car l2) (car l1))
         (if (cdr l2)
             (and (cdr l1) (<= (cdr l1) (cdr l2)))
             #t)))
 
 ;; section 3.3.13
-(define (<tt=::bool env::struct t1 t2)
+(define (<tt=::bool env::struct t1::pair t2::pair)
    (match-case (cons t1 t2)
       (((?at ?l1 ?rt1) . (?at ?l2 ?rt2))
        (and (<lim= l1 l2)
@@ -347,39 +366,35 @@
        (<tagt= env tagt1 tagt2))
       (else #f)))
 
+;;; validation functions take types in the text-format and return the internal
+;;; representation if there wasn't any problem
+
 ;; section 3.2.3
 (define (valid-ht env::struct t)
-   (unless (absheaptype? t)
-      ; will raise an exception if t is not a valid type index
-      (get-type env t)))
+   (if (absheaptype? t)
+       t
+       (get-type env t)))
 
 ;; section 3.2.4
-(define (valid-rt env::struct t)
-   (match-case t
-      ((or (ref ?ht) (ref null ?ht))
-       (with-handler
-          (match-lambda
-             ((expected-heaptype ?t) (raise `(expected-reftype ,t)))
-             (?e (raise e)))
-          (valid-ht env ht)))
-      (else (raise `(expected-reftype ,t)))))
+(define (valid-rt::pair env::struct t)
+   (replace-exception 'expected-heaptype 'expected-reftype
+      (match-case t
+         ((ref ?ht) `(ref ,(valid-ht env ht)))
+         ((ref null ?ht) `(ref null ,(valid-ht env ht)))
+         (else (raise `(expected-reftype ,t))))))
 
 ;; sections 3.2.1, 3.2.2, and 3.2.5
 (define (valid-vt env::struct t)
-   (unless (or (vectype? t) (numtype? t))
-      (with-handler
-          (match-lambda
-             ((expected-reftype ?t) (raise `(expected-valtype ,t)))
-             (?e (raise e)))
+   (replace-exception 'expected-reftype 'expected-valtype
+      (if (or (vectype? t) (numtype? t))
+          t
           (valid-rt env t))))
 
 ;; section 3.2.7
 (define (valid-res env::struct l)
-   ; this check might be useless, see later
-   (if (list? l)
-       (for-each (lambda (t) (valid-vt env t)) l)
-       (raise `(expected-resulttype ,l))))
+   (for-each (lambda (t) (valid-vt env t)) l))
 
+;; see where it is used
 ;; section 3.2.8
 (define (valid-it env::struct t)
    (match-case t ; the shape test might be useless
@@ -392,30 +407,44 @@
       (else (raise `(expected-instructiontype ,t)))))
 
 ;; section 3.2.9
-(define (valid-funct env::struct t)
-   (match-case t
-      ((?t1 ?t2)
-       (valid-res env t1)
-       (valid-res env t2))
-      (else (raise `(expected-functiontype ,t)))))
+(define (valid-param/result env::struct l)
+   (match-case l
+      (() (values '() '()))
+      (((param (? ident?) ?vt) . ?tl)
+       (multiple-value-bind (p r) (valid-param/result env tl)
+          (values (cons (valid-ht env vt) p))))
+      (((param . ?vts) . ?tl)
+       (multiple-value-bind (p r) (valid-param/result env tl)
+          (values (append (map (lambda (vt) (valid-vt env vt)) vts) p) r)))
+      (((result . ?-) . ?-)
+       (define (get-results l)
+          (match-case l
+             (((result . ?vts) . ?tl)
+              (append (map (lambda (vt) (valid-vt env vt)) vts)
+                      (get-results tl)))
+             (() '())
+             (else (raise `(expected-functiontype ,l)))))
+       (values '() (get-results l)))
+      (else (raise `(expected-functiontype ,l)))))
 
 ;; section 3.2.11
 (define (valid-fldt env::struct t)
    (define (valid-st t)
-      (unless (packedtype? t)
-         (with-handler
-            (match-lambda
-               ((expected-valtype ?t) (raise `(expected-storagetype ,t)))
-               (?e (raise e)))
-          (valid-vt env t))))
+      (replace-exception 'expected-valtype 'expected-storagetype
+         (if (packedtype? t)
+             t
+             (valid-vt env t))))
    (match-case t
-      ((or (const ?st) (var ?st)) (valid-st st))
-      (else (raise `(expected-fieldtype ,t)))))
+      ((mut ?st) `(var ,(valid-st st)))
+      ; should probably raise expected-fieldtype instead of storagetype in case of failure
+      (?st `(const ,(valid-st st)))))
 
 ;; section 3.2.10
 (define (valid-ct env::struct t)
    (match-case t
-      ((func . ?funct) (valid-funct env funct))
+      ((func . ?p/r)
+       (multiple-value-bind (p r) (valid-param/result env p/r)
+          `(func ,p ,r)))
       ((array ?fldt) (valid-fldt env fldt))
       ((struct . ?fldts)
        (if (list? fldts)
@@ -452,10 +481,32 @@
       (else (raise `(expected-rectype ,t)))))
 
 ;; section 3.2.14
-(define (valid-lim l k)
+(define (valid-lim l::pair k::llong)
    ; no shape check
-   (and (<= (car l) k) (or (null? (cdr l)) (<= (cdr l) k))))
+   (unless (<= (car l) k)
+      (raise `(invalid-bound ,(car l) k)))
+   (unless (or (null? (cdr l)) (<= (cdr l) k))
+      (raise `(invalid-bound ,(cdr l) k))))
 
 ;; section 3.2.15
+(define (valid-tt env::struct t)
+   (match-case t
+      ; coherence problem as we don't check niether l's validity here nor in the
+      ; previous function ; will have to see this later
+      (((and ?at (? addrtype?)) ?l ?rt)
+       (valid-lim l (bit-lshllong #l1 (-llong (type-size at) #l1)))
+       (valid-rt env rt))
+      (else (raise `(expected-tabletype ,t)))))
+
+;; section 3.2.16
+(define (valid-mt t)
+   (match-case t
+      (((and ?at (? addrtype?)) ?l)
+       (valid-lim l (bit-lshllong #l1 (-llong (type-size at) #l16))))
+      (else (raise `(expected-memorytype ,t)))))
+
+;; section 3.2.17
+;; rest of the validation for types : todo
+
 (define (main argv)
    (display argv))
