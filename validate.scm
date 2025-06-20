@@ -39,10 +39,10 @@
 ;; section 3.1.6
 (define-struct env
    (ntypes 0)
-   (types-table (make-hashtable)) ; to access with the names
-   ; maps type indices to names, for error reporting purposes
-   (types-names (make-vector 0))
-   (types-vector (make-vector 0)) ; to access with the index
+   ; to access with the names, contains lists (type name index)
+   (types-table (make-hashtable))
+   ; to access with the index, contains lists (type name index)
+   (types-vector (make-vector 0))
 
    (locals-names '())
    ; relevant information can only be accessed by index ; find the index of a
@@ -50,7 +50,7 @@
    (locals-init (make-vector 0))
    (locals-types (make-vector 0)))
 
-(define (get-type env t)
+(define (get-type-list env t)
    (cond
     ((number? t)
      (if (< t (env-ntypes env))
@@ -61,6 +61,12 @@
          (hashtable-get (env-types-table env) t)
          (raise `(unknown-type ,t))))
     (#t (raise `(expected-heaptype ,t)))))
+
+(define (get-type env t)
+   (car (get-type-list env t)))
+
+(define (get-type-index env t)
+   (caddr (get-type-list env t)))
 
 (define (local-ident-idx env l)
    (define (index lst i)
@@ -97,8 +103,7 @@
            (sub ?- (?hd . ?-))
            (sub (?hd . ?-)))
        hd)
-      (else
-       (raise `(expected-deftype t)))))
+      (else (raise `(expected-deftype t)))))
 
 ;; we could do the equality check respecting all the structure but we can use
 ;; our representations slopiness to do things shorter
@@ -117,6 +122,7 @@
       ((or ((sub final ?cts1) . (sub final ?cts2)) ((sub ?cts1) . (sub ?cts2)))
        (every (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2))
       (else #f)))
+;;;;;;;;;;
 
 (define (eq-clos-st? env t1 t2)
    (cond
@@ -334,11 +340,13 @@
        (<tagt= env tagt1 tagt2))
       (else #f)))
 
+;; section 3.2.3
 (define (valid-ht env t)
    (unless (absheaptype? t)
       ; will raise an exception if t is not a valid type index
       (get-type env t)))
 
+;; section 3.2.4
 (define (valid-rt env t)
    (match-case t
       ((or (ref ?ht) (ref null ?ht))
@@ -349,6 +357,7 @@
           (valid-ht env ht)))
       (else (raise `(expected-reftype ,t)))))
 
+;; sections 3.2.1, 3.2.2, and 3.2.5
 (define (valid-vt env t)
    (unless (or (vectype? t) (numtype? t))
       (with-handler
@@ -356,6 +365,87 @@
              ((expected-reftype ?t) (raise `(expected-valtype ,t)))
              (?e (raise e)))
           (valid-rt env t))))
+
+;; section 3.2.7
+(define (valid-res env l)
+   ; this check might be useless, see later
+   (if (list? l)
+       (for-each (lambda (t) (valid-vt env t)) l)
+       (raise `(expected-resulttype ,l))))
+
+;; section 3.2.8
+(define (valid-it env t)
+   (match-case t ; the shape test might be useless
+      ((?t1 ?t2 ?x)
+       (valid-res env t1)
+       (valid-res env t2)
+       (if (list? x) ; once again, might be useless
+           (for-each (lambda (v) (local-init? env v)) x)
+           (raise `(expected-locals ,x))))
+      (else (raise `(expected-instructiontype ,t)))))
+
+;; section 3.2.9
+(define (valid-funct env t)
+   (match-case t
+      ((?t1 ?t2)
+       (valid-res env t1)
+       (valid-res env t2))
+      (else (raise `(expected-functiontype ,t)))))
+
+;; section 3.2.11
+(define (valid-fldt env t)
+   (define (valid-st t)
+      (unless (packedtype? t)
+         (with-handler
+            (match-lambda
+               ((expected-valtype ?t) (raise `(expected-storagetype ,t)))
+               (?e (raise e)))
+          (valid-vt env t))))
+   (match-case t
+      ((or (const ?st) (var ?st)) (valid-st st))
+      (else (raise `(expected-fieldtype ,t)))))
+
+;; section 3.2.10
+(define (valid-ct env t)
+   (match-case t
+      ((func . ?funct) (valid-funct env funct))
+      ((array ?fldt) (valid-fldt env fldt))
+      ((struct . ?fldts)
+       (if (list? fldts)
+           (for-each (lambda (fldt) (valid-fldt env fldt)) fldts)
+           (raise `(expected-fields ,fldts))))
+      (else (raise `(expected-comptype ,t)))))
+
+;; section 3.2.12
+(define (valid-rect env t x)
+   (define (valid-st t x)
+      (match-case t
+         ((sub final . ?rst) (valid-st `(sub ,@rst) x))
+         ((sub ?y ?ct)
+          (if (<= x (get-type-index env y))
+              (raise `(forward-subtype ,x ,y)))
+          (valid-ct env ct)
+          (match-case (cdr (unroll-dt (get-type env y)))
+             ((final . ?-) (raise `(supertype-final ,x ,y)))
+             ((or (?- ?ct') (?ct'))
+              (unless (<ct= env ct ct')
+                 (raise `(non-matching-supertype ,x ,y ,ct ,ct'))))
+             (else (raise 'internal-error))))
+         ((sub ?ct)
+          (valid-ct env ct))
+         (else `(expected-subtype ,t))))
+   (define (valid-rec-list l x)
+      (unless (null? l) ; (rec) is valid
+         (valid-st (car l) x)
+         (valid-rec-list (cdr l) (+ x 1))))
+   (match-case t
+      ((rec . ?sts)
+       (if (list? sts) (valid-rec-list sts x)
+           (raise `(expected-subtypes ,sts))))
+      (else (raise `(expected-rectype ,t)))))
+
+;; section 3.2.14
+
 
 (define (main argv)
    (display argv))

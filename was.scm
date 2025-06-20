@@ -23,7 +23,10 @@
 (read-table *valtype-symbols* "valtype-symbols.sch")
 (read-table *type-abbreviations* "type-abbreviations.sch")
 
-(define wasm-as-compat #t)
+(define wasm-as-compat #f)
+(define automatic-elem #f)
+(define get-size-insertion #f)
+(define unreachable-insertion #f)
 (define keep-going #f)
 (define error-encountered? #f)
 (define output-file "a.out.wasm")
@@ -386,18 +389,18 @@
        (write-valtype ht out-port))))
 
 (define (struct.get-typeidx locals labls t out-port)
-   (if wasm-as-compat
+   (if get-size-insertion
        (set! last-type
              (cond ((and (symbol? t) (hashtable-contains? typeidxs t))
                     (hashtable-get typeidxs t))
                    ((number? t) t)
                    (#t (report "typeidx" "unknown type" t) 0)))
        (begin
-         (leb128-write-unsigned 2 out-port)
+          (leb128-write-unsigned 2 out-port)
           (typeidx locals labls t out-port))))
 
 (define (struct.get-fieldidx locals labls f out-port)
-   (if wasm-as-compat
+   (if get-size-insertion
        (let ((idx (if (number? f)
                       f
                       (index f (hashtable-get fieldidxs last-type) 0))))
@@ -413,7 +416,7 @@
                     (hashtable-get typeidxs t))
                    ((number? t) t)
                    (#t (report "typeidx" "unknown type" t) 0))))
-      (if wasm-as-compat
+      (if get-size-insertion
           (begin
              (match-case (hashtable-get arraytypes idx)
                 ((or i8 i16 (mut i8) (mut i16))
@@ -425,7 +428,7 @@
              (typeidx locals labls t out-port)))))
 
 (define (ref.func-funcidx locals labls f out-port)
-   (if wasm-as-compat
+   (if automatic-elem
        (set! funcrefs
              (cons (if (and (symbol? f) (hashtable-contains? funcidxs f))
                        (hashtable-get funcidxs f)
@@ -455,6 +458,8 @@
          (nexports 0)
          (nglobals 0)
          (ndefglobals 0)
+         (ndeftags 0)
+         (ndefmems 0)
          (nmems 0)
          (ndata 0)
          (ntags 0))
@@ -488,9 +493,21 @@
              (set! nfuncs (+ 1 nfuncs))
              (set! nimports (+ 1 nimports))
              (list m))
+            ((import ?mod ?nm (memory (and ?id (? symbol?)) . ?rst))
+             (hashtable-put! memidxs id nmems)
+             (update-tables! `(import ,mod ,nm (memory ,@rst))))
+            ((import ?- ?- (memory . ?-))
+             (set! nmems (+ 1 nmems))
+             (set! nimports (+ 1 nimports))
+             (list m))
             ((import ?- ?- (global (and ?id (? symbol?)) . ?-))
              (hashtable-put! globalidxs id nglobals)
              (set! nglobals (+ 1 nglobals))
+             (set! nimports (+ 1 nimports))
+             (list m))
+            ((import ?- ?- (tag (and ?id (? symbol?)) . ?-))
+             (hashtable-put! tagidxs id ntags)
+             (set! ntags (+ 1 ntags))
              (set! nimports (+ 1 nimports))
              (list m))
             ((export . ?-)
@@ -524,6 +541,8 @@
                        (set! nrecs (- nrecs 1))
                        '())
                     (list `(rec ,@(map car l))))))
+            ((elem declare func . ?lst)
+             (list m))
             ((func (export (and ?nm (? string?))) . ?rst)
              (update-tables! `(func ,(fresh-var) (export ,nm) ,@rst)))
             ((func (and (? symbol?) ?id) (export (and ?nm (? string?))) . ?rst)
@@ -554,16 +573,20 @@
             ((memory (and (? symbol?) ?id) . ?limits)
              (hashtable-put! memidxs id nmems)
              (set! nmems (+ 1 nmems))
+             (set! ndefmems (+ 1 ndefmems))
              (list `(memory ,@limits)))
             ((memory . ?-)
              (set! nmems (+ 1 nmems))
+             (set! ndefmems (+ 1 ndefmems))
              (list m))
             ((tag (and (? symbol?) ?id) . ?tu)
              (hashtable-put! tagidxs id ntags)
              (set! ntags (+ 1 ntags))
+             (set! ndeftags (+ 1 ndeftags))
              (list `(tag ,@tu)))
             ((tag . ?-)
              (set! ntags (+ 1 ntags))
+             (set! ndeftags (+ 1 ndeftags))
              (list m))
             ((data (and (? symbol?) ?id) . ?d)
              (hashtable-put! dataidxs id ndata)
@@ -596,18 +619,34 @@
                    (values id n tl))))))
 
       (define (write-import-desc! d)
-         ; todo : tag memory table - not used in bigloo
+         ; todo : table - not used in bigloo
          (match-case d
             ((or (func (? symbol?) . ?tu) (func . ?tu))
              (multiple-value-bind (id - -) (write-typeuse! tu othertypes)
                 (write-byte #x00 importp)
                 (leb128-write-unsigned id importp)))
+            ((or (memory (? symbol?) (and (? valtype-symbol?) ?at) . ?lim)
+                 (memory (and (? valtype-symbol?) ?at) . ?lim))
+             (write-byte #x02)
+             (match-case lim
+                (((and (? wnumber?) ?n))
+                 (write-byte #x00 importp)
+                 (leb128-write-unsigned (wnumber->number n) importp))
+                (((and (? wnumber?) ?n) (and (? wnumber?) ?m))
+                 (write-byte #x01 importp)
+                 (leb128-write-unsigned (wnumber->number n) importp)
+                 (leb128-write-unsigned (wnumber->number m) importp))
+                (else (report "was" "invalid limit format" lim))))
             ((or (global (? symbol?) ?gt) (global ?gt))
-             (begin (write-byte #x03 importp)
-                    (write-globaltype gt importp)))))
+             (write-byte #x03 importp)
+             (write-globaltype gt importp))
+            ((or (tag (? symbol?) . ?tu) (tag . ?tu))
+             (multiple-value-bind (id - -) (write-typeuse! tu othertypes)
+                (write-byte #x04 importp)
+                (leb128-write-unsigned id importp)))))
 
       (define (write-export-desc d)
-         ; todo : tag table - not used in bigloo
+         ; todo : table - not used in bigloo
          (match-case d
             ((func ?f)
              (write-byte #x00 exportp)
@@ -617,7 +656,10 @@
              (memidx '() '() m exportp))
             ((global ?x)
              (write-byte #x03 exportp)
-             (globalidx '() '()x exportp))))
+             (globalidx '() '() x exportp))
+            ((tag ?t)
+             (write-byte #x04 exportp)
+             (tagidx '() '() t exportp))))
 
       ;; todo : add checks (with file position)
       (define (take/drop l k::bint)
@@ -637,16 +679,16 @@
          (define (write-if-branch! ret? labls bt b)
             (match-case b
                ((then . ?body)
-                (begin (write-byte #x04 out-port)
-                       (display bt out-port)
-                       (for-each (go-new-labels labls) body)
-                       (if (and wasm-as-compat ret? (unreachable-body-end body))
-                           (write-byte #x00 out-port))))
+                (write-byte #x04 out-port)
+                (display bt out-port)
+                (for-each (go-new-labels labls) body)
+                (if (and unreachable-insertion ret? (unreachable-body-end body))
+                    (write-byte #x00 out-port)))
                (((kwote else) . ?body)
-                (begin (write-byte #x05 out-port)
-                       (for-each (go-new-labels labls) body)
-                       (if (and wasm-as-compat ret? (unreachable-body-end body))
-                           (write-byte #x00 out-port))))
+                (write-byte #x05 out-port)
+                (for-each (go-new-labels labls) body)
+                (if (and unreachable-insertion ret? (unreachable-body-end body))
+                    (write-byte #x00 out-port)))
                (else (go b))))
 
          (define (compile-blocktype! p r)
@@ -683,7 +725,7 @@
                     (write-byte #x02 out-port)
                     (display (compile-blocktype! p r) out-port)
                     (for-each (go-new-labels (cons label labls)) tl)
-                    (if (and wasm-as-compat (not (null? r))
+                    (if (and unreachable-insertion (not (null? r))
                              (unreachable-body-end tl))
                         (write-byte #x00 out-port))
                     (write-byte #x0B out-port)))
@@ -695,7 +737,7 @@
                     (write-byte #x03 out-port)
                     (display (compile-blocktype! p r) out-port)
                     (for-each (go-new-labels (cons label labls)) tl)
-                    (if (and wasm-as-compat (not (null? r))
+                    (if (and unreachable-insertion (not (null? r))
                              (unreachable-body-end tl))
                         (write-byte #x00 out-port))
                     (write-byte #x0B out-port)))
@@ -742,7 +784,7 @@
                     (multiple-value-bind (c tl) (get-catches/tl tl)
                        (write-vec c write-catch out-port)
                        (for-each (go-new-labels (cons label labls)) tl)
-                       (if (and wasm-as-compat (not (null? r))
+                       (if (and unreachable-insertion (not (null? r))
                                 (unreachable-body-end tl))
                            (write-byte #x00 out-port))
                        (write-byte #x0B out-port))))
@@ -773,7 +815,7 @@
                                                      '() i p))
                           body)
                          ;;;;; quick hack
-                         (if wasm-as-compat
+                         (if unreachable-insertion
                              (multiple-value-bind (- - r -)
                                 (get-names/params/results/tl rst)
                                 (if (and (unreachable-body-end body)
@@ -792,9 +834,6 @@
             ((export (and ?nm (? string?)) ?d)
              (write-string nm exportp)
              (write-export-desc d))
-            ((elem declare func . ?lst)
-             (unless wasm-as-compat
-               (set! funcrefs (append lst funcrefs))))
             ((or (type . ?-) (rec . ?-)) (write-rectype typeidxs m typep))
             ((func (? symbol?) . ?rst)
              (write-func rst))
@@ -816,7 +855,18 @@
             ((tag . ?tu)
              (multiple-value-bind (id - -) (write-typeuse! tu othertypes)
                 (write-byte #x00 tagp)
-                (leb128-write-unsigned id tagp)))))
+                (leb128-write-unsigned id tagp)))
+            ((elem declare func . ?lst)
+             (unless automatic-elem
+                (print lst)
+                (set! funcrefs
+                      (append (map (lambda (id)
+                                    (print id)
+                                     (if (and (symbol? id)
+                                              (hashtable-contains? funcidxs id))
+                                         (hashtable-get funcidxs id)
+                                         id)) lst)
+                              funcrefs))))))
 
       (unless (pair? m)
      (error "was" "wrong module" m))
@@ -830,8 +880,8 @@
          (write-section #x01 typep out-port nrecs)
          (write-section #x02 importp out-port nimports)
          (write-section #x03 funcp out-port ncodes)
-         (write-section #x05 memp out-port nmems)
-         (write-section #x0D tagp out-port ntags)
+         (write-section #x05 memp out-port ndefmems)
+         (write-section #x0D tagp out-port ndeftags)
          (write-section #x06 globalp out-port ndefglobals)
          (write-section #x07 exportp out-port nexports)
          (unless (null? funcrefs)
@@ -862,9 +912,22 @@
       (("-all") #f)
       (("-k" (help "Keep going when encoutering errors"))
        (set! keep-going #t))
-      (("--wasm-as-compat"
-        (help "Assure compatibility with binaryen's wasm-as"))
-       (set! wasm-as-compat #t))
+      (("--insert-get-size"
+        (help "Insert unsigned indication when *.get instructions are called on
+packed fields"))
+       (set! get-size-insertion #t))
+      (("--insert-unreachable"
+        (help "Insert unreachable instruction after returns, and blocks to
+ensure good typing"))
+       (set! unreachable-insertion #t))
+      (("--automatic-elem"
+        (help "Puts all functions appearing in a ref.func in the elem
+section"))
+       (set! automatic-elem #t))
+      (("--wasm-as-compat" (help "Turns on all wasm-as compatibility flags"))
+       (set! automatic-elem #t)
+       (set! unreachable-insertion #t)
+       (set! get-size-insertion #t))
       (else
        (set! input-file else)))
    (if input-file
