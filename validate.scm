@@ -7,6 +7,8 @@
 ;;; even though forms with more than one type are syntactically correct, they
 ;;; are never valid
 
+(define keep-going #f)
+
 (define (report f msg obj)
    (if (epair? obj)
        (error/location f msg obj (cadr (cer obj)) (caddr (cer obj)))
@@ -45,6 +47,7 @@
 (define-macro (map-env f env . l)
    `(map (lambda (x) (,f ,env x)) ,@l))
 
+;; like every but returns #f if the lists are not of the same length
 (define (every' f . lists)
    (if (any null? lists)
        (every null? lists)
@@ -76,14 +79,25 @@
    (ntypes 0)
    ; to access with the names, contains indices
    (types-table (make-hashtable))
-   ; to access with the index, contains lists (type name)
+   ; to access with the index, contains lists (type name), the name is stored
+   ; for error reporting
    (types-vector (make-vector 0))
 
    (locals-names '())
    ; relevant information can only be accessed by index ; find the index of a
    ; name first to access by name
    (locals-init (make-vector 0))
-   (locals-types (make-vector 0)))
+   (locals-types (make-vector 0))
+
+   (labels-names '())
+   (labels-types (make-vector 0))
+
+   ; like types
+   (nfuncs 0)
+   (funcs-table (make-hashtable))
+   (funcs-refs (make-hashtable))
+
+   (return #f))
 
 (define (get-type-index::bint env::struct t)
    (cond
@@ -111,6 +125,18 @@
    (let ((v (env-types-vector env))
          (idx (get-type-index env id)))
      (vector-set! v idx (cons t (cdr (vector-ref v idx))))))
+
+(define (get-func-index::bint env::struct t)
+   (cond
+    ((number? t)
+     (if (< t (env-nfuncs env))
+         t
+         (raise `(funcidx-out-of-range ,(env-ntypes env) ,t))))
+    ((ident? t)
+     (if (hashtable-contains? (env-funcs-table env) t)
+         (hashtable-get (env-funcs-table env) t)
+         (raise `(unknown-function ,t))))
+    (#t (raise `(expected-funcidx ,t)))))
 
 (define (local-ident-idx env::struct l)
    (define (index lst i)
@@ -598,6 +624,97 @@
                                             `(deftype ,rolled-sts ,i)))
                    (iota (length sts)) rolled-sts)
          rolled-sts)))
+
+;; section 3.4
+
+(define (wnumber->number n)
+   (cond ((number? n) n)
+         ((equal? n 'inf) +inf.0)
+         ((equal? n '-inf) -inf.0)
+         ((equal? n 'nan) +nan.0)
+         ((symbol? n)
+          (let ((s (symbol->string n)))
+             (if (and (>= (string-length s) 2) (substring-at? s "0x" 0))
+                 (string->number (substring s 2) 16)
+                 (raise (`expected-number ,n)))))
+         (#t (raise (`expected-number ,n)))))
+
+(define (i32 env::struct n)
+   (let ((n (wnumber->number n)))
+      (cond ((not (integer? n)) (raise `(expected-int ,n)))
+            ((and (<= n 2147483647) (>= n -2147483648)) n)
+            ((and (> n 2147483647) (<= n 4294967295)) (- n (* 2 2147483648)))
+            (#t (raise `(out-bounds-i32 ,n))))))
+
+(define (i64 env::struct n)
+   (let ((n (wnumber->number n)))
+      (cond ((not (integer? n)) (raise `(expected-int ,n)))
+            ((and (<= n 9223372036854775807) (>= n -9223372036854775808)) n)
+            ((and (> n 9223372036854775807) (<= n 18446744073709551615))
+             (- n (2 * 9223372036854775808)))
+            (#t (raise `(out-bounds-i64 ,n))))))
+
+(define (f32 env::struct n)
+   (wnumber->number n))
+(define (f64 env::struct n)
+   (wnumber->number n))
+
+(define (ht env::struct t)
+   (valid-ht env ht))
+
+(define (funcref env::struct f) '())
+
+(define (reftype env::struct t) '())
+(define (typeidx env::struct i) '())
+
+(read-table *instruction-types* "instruction-types.sch")
+
+;; returns the type of the given instruction, the desuggared instruction and
+;; the tail in case it is in s-expression format
+;;
+;; for instance with (i32.add (i32.const 0) (i32.const 0)), it will return:
+;; (values (i32.add) ((i32 i32) (i32)) ((i32.const 0) (i32.const 0)))
+(define (typeof-instr/instr/tl env::struct i::pair)
+   (unless (hashtable-contains? *instruction-types* (car i))
+      (raise `(unknown-opcode ,i)))
+   (let* ((v (hashtable-get *instruction-types* (car i)))
+          (exp-args (car v))
+          (t (cadr v))
+          (k (length exp-args)))
+      (when (< k (length (cdr i)))
+         (raise `(not-enough arguments ,i ,exp-args)))
+      (multiple-value-bind (giv-args tl) (split-at (cdr i) k)
+         (let ((args (map (lambda (f x) (f env x)) exp-args giv-args)))
+            (values (if (procedure? t) (apply t env args) t)
+                    `(,(car i) ,@args) tl)))))
+
+;; returns the desuggared instructions and the new stack state
+(define (valid-instrs env::struct l::pair-nil st::pair-nil)
+   (define (check-stack st::pair-nil ts::pair-nil)
+      (cond ((null? st)
+             (unless (null? ts) (raise `(empty-stack ,ts))))
+            ((null? ts) st)
+            ((equal? st '(poly)) '(poly))
+            ((<vt= env (car st) (car ts))
+             (check-stack (cdr st) (cdr ts)))
+            (#t (raise `(non-matching-stack ,(car st) ,(car ts))))))
+
+   (define (valid-instr i::pair st::pair-nil)
+      (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i)
+         (multiple-value-bind (tl st) (valid-instrs env tl st)
+            (check-stack st (car t))
+            (if (equal? '(poly) (cdr t))
+                ; try to avoid this append (cps by hand ?)
+                (values (append tl (list i)) '(poly))
+                (values (append tl (list i)) (append (cdr t) (st)))))))
+
+   (if (null? l)
+       (values '() st)
+       (if (pair? (car l))
+           (multiple-value-bind (is st) (valid-instr (car l) st)
+              (multiple-value-bind (tl st) (valid-instrs env (cdr l) st)
+                 (values (append is tl) st)))
+           (raise `(expected-instruction ,(car l))))))
 
 ;; section 6.6.13
 (define (valid-modulefield env::struct m)
