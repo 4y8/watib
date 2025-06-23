@@ -524,7 +524,6 @@
                         (sub ??- (struct . ?fds))
                         (struct . ?fds))
                     (hashtable-put! fieldidxs id (get-fieldnames fds))
-                    ;;;;; quick hack
                     (hashtable-put! fieldtypes id (get-fields fds)))
                    ((or (sub final ??- (array ?t))
                         (sub ??- (array ?t))

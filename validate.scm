@@ -344,8 +344,8 @@
        (let ((n1 (length fldts1))
              (n2 (length fldts2)))
           (and (<= n2 n1)
-               (every' (lambda (fldt1 fldt2) (<fldt= env fldt1 fldt2))
-                       fldts1 fldts2))))
+               (every (lambda (fldt1 fldt2) (<fldt= env fldt1 fldt2))
+                      fldts1 fldts2))))
       (else #f)))
 
 ;; section 3.3.11
@@ -531,7 +531,7 @@
           '()
           (cons (valid-st (car l) x) (valid-rec-list (cdr l) (+ x 1)))))
 
-   `(rec (valid-rec-list l x)))
+   `(rec ,(valid-rec-list l x)))
 
 ;; section 3.2.14
 (define (valid-lim l::pair k::llong)
@@ -583,20 +583,39 @@
             ((sub ?ct)
              `(sub ,(valid-ct env ct)))
             (else
-              (replace-exception 'expected-comptype 'expected-subtype))))
+              (replace-exception 'expected-comptype 'expected-subtype
+                 `(sub final ,(valid-ct env st))))))
       (let ((rolled-sts (map valid-st sts)))
-         (for-each (lambda (i t) (set-type! env (+ x i) `(deftype ,sts ,i)))
+         (for-each (lambda (i t) (set-type! env (+ x i)
+                                            `(deftype ,rolled-sts ,i)))
                    (iota (length sts)) rolled-sts)
          rolled-sts)))
 
 ;; section 6.6.13
-(define (valid-module-field env::struct m)
-   (match-case m
-      ; first abreviation of 6.4.9
-      ((type . ?-) (valid-module-field env `(rec ,m)))
-      ((rec . ?l)
-       (let ((x (env-ntypes env)))
-          (valid-rect env (clean-mod-rectype! env l x) x)))))
+(define (valid-modulefield env::struct m)
+   (with-handler
+     (lambda (e) (raise `(in-modulefield ,m ,e)))
+     (match-case m
+        ; first abreviation of 6.4.9
+        ((type . ?-) (valid-modulefield env `(rec ,m)))
+        ((rec . ?l)
+         (let ((x (env-ntypes env)))
+            (valid-rect env (clean-mod-rectype! env l x) x))))))
+
+(define (valid-file f)
+   (let ((env (make-env)))
+      (match-case f
+         ((or (module (? ident?) . ?mfs) (module . ?mfs) ?mfs)
+          (map-env valid-modulefield env mfs)))))
 
 (define (main argv)
-   (display argv))
+   (define input-file #f)
+   (args-parse (cdr argv)
+      ((("--help" "-h") (help "Display this help message"))
+       (args-parse-usage #f))
+      (else
+       (set! input-file else)))
+   (if input-file
+       (call-with-input-file input-file
+          (lambda (ip)
+             (print (valid-file (read ip #t)))))))
