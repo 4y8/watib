@@ -38,6 +38,21 @@
          (?e (raise e)))
        ,@body))
 
+(define-macro (map-env f env . l)
+   `(map (lambda (x) (,f ,env x)) ,@l))
+
+(define (every' f . lists)
+   (if (any null? lists)
+       (every null? lists)
+       (and (apply f (map car lists)) (apply every' f (map cdr lists)))))
+
+;; not tail recursive, but not destined to be used no big inputs (rec vectors
+;; arent't large)
+(define (map-seq f . lists)
+   (if (any null? lists)
+       '()
+       (cons (apply f (map car lists)) (apply map-seq f (map cdr lists)))))
+
 (define (type-size::llong t)
    (match-case t
       (i8 #l8)
@@ -55,9 +70,9 @@
 ;; section 3.1.6
 (define-struct env
    (ntypes 0)
-   ; to access with the names, contains lists (type name index)
+   ; to access with the names, contains indices
    (types-table (make-hashtable))
-   ; to access with the index, contains lists (type name index)
+   ; to access with the index, contains lists (type name)
    (types-vector (make-vector 0))
 
    (locals-names '())
@@ -66,11 +81,11 @@
    (locals-init (make-vector 0))
    (locals-types (make-vector 0)))
 
-(define (get-type-list::pair env t)
+(define (get-type-index::bint env::struct t)
    (cond
     ((number? t)
      (if (< t (env-ntypes env))
-         (vector-ref (env-types-vector env) t)
+         t
          (raise `(typeidx-out-of-range ,(env-ntypes env) ,t))))
     ((ident? t)
      (if (hashtable-contains? (env-types-table env) t)
@@ -79,10 +94,19 @@
     (#t (raise `(expected-heaptype ,t)))))
 
 (define (get-type env::struct t)
-   (car (get-type-list env t)))
+   (car (vector-ref (env-types-vector env) (get-type-index env t))))
 
-(define (get-type-index::bint env t)
-   (caddr (get-type-list env t)))
+(define (add-type! env::struct nm t)
+   (let ((x (env-ntypes env)))
+      (env-ntypes-set! env (+fx 1 x))
+      (when nm
+         (hashtable-put! (env-types-table env) nm x))
+      (vector-set! (env-types-vector env) x (list t nm))))
+
+(define (set-type! env::struct id t)
+   (let ((v (env-types-vector env))
+         (idx (get-type-index env id)))
+     (vector-set! v idx (cons t (cdr (vector-ref v idx))))))
 
 (define (local-ident-idx env::struct l)
    (define (index lst i)
@@ -134,9 +158,9 @@
            ((sub (and (not final) ?ht1) ?cts1) .
             (sub (and (not final) ?ht2) ?cts2)))
        (and (eq-clos-ht? env ht1 ht2)
-            (every (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2)))
+            (every' (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2)))
       ((or ((sub final ?cts1) . (sub final ?cts2)) ((sub ?cts1) . (sub ?cts2)))
-       (every (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2))
+       (every' (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2))
       (else #f)))
 ;;;;;;;;;;
 
@@ -151,13 +175,13 @@
       ((or (deftype? t1) (rectype? t1) (deftype? t2) (rectype? t2))
        (equal? (cdr t1) (cdr t2)))
       ((and (pair? t1) (pair? t2))
-       (every (lambda (t1 t2) eq-clos-st? env t1 t2) t1 t2))
+       (every' (lambda (t1 t2) eq-clos-st? env t1 t2) t1 t2))
       (#t #f)))
 
 (define (eq-clos-dt?::bool env::struct t1 t2)
    (match-case (cons t1 t2)
       (((deftype ?sts1 ?i) . (deftype ?sts2 ?i))
-       (every (lambda (st1 st2) eq-clos-st? env st1 st2) sts1 sts2))
+       (every' (lambda (st1 st2) eq-clos-st? env st1 st2) sts1 sts2))
       (else #f)))
 
 ;; section 3.1.3
@@ -167,11 +191,33 @@
    (cond ((or (symbol? st) (idx? st)) st)
          ((and (rectype? st)) `(deftype ,sts ,(cadr st)))
          ((pair? st) (map (lambda (st) (unroll-st sts st)) st))
+         ; we don't report here like elsewhere, because this function doesn't
+         ; follow structural rules
          (#t (report "unroll-subtype" "unexpected form" st))))
 
 ;; expects well formed arguments
 (define (unroll-dt::pair t::pair)
    (unroll-st (cadr t) (list-ref (cadr t) (caddr t))))
+
+(define (roll-st env::struct st x::bint n::bint)
+   (cond
+    ((idx? st)
+     (let ((id (get-type-index env st)))
+        (if (and (<=fx x id) (<fx id n))
+            `(rec ,(-fx id x))
+            st)))
+    ((symbol? st) st)
+    ((pair? st) (map (lambda (st) (roll-st env st x n)) st))
+    (#t (report "roll-subtype" "unexpected form" st))))
+
+(define (roll-rect::pair env::struct rect::pair x::bint)
+   (let ((n (+fx x (length (cdr rect)))))
+      `(rec ,@(map (lambda (st) (roll-st env st x n)) (cdr rect)))))
+
+(define (roll* env::struct rect::pair x::bint)
+   (let ((rolled-rect (roll-rect env rect x)))
+      (list-tabulate (length (cdr rect))
+                     (lambda (i) `(deftype ,(cdr rect) ,i)))))
 
 (define (expand t)
    (match-case (unroll-dt t)
@@ -233,7 +279,7 @@
 
 ;; section 3.3.6
 (define (<res=::bool env l1 l2)
-   (every (lambda (t1 t2) (<vt= env t1 t2)) l1 l2))
+   (every' (lambda (t1 t2) (<vt= env t1 t2)) l1 l2))
 
 ;; instruction types [t1*] --->x* [t2*] are represented as (t1* t2* x*),
 ;; where x is the index (as an integer of the variable)
@@ -298,8 +344,8 @@
        (let ((n1 (length fldts1))
              (n2 (length fldts2)))
           (and (<= n2 n1)
-               (every (lambda (fldt1 fldt2) (<fldt= env fldt1 fldt2))
-                      fldts1 fldts2))))
+               (every' (lambda (fldt1 fldt2) (<fldt= env fldt1 fldt2))
+                       fldts1 fldts2))))
       (else #f)))
 
 ;; section 3.3.11
@@ -371,8 +417,9 @@
 
 ;; section 3.2.3
 (define (valid-ht env::struct t)
-   (if (absheaptype? t)
+   (if (or (absheaptype? t) (rectype? t))
        t
+       ;; ensures that type that get validated are closed
        (get-type env t)))
 
 ;; section 3.2.4
@@ -406,7 +453,7 @@
            (raise `(expected-locals ,x))))
       (else (raise `(expected-instructiontype ,t)))))
 
-;; section 3.2.9
+;; section 3.2.9 and 6.4.6
 (define (valid-param/result env::struct l)
    (match-case l
       (() (values '() '()))
@@ -415,19 +462,18 @@
           (values (cons (valid-ht env vt) p))))
       (((param . ?vts) . ?tl)
        (multiple-value-bind (p r) (valid-param/result env tl)
-          (values (append (map (lambda (vt) (valid-vt env vt)) vts) p) r)))
+          (values (append (map-env valid-vt env vts) p) r)))
       (((result . ?-) . ?-)
        (define (get-results l)
           (match-case l
              (((result . ?vts) . ?tl)
-              (append (map (lambda (vt) (valid-vt env vt)) vts)
-                      (get-results tl)))
+              (append (map-env valid-vt env vts) (get-results tl)))
              (() '())
              (else (raise `(expected-functiontype ,l)))))
        (values '() (get-results l)))
       (else (raise `(expected-functiontype ,l)))))
 
-;; section 3.2.11
+;; section 3.2.11 and 6.4.7
 (define (valid-fldt env::struct t)
    (define (valid-st t)
       (replace-exception 'expected-valtype 'expected-storagetype
@@ -436,8 +482,18 @@
              (valid-vt env t))))
    (match-case t
       ((mut ?st) `(var ,(valid-st st)))
-      ; should probably raise expected-fieldtype instead of storagetype in case of failure
-      (?st `(const ,(valid-st st)))))
+      (?st (replace-exception 'expected-storagetype 'expected-fieldtype
+              `(const ,(valid-st st))))))
+
+;; section 6.4.7
+(define (valid-fields env::struct l)
+   (match-case l
+      (() '())
+      (((field (? ident?) ?fldt) . ?tl)
+       (cons (valid-fldt env fldt) (valid-fields env tl)))
+      (((field . ?fldts) . ?tl)
+       (append (map-env valid-fldt env fldts) (valid-fields env tl)))
+      (else (raise `(expected-fields ,l)))))
 
 ;; section 3.2.10
 (define (valid-ct env::struct t)
@@ -445,40 +501,37 @@
       ((func . ?p/r)
        (multiple-value-bind (p r) (valid-param/result env p/r)
           `(func ,p ,r)))
-      ((array ?fldt) (valid-fldt env fldt))
-      ((struct . ?fldts)
-       (if (list? fldts)
-           (for-each (lambda (fldt) (valid-fldt env fldt)) fldts)
-           (raise `(expected-fields ,fldts))))
+      ((array ?fldt) `(array ,(valid-fldt env fldt)))
+      ((struct . ?fldts) `(struct ,@(valid-fields env fldts)))
       (else (raise `(expected-comptype ,t)))))
 
+;; expects input to be of the form (sub final? id? t)*, where t has been
+;; validated: a first lifting is done while checking modules.
+
 ;; section 3.2.12
-(define (valid-rect env::struct t x)
+(define (valid-rect env::struct l x::bint)
    (define (valid-st t x)
       (match-case t
-         ((sub final . ?rst) (valid-st `(sub ,@rst) x))
+         ((sub final . ?rst)
+          `(sub final ,@(cdr (valid-st `(sub ,@rst) x))))
          ((sub ?y ?ct)
           (if (<= x (get-type-index env y))
               (raise `(forward-subtype ,x ,y)))
-          (valid-ct env ct)
           (match-case (cdr (unroll-dt (get-type env y)))
              ((final . ?-) (raise `(supertype-final ,x ,y)))
              ((or (?- ?ct') (?ct'))
               (unless (<ct= env ct ct')
                  (raise `(non-matching-supertype ,x ,y ,ct ,ct'))))
-             (else (raise 'internal-error))))
-         ((sub ?ct)
-          (valid-ct env ct))
-         (else `(expected-subtype ,t))))
+             (else (raise 'internal-error)))
+          `(sub ,y ,ct))
+         ((sub ?-) t)))
+
    (define (valid-rec-list l x)
-      (unless (null? l) ; (rec) is valid
-         (valid-st (car l) x)
-         (valid-rec-list (cdr l) (+ x 1))))
-   (match-case t
-      ((rec . ?sts)
-       (if (list? sts) (valid-rec-list sts x)
-           (raise `(expected-subtypes ,sts))))
-      (else (raise `(expected-rectype ,t)))))
+      (if (null? l) ; (rec) is valid
+          '()
+          (cons (valid-st (car l) x) (valid-rec-list (cdr l) (+ x 1)))))
+
+   `(rec (valid-rec-list l x)))
 
 ;; section 3.2.14
 (define (valid-lim l::pair k::llong)
@@ -486,19 +539,21 @@
    (unless (<= (car l) k)
       (raise `(invalid-bound ,(car l) k)))
    (unless (or (null? (cdr l)) (<= (cdr l) k))
-      (raise `(invalid-bound ,(cdr l) k))))
+      (raise `(invalid-bound ,(cdr l) k)))
+   l)
 
-;; section 3.2.15
+;; section 3.2.15 and 6.4.14
 (define (valid-tt env::struct t)
    (match-case t
       ; coherence problem as we don't check niether l's validity here nor in the
       ; previous function ; will have to see this later
       (((and ?at (? addrtype?)) ?l ?rt)
-       (valid-lim l (bit-lshllong #l1 (-llong (type-size at) #l1)))
-       (valid-rt env rt))
+       (list at
+             (valid-lim l (bit-lshllong #l1 (-llong (type-size at) #l1)))
+             (valid-rt env rt)))
       (else (raise `(expected-tabletype ,t)))))
 
-;; section 3.2.16
+;; section 3.2.16 and 6.4.13
 (define (valid-mt t)
    (match-case t
       (((and ?at (? addrtype?)) ?l)
@@ -507,6 +562,41 @@
 
 ;; section 3.2.17
 ;; rest of the validation for types : todo
+
+;; section 6.4.9
+(define (clean-mod-rectype! env::struct l x::bint)
+   ; the `(rec ...) in the environment assures rolling
+   (let ((sts (map-seq
+                 (match-lambda
+                    ((type (and (? ident?) ?id) ?st)
+                     (add-type! env id `(rec ,(-fx (env-ntypes env) x))) st)
+                    ((type ?st)
+                     (add-type! env #f `(rec ,(-fx (env-ntypes env) x))) st)
+                    (else (raise `(expected-typedef ,l)))) l)))
+      (define (valid-st st)
+         (match-case st
+            ((sub final ?ct) `(sub final ,(valid-ct env ct)))
+            ((sub final (and ?y (? idx?)) ?ct)
+             `(sub final ,y ,(valid-ct env ct)))
+            ((sub (and ?y (? idx?)) ?ct)
+             `(sub ,y ,(valid-ct env ct)))
+            ((sub ?ct)
+             `(sub ,(valid-ct env ct)))
+            (else
+              (replace-exception 'expected-comptype 'expected-subtype))))
+      (let ((rolled-sts (map valid-st sts)))
+         (for-each (lambda (i t) (set-type! env (+ x i) `(deftype ,sts ,i)))
+                   (iota (length sts)) rolled-sts)
+         rolled-sts)))
+
+;; section 6.6.13
+(define (valid-module-field env::struct m)
+   (match-case m
+      ; first abreviation of 6.4.9
+      ((type . ?-) (valid-module-field env `(rec ,m)))
+      ((rec . ?l)
+       (let ((x (env-ntypes env)))
+          (valid-rect env (clean-mod-rectype! env l x) x)))))
 
 (define (main argv)
    (display argv))
