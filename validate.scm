@@ -24,8 +24,12 @@
 (read-table *absheaptype* "absheaptypes.sch")
 (define (absheaptype?::bool t)
    (hashtable-contains? *absheaptype* t))
+; section 6.4.4 - Abbreviations
+(read-table *reftypes-abbreviations* "type-abbreviations.sch")
+(define (reftype-abv?::bool t)
+   (hashtable-contains? *reftypes-abbreviations* t))
 (define (reftype?::bool t)
-   (and (pair? t) (equal? 'ref (car t))))
+   (or (reftype-abv? t) (and (pair? t) (equal? 'ref (car t)))))
 (define (valtype?::bool t)
    (or (reftype? t) (numtype? t) (vectype? t)))
 (define (addrtype?::bool t)
@@ -176,6 +180,7 @@
        (equal? (cdr t1) (cdr t2)))
       ((and (pair? t1) (pair? t2))
        (every' (lambda (t1 t2) eq-clos-st? env t1 t2) t1 t2))
+      ((and (null? t1) (null? t2)) #t)
       (#t #f)))
 
 (define (eq-clos-dt?::bool env::struct t1 t2)
@@ -191,9 +196,10 @@
    (cond ((or (symbol? st) (idx? st)) st)
          ((and (rectype? st)) `(deftype ,sts ,(cadr st)))
          ((pair? st) (map (lambda (st) (unroll-st sts st)) st))
+         ((null? st) st)
          ; we don't report here like elsewhere, because this function doesn't
          ; follow structural rules
-         (#t (report "unroll-subtype" "unexpected form" st))))
+         (#t (raise `(internal-unroll-st ,st)))))
 
 ;; expects well formed arguments
 (define (unroll-dt::pair t::pair)
@@ -208,7 +214,8 @@
             st)))
     ((symbol? st) st)
     ((pair? st) (map (lambda (st) (roll-st env st x n)) st))
-    (#t (report "roll-subtype" "unexpected form" st))))
+    ((null? st) st)
+    (#t (raise `(internal-roll-st ,st)))))
 
 (define (roll-rect::pair env::struct rect::pair x::bint)
    (let ((n (+fx x (length (cdr rect)))))
@@ -428,6 +435,7 @@
       (match-case t
          ((ref ?ht) `(ref ,(valid-ht env ht)))
          ((ref null ?ht) `(ref null ,(valid-ht env ht)))
+         ((? reftype-abv?) (hashtable-get *reftypes-abbreviations* t))
          (else (raise `(expected-reftype ,t))))))
 
 ;; sections 3.2.1, 3.2.2, and 3.2.5
@@ -523,7 +531,7 @@
               (unless (<ct= env ct ct')
                  (raise `(non-matching-supertype ,x ,y ,ct ,ct'))))
              (else (raise 'internal-error)))
-          `(sub ,y ,ct))
+          `(sub ,(get-type-index env y) ,ct))
          ((sub ?-) t)))
 
    (define (valid-rec-list l x)
@@ -594,7 +602,7 @@
 ;; section 6.6.13
 (define (valid-modulefield env::struct m)
    (with-handler
-     (lambda (e) (raise `(in-modulefield ,m ,e)))
+     (lambda (e) (raise `(,e)))
      (match-case m
         ; first abreviation of 6.4.9
         ((type . ?-) (valid-modulefield env `(rec ,m)))
