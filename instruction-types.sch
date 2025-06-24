@@ -134,7 +134,13 @@
 
   ;; section 3.4.2
   (ref.null (,ht) ,(lambda (- ht) `(() ((ref null ,ht)))))
-  (ref.func (,funcref) ,(lambda (env x) `(() ((ref ,(get-type env x))))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.98
+  (ref.func (,funcidx) ,(lambda (env x)
+                           (unless (hashtable-contains? (env-refs env) x)
+                              (raise `(undeclared-funcref ,x)))
+                           `(() ((ref ,(get-func-type env x))))))
+
   ; by subsumption (section 3.4.12)
   (ref.is_null () (((ref null any)) (i32)))
   ; ref.as_non_null can't be treated here because there is a link between the
@@ -146,7 +152,130 @@
   (ref.cast (,reftype) ,(lambda (- rt) `((,rt) (,rt))))
 
   ;; section 3.4.3
-  (struct.new (,typeidx) ,(lambda (env x) '()))
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.104
+  (struct.new
+   (,typeidx)
+   ,(lambda (env x) `(,(map unpack-ft (get-struct-fldts env x)) ((ref ,x)))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.105
+  (struct.new_default
+   (,typeidx)
+   ,(lambda (env x)
+       (for-each (lambda (t) (unless (defaultable? t)
+                               (raise `(expected-defaultable ,t))))
+                 (map unpack-ft (get-struct-fldts env x)))
+       `(() ((ref ,x)))))
+
+  ;; in the following functions, fieldidx checks that x is a struct type
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.106
+  (struct.get
+   (,typeidx ,fieldidx)
+   ,(lambda (env x y)
+       (let ((t (cadr (list-ref (get-struct-fldts env x) y))))
+          (when (packedtype? t)
+             (raise `(got-packed ,x ,y ,t)))
+          `(((ref null ,x)) (,t)))))
+  (struct.get_s
+   (,typeidx ,fieldidx)
+   ,(lambda (env x y)
+       (let ((t (cadr (list-ref (get-struct-fldts env x) y))))
+          (unless (packedtype? t)
+             (raise `(expected-packed ,x ,y ,t)))
+          `(((ref null ,x)) (,(unpack t))))))
+  (struct.get_u
+   (,typeidx ,fieldidx)
+   ,(lambda (env x y)
+       (let ((t (cadr (list-ref (get-struct-fldts env x) y))))
+          (unless (packedtype? t)
+             (raise `(expected-packed ,x ,y ,t)))
+          `(((ref null ,x)) (,(unpack t))))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.107
+  (struct.set
+   (,typeidx ,fieldidx)
+   ,(lambda (env x y)
+       (let ((ft (list-ref (get-struct-fldts env x) y)))
+          (unless (equal? (car ft) 'var)
+             (raise `(set-const ,x ,y)))
+          `(((ref null ,x) ,(unpack-ft ft)) ()))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.108
+  (array.new
+   (,typeidx)
+   ,(lambda (env x) `((,(unpack-ft (get-array-ft env x)) i32) ((ref ,x)))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.109
+  (array.new_default
+   (,typeidx)
+   ,(lambda (env x)
+       (let ((ft (get-array-ft env x)))
+         (unless (defaultable? (cadr ft))
+              (raise `(expected-defaultable ,x ,(cadr ft))))
+         `((i32) ((ref ,x))))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.110
+  (array.new_fixed
+   (,typeidx ,u32)
+   ,(lambda (env x n)
+       `(,(make-list n (unpack-ft (get-array-ft env x))) ((ref ,x)))))
+
+  ; we do not support array.new_elem yet
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.112
+  ; the call to dataidx assures that the data segment exists
+  (array.new_data
+   (,typeidx ,dataidx)
+   ,(lambda (env x -)
+       (let ((t (unpack-ft (get-array-ft env x))))
+          (unless (or (vectype? t) (numtype? t))
+             (raise `(expected-num-or-vec ,t)))
+          `((i32 i32) ((ref ,x))))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.113
+  (array.get
+   (,typeidx)
+   (lambda (env x)
+      (let ((t (cadr (get-array-ft env x))))
+         (when (packedtype? t)
+            (raise `(got-packed ,x ,t)))
+         `(((ref null ,x) i32) (,t)))))
+  (array.get_s
+   (,typeidx)
+   (lambda (env x)
+      (let ((t (cadr (get-array-ft env x))))
+         (unless (packedtype? t)
+            (raise `(expected-packed ,x ,t)))
+         `(((ref null ,x) i32) (,(unpack t))))))
+  (array.get_u
+   (,typeidx)
+   (lambda (env x)
+      (let ((t (cadr (get-array-ft env x))))
+         (unless (packedtype? t)
+            (raise `(expected-packed ,x ,t)))
+         `(((ref null ,x) i32) (,(unpack t))))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.114
+  (array.set
+   (,typeidx)
+   (lambda (env x)
+      (let ((ft (get-array-ft env x)))
+         (unless (equal? (car ft) 'var)
+            (raise `(set-const ,x)))
+         `(((ref null ,x) i32 (unpack-ft ft)) ()))))
+
+  (array.len () (((ref null array)) (i32)))
+
+  (array.fill
+   (,typeidx)
+   (lambda (env x)
+      (let ((ft (get-array-ft env x)))
+         (unless (equal? (car ft) 'var)
+            (raise `(set-const ,x)))
+         `(((ref null ,x) i32 (unpack-ft ft) i32) ()))))
+
+  (array.copy
+   (,typeidx ,typeidx)
+   (lambda (env x y) '()))
 
   (ref.i32   () ((i32) ((ref i31))))
   (i31.get_s () (((ref i31)) (i32)))
