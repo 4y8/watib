@@ -43,6 +43,10 @@
        (numtype? t)
        (and (reftype? t) (nullable? t))))
 
+;; section 3.4.13
+(define (constant? t)
+  #f)
+
 ;; section 2.3.8
 (define (unpack t)
    (if (packedtype? t) 'i32 t))
@@ -99,10 +103,10 @@
    (types-vector (make-vector 0))
    (fields-names (make-vector 0))
 
+   (nlocals 0)
    (locals-names '())
    ; relevant information can only be accessed by index ; find the index of a
    ; name first to access by name
-   (locals-init (make-vector 0))
    (locals-types (make-vector 0))
 
    (labels-names '())
@@ -117,6 +121,10 @@
 
    (ndata 0)
    (data-table (make-hashtable))
+
+   (nglobals 0)
+   (globals-table (make-hashtable))
+   (globals-types (make-vector 0))
 
    (return #f))
 
@@ -188,25 +196,44 @@
               (raise `(unknown-data ,x))))
          (#t (raise `(expected-dataidx ,x)))))
 
-(define (local-ident-idx env::struct l)
+(define (get-local-index env::struct l)
    (define (index::bint lst::pair-nil i::bint)
       (cond ((null? lst) (raise `(unknown-local ,l)))
             ((equal? (car lst) l) i)
             (#t (index (cdr lst) (+fx 1 i)))))
+   (cond
+    ((number? l)
+     (if (< l (env-nlocals env))
+         l
+         (raise `(localidx-out-of-range ,(env-locals-types env) ,l))))
+    ((ident? l)
+     (index (env-locals-names env) 0))
+    (#t `(expected-local ,l)))
    (index (env-locals-names env) 0))
 
 (define (local-init! env::struct l)
    '())
 
 (define (local-init?::bool env::struct l)
-   (cond
-    ((number? l)
-     (if (< l (vector-length (env-locals-init env)))
-         (vector-ref (env-locals-init env) l)
-         (raise `(localidx-out-of-range ,(env-locals-init env) ,l))))
-    ((ident? l)
-     (vector-ref (env-locals-init env) (local-ident-idx env l)))
-    (#t `(expected-local ,l))))
+   (car (vector-ref (env-locals-types env) (get-local-index env l))))
+
+(define (get-local-type env::struct l)
+   (cadr (vector-ref (env-locals-types env) (get-local-index env l))))
+
+(define (get-global-index::bint env::struct x)
+   (cond ((integer? x)
+          (if (< x (env-nglobals env))
+              x
+              (raise `(globalidx-out-range ,(env-nglobals env) ,x))))
+         ((ident? x)
+          (if (hashtable-contains? (env-globals-table env) x)
+              (hashtable-get (env-globals-table env) x)
+              (raise `(unknown-global ,x))))
+         (#t (raise `(expected-globalidx ,x)))))
+
+; only used on arguments returned by the previous function
+(define (get-global-type::pair env::struct x::bint)
+   (vector-ref (env-globals-types env) x))
 
 ;; deftypes (rec subtypes*).i are represented as (deftype subtypes* i))
 ;; (rec i) are represented as (rec i)
@@ -402,16 +429,17 @@
        (<res= env t12 t22))))
 
 ;; section 3.3.10
+(define (<st=::bool env t1 t2)
+  (or
+   (and (packedtype? t1) (equal? t1 t2))
+   (and (valtype? t1) (valtype? t2) (<vt= env t1 t2))))
+
 (define (<fldt=::bool env::struct t1::pair t2::pair)
-   (define (<st=::bool t1 t2)
-     (or
-      (and (packedtype? t1) (equal? t1 t2))
-      (and (valtype? t1) (valtype? t2) (<vt= env t1 t2))))
    (match-case (cons t1 t2)
       (((const ?st1) . (const ?st2))
-       (<st= st1 st2))
+       (<st= env st1 st2))
       (((var ?st1) . (var ?st2))
-       (and (<st= st1 st2) (<st= st2 st1)))
+       (and (<st= env st1 st2) (<st= env st2 st1)))
       (else #f)))
 
 ;; section 3.3.9
@@ -726,7 +754,7 @@
 (define (ht env::struct t)
    (valid-ht env ht))
 
-(define (funcidx env::struct f)
+(define (funcidx::bint env::struct f)
    (get-func-index env f))
 
 (define (reftype env::struct t)
@@ -734,18 +762,24 @@
 
 (define last-type #f)
 
-(define (typeidx env::struct i)
+(define (typeidx::bint env::struct i)
    (set! last-type (get-type-index env i))
    last-type)
 
 ;; to work, needs to be called after typeidx
-(define (fieldidx env::struct x)
+(define (fieldidx::bint env::struct x)
    (unless (vector-ref (env-fields-names env) last-type)
       (raise `(expected-struct ,last-type ,(expand (get-type env last-type)))))
    (get-field-index env last-type x))
 
-(define (dataidx env::struct x)
+(define (dataidx::bint env::struct x)
    (get-data-index env x))
+
+(define (localidx::bint env::struct x)
+   (get-local-index env x))
+
+(define (globalidx::bint env::struct x)
+   (get-global-index env x))
 
 (define (get-struct-fldts env::struct x::bint)
    (match-case (expand (get-type env x))

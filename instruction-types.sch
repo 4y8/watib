@@ -263,8 +263,10 @@
             (raise `(set-const ,x)))
          `(((ref null ,x) i32 (unpack-ft ft)) ()))))
 
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.115
   (array.len () (((ref null array)) (i32)))
 
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.116
   (array.fill
    (,typeidx)
    (lambda (env x)
@@ -273,13 +275,84 @@
             (raise `(set-const ,x)))
          `(((ref null ,x) i32 (unpack-ft ft) i32) ()))))
 
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.117
   (array.copy
    (,typeidx ,typeidx)
-   (lambda (env x y) '()))
+   (lambda (env x y)
+     (let ((ft1 (get-array-ft env x))
+           (ft2 (get-array-ft env y)))
+        (unless (equal? (car ft1) 'var)
+           (raise `(set-const ,x)))
+        (unless (<st= env (cadr ft2) (cadr ft1))
+           (raise `(non-matching ,ft2 ,ft1)))
+        `(((ref null ,x) i32 (ref null ,y) i32 i32) ()))))
 
-  (ref.i32   () ((i32) ((ref i31))))
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.118
+  (array.init_data
+    (,typeidx ,dataidx)
+    (lambda (env x y)
+      (let* ((ft (get-array-ft env x))
+             (t (unpack-ft ft)))
+         (unless (equal? (car ft) 'var)
+            (raise `(set-const ,x)))
+         (unless (or (vectype? t) (numtype? t))
+             (raise `(expected-num-or-vec ,t)))
+         `(((ref null ,x) i32 i32 i32) ()))))
+
+  ; we do not support array.init_elem yet
+
+  ;; section 3.4.4
+  (ref.i31   () ((i32) ((ref i31))))
   (i31.get_s () (((ref i31)) (i32)))
   (i31.get_u () (((ref i31)) (i32)))
+
+  ;; we do not support external reference instructions yet
+  ;; we do not support vector instructions yet
+
+  ;; section 3.4.7
+
+  ; by subsumption
+  (drop () ((any) ()))
+
+  ; we do not support select yet; as it has an optionnal argument, we can't
+  ; treat it here yet, an option would be to use additionnal symbols in the
+  ; argument list to signal optionnal argument, the list would be something
+  ; like: `((opt ,test ,idx))
+
+  ;; section 3.4.8
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.153
+  (local.get
+   (,localidx)
+   (lambda (env x)
+      (unless (local-init? env x)
+         (raise `(get-unset-local ,x)))
+      `(() (,(get-local-type env x)))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.154
+  (local.set
+   (,localidx)
+   (lambda (env x) `((,(get-local-type env x)) () . (x))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.155
+  (local.tee
+   (,localidx)
+   (lambda (env x) `((,(get-local-type env x))
+                     (,(get-local-type env x)) . (x))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.156
+  (global.get
+   (,globalidx)
+   (lambda (env x) `(() (,(cadr (get-global-type env x))))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.156
+  (global.set
+   (,globalidx)
+   (let ((t (get-global-type env x)))
+      (unless (car t)
+         (raise `(set-const ,x)))
+      `((,(cadr t)) ())))
+
+  ;; section 3.4.11
 
   (i32.load8_s () ((i32) (i32)))
   (i32.load8_u () ((i32) (i32)))
