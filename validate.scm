@@ -54,6 +54,12 @@
 (define (unpack-ft t)
    (unpack (cadr t)))
 
+;; section 3.1.1 (convention)
+(define (type-diff t1 t2)
+   (if (nullable? t2)
+       `(ref ,(reftype->heaptype t1))
+       t1))
+
 (define-macro (replace-exception e e' . body)
    `(with-handler
        (match-lambda
@@ -79,6 +85,11 @@
        '()
        (cons (apply f (map car lists)) (apply map-seq f (map cdr lists)))))
 
+(define (index::bint lst::pair-nil x i::bint e::symbol)
+      (cond ((null? lst) (raise (list e x)))
+            ((equal? (car lst) x) i)
+            (#t (index (cdr lst) x (+fx 1 i) e))))
+
 (define (type-size::llong t)
    (match-case t
       (i8 #l8)
@@ -100,8 +111,8 @@
    (types-table (make-hashtable))
    ; to access with the index, contains lists (type name), the name is stored
    ; for error reporting
-   (types-vector (make-vector 0))
-   (fields-names (make-vector 0))
+   (types-vector (make-vector 10000))
+   (fields-names (make-vector 10000))
 
    (nlocals 0)
    (locals-names '())
@@ -109,6 +120,7 @@
    ; name first to access by name
    (locals-types (make-vector 0))
 
+   (nlabels 0)
    (labels-names '())
    (labels-types (make-vector 0))
 
@@ -122,23 +134,33 @@
    (ndata 0)
    (data-table (make-hashtable))
 
+   ; like types
    (nglobals 0)
    (globals-table (make-hashtable))
    (globals-types (make-vector 0))
 
+   ; like types
+   (ntags 0)
+   (tags-table (make-hashtable))
+   (tags-types (make-vector 0))
+
    (return #f))
 
-(define (get-type-index::bint env::struct t)
+(define (get-index::bint table range x ex-oor ex-unkwn ex-exp)
    (cond
-    ((number? t)
-     (if (< t (env-ntypes env))
-         t
-         (raise `(typeidx-out-of-range ,(env-ntypes env) ,t))))
-    ((ident? t)
-     (if (hashtable-contains? (env-types-table env) t)
-         (hashtable-get (env-types-table env) t)
-         (raise `(unknown-type ,t))))
-    (#t (raise `(expected-typeidx ,t)))))
+    ((number? x)
+     (if (< x range)
+         x
+         (raise (list ex-oor range x))))
+    ((ident? x)
+     (if (hashtable-contains? table x)
+         (hashtable-get table x)
+         (raise (list ex-unkwn x))))
+    (#t (raise (list ex-exp x)))))
+
+(define (get-type-index::bint env::struct t)
+   (get-index (env-types-table env) (env-ntypes env) t 'typeidx-out-of-range
+              'unknown-type 'expected-typeidx))
 
 (define (get-type env::struct t)
    (car (vector-ref (env-types-vector env) (get-type-index env t))))
@@ -156,25 +178,14 @@
      (vector-set! v idx (cons t (cdr (vector-ref v idx))))))
 
 (define (get-func-index::bint env::struct x)
-   (cond
-    ((number? x)
-     (if (< x (env-nfuncs env))
-         x
-         (raise `(funcidx-out-of-range ,(env-ntypes env) ,x))))
-    ((ident? x)
-     (if (hashtable-contains? (env-funcs-table env) x)
-         (hashtable-get (env-funcs-table env) x)
-         (raise `(unknown-function ,x))))
-    (#t (raise `(expected-funcidx ,x)))))
+   (get-index (env-funcs-table env) (env-nfuncs env) x 'funcidx-out-of-range
+              'unknown-function 'expected-funcidx))
 
+; only used on arguments returned by the previous function
 (define (get-func-type::pair env::struct x::bint)
-   (vector-ref (env-funcs-types env) x))
+   (car (vector-ref (env-funcs-types env) x)))
 
 (define (get-field-index::bint env::struct t::bint f)
-   (define (index::bint lst::pair-nil i::bint)
-      (cond ((null? lst) (raise `(unknown-field ,t ,f)))
-            ((equal? (car lst) f) i)
-            (#t (index (cdr lst) (+fx 1 i)))))
    (let ((v (vector-ref (env-fields-names env) t)))
       (cond
        ((number? f)
@@ -182,34 +193,22 @@
          t
          (raise `(fieldidx-out-of-range ,t (length v) ,f))))
     ((ident? f)
-     (index v 0))
+     (index v f 0 'unknown-field))
     (#t (raise `(expected-fieldidx ,t))))))
 
 (define (get-data-index::bint env::struct x)
-   (cond ((integer? x)
-          (if (< x (env-ndata env))
-              x
-              (raise `(dataidx-out-range ,(env-ndata env) ,x))))
-         ((ident? x)
-          (if (hashtable-contains? (env-data-table env) x)
-              (hashtable-get (env-data-table env) x)
-              (raise `(unknown-data ,x))))
-         (#t (raise `(expected-dataidx ,x)))))
+   (get-index (env-data-table env) (env-ndata env) x 'dataidx-out-range
+              'unknown-data 'expected-dataidx))
 
 (define (get-local-index env::struct l)
-   (define (index::bint lst::pair-nil i::bint)
-      (cond ((null? lst) (raise `(unknown-local ,l)))
-            ((equal? (car lst) l) i)
-            (#t (index (cdr lst) (+fx 1 i)))))
    (cond
     ((number? l)
      (if (< l (env-nlocals env))
          l
-         (raise `(localidx-out-of-range ,(env-locals-types env) ,l))))
+         (raise `(localidx-out-of-range ,l))))
     ((ident? l)
-     (index (env-locals-names env) 0))
-    (#t `(expected-local ,l)))
-   (index (env-locals-names env) 0))
+     (index (env-locals-names env) l 0 'unknown-local))
+    (#t `(expected-local ,l))))
 
 (define (local-init! env::struct l)
    '())
@@ -221,19 +220,34 @@
    (cadr (vector-ref (env-locals-types env) (get-local-index env l))))
 
 (define (get-global-index::bint env::struct x)
-   (cond ((integer? x)
-          (if (< x (env-nglobals env))
-              x
-              (raise `(globalidx-out-range ,(env-nglobals env) ,x))))
-         ((ident? x)
-          (if (hashtable-contains? (env-globals-table env) x)
-              (hashtable-get (env-globals-table env) x)
-              (raise `(unknown-global ,x))))
-         (#t (raise `(expected-globalidx ,x)))))
+   (get-index (env-globals-table env) (env-nglobals env) x 'globalidx-out-range
+              'unknown-global 'expected-globalidx))
 
 ; only used on arguments returned by the previous function
 (define (get-global-type::pair env::struct x::bint)
-   (vector-ref (env-globals-types env) x))
+   (car (vector-ref (env-globals-types env) x)))
+
+(define (get-label-index::bint env::struct x)
+  (cond
+   ((number? x)
+    (if (<fx x (env-nlabels env))
+        x
+        (raise `(labelidx-out-of-range ,x))))
+   ((ident? x)
+    (index (env-labels-names env) x 0 'unknown-label))
+   (#t `(expected-label ,x))))
+
+; only used on arguments returned by the previous function
+(define (get-label-type env::struct x::bint)
+   (vector-ref (env-labels-types env) (- (env-nlabels env) x 1)))
+
+(define (get-tag-index::bint env::struct x)
+   (get-index (env-tags-table env) (env-ntags env) x 'tagidx-out-range
+              'unknown-tag 'expected-tagidx))
+
+; only used on arguments returned by the previous function
+(define (get-tag-type::pair env::struct x::bint)
+   (car (vector-ref (env-tags-types env) x)))
 
 ;; deftypes (rec subtypes*).i are represented as (deftype subtypes* i))
 ;; (rec i) are represented as (rec i)
@@ -754,11 +768,11 @@
 (define (ht env::struct t)
    (valid-ht env ht))
 
+(define (rt::pair env::struct t)
+   (valid-rt env rt))
+
 (define (funcidx::bint env::struct f)
    (get-func-index env f))
-
-(define (reftype env::struct t)
-   (valid-rt env t))
 
 (define last-type #f)
 
@@ -781,6 +795,12 @@
 (define (globalidx::bint env::struct x)
    (get-global-index env x))
 
+(define (labelidx::bint env::struct x)
+   (get-label-index env x))
+
+(define (tagidx::bint env::struct x)
+   (get-tag-index env x))
+
 (define (get-struct-fldts env::struct x::bint)
    (match-case (expand (get-type env x))
       ((struct . ?fldts) fldts)
@@ -790,6 +810,13 @@
    (match-case (expand (get-type env x))
       ((array ?ft) ft)
       (?t (raise `(expected-array ,x ,t)))))
+
+(define (get-label-last-rest env::struct l::bint)
+   (let ((t'* (get-label-type env l)))
+      (when (null? t'*)
+         (raise 'expected-non-empty-result))
+      (multiple-value-bind (t* tl) (split-at t'* (- (length t'*) 1))
+         (values t* (car tl)))))
 
 (read-table *instruction-types* "instruction-types.sch")
 
@@ -831,7 +858,7 @@
       (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i)
          (multiple-value-bind (tl st) (valid-instrs env tl st)
             (check-stack st (car t))
-            (if (equal? '(poly) (cadr t))
+            (if (equal? 'poly (caadr t)) ; t : ... -> (poly)
                 ; try to avoid this append (cps by hand ?)
                 (values (append tl (list i)) '(poly))
                 (values (append tl (list i)) (append (cadr t) (st)))))))

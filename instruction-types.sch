@@ -5,6 +5,8 @@
   (f32.const (,f32) (() (f32)))
   (f64.const (,f64) (() (f64)))
 
+  ; todo : rewrite these with symbol append to shorten them
+
   (i32.eqz  () ((i32) (i32)))
   (i32.eq   () ((i32 i32) (i32)))
   (i32.ne   () ((i32 i32) (i32)))
@@ -144,12 +146,13 @@
   ; by subsumption (section 3.4.12)
   (ref.is_null () (((ref null any)) (i32)))
   ; ref.as_non_null can't be treated here because there is a link between the
-  ; input type and the output type
+  ; input type and the output type, could be solved by giving the stack as an
+  ; argument to these functions
   (ref.eq () (((ref null eq) (ref null eq)) (i32)))
   ; by subsumption
-  (ref.test (,reftype) ,(lambda (- rt) `((,rt) (i32))))
+  (ref.test (,rt) ,(lambda (- rt) `((,rt) (i32))))
   ; by subsumption
-  (ref.cast (,reftype) ,(lambda (- rt) `((,rt) (,rt))))
+  (ref.cast (,rt) ,(lambda (- rt) `((,rt) (,rt))))
 
   ;; section 3.4.3
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.104
@@ -353,7 +356,117 @@
       `((,(cadr t)) ())))
 
   ;; section 3.4.11
+  (nop () (() ()))
 
+  ; empty argument by subsumption
+  (unreachable () (() (poly)))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.191
+  ; t_1 = epsilon by subsumption
+  (br (,labelidx) (lambda (env l) `(,(get-label-type env l) (poly))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.192
+  (br_if
+   (,labelidx)
+   (lambda (env l)
+      (let ((t (get-label-type env l)))
+         `((,@t i32) ,t))))
+
+  ; br_table is dealt with in an-hoc way
+
+  ; br_on_null is dealt with in an-hoc way, same reason as ref.as_non_null
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.195
+  (br_on_non_null
+   (,labelidx)
+   ,(lambda (env l)
+      (multiple-value-bind (t* tl) (get-label-last-rest env l)
+         (unless (reftype? tl)
+            (raise `(expected-reftype-label ,tl)))
+         `((,@t* (ref null ,(reftype->heaptype tl))) ,t*))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.196
+  (br_on_cast
+   (,labelidx ,rt ,rt)
+   (lambda (env l rt1 rt2)
+      (multiple-value-bind (t* rt') (get-label-last-rest env l)
+         (unless (reftype? rt')
+            (raise `(expected-reftype-label ,rt')))
+         (unless (<rt= env rt2 rt1)
+            (raise `(non-matching ,rt2 ,rt1)))
+         (unless (<rt= env rt2 rt')
+            (raise `(non-matching ,rt2 ,rt')))
+         `((,@t* ,rt1) (,@t* ,(diff rt1 rt2))))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.197
+  (br_on_cast_fail
+   (,labelidx ,rt ,rt)
+   (lambda (env l rt1 rt2)
+      (multiple-value-bind (t* rt') (get-label-last-rest env l)
+         (unless (reftype? rt')
+            (raise `(expected-reftype-label ,rt')))
+         (unless (<rt= env rt2 rt1)
+            (raise `(non-matching ,rt2 ,rt1)))
+         (unless (<rt= env (type-diff rt1 rt2) rt')
+            (raise `(non-matching (type-diff rt1 rt2) ,rt')))
+         `((,@t* ,rt1) (,@t* ,rt2)))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.198
+  (return () (lambda (env)
+               (unless (env-return env)
+                 (raise `cannot-return))
+               ; once again, subsumption
+               `(,(env-return env) (poly))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.199
+  ; if x is a funcidx, its defined type has to expand to a type of the form
+  ; (func (t1*) (t2))
+  (call (,funcidx) (lambda (env x) (cdr (expand (get-func-type env x)))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.200
+  (call_ref
+   (,typeidx)
+   (lambda (env x)
+     (match-case (expand (get-type env x))
+        ((func ?t1 ?t2) `((,@t1 (ref null ,x)) ,t2))
+        (?t (raise `(expected-function ,t))))))
+
+  ; we do not support call_indirect yet
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.202
+  (return_call
+   (,funcidx)
+   (lambda (env x)
+      (let ((t (expand (get-func-type env x))))
+         (unless (env-return env)
+            (raise `cannot-return))
+         (unless (<res= env (cadr t) (env-return env))
+            (raise `(non-matching ,(caddr t) ,(env-return env))))
+         ; subsumption
+         `(,(cadr t) (poly)))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.203
+  (return_call_ref
+   (,typeidx)
+   (lambda (env x)
+      (match-case (expand (get-type env x))
+        ((func ?t1 ?t2)
+         (unless (env-return env)
+            (raise `cannot-return))
+         (unless (<res= env t2 (env-return env))
+            (raise `(non-matching t2 ,(env-return env))))
+         `((,@t1 (ref null ,x)) (poly)))
+        (?t (raise `(expected-function ,t))))))
+
+  ; we do not support return_call_indirect yet
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.205
+  (throw
+   (,tagidx)
+   ,(lambda (env x) `(,(cadr (expand (get-tag-type env x))) (poly))))
+
+  ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.206
+  (throw_ref () (((ref null exn)) (poly))) ; subsumption over and over
   (i32.load8_s () ((i32) (i32)))
   (i32.load8_u () ((i32) (i32)))
   (i32.store8  () ((i32 i32) ())))
