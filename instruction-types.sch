@@ -355,6 +355,13 @@
          (raise `(set-const ,x)))
       `((,(cadr t)) ())))
 
+
+  ;; section 3.4.10 - we only support these partially, in particular, we do not
+  ;; support offsets yet
+  (i32.load8_s () ((i32) (i32)))
+  (i32.load8_u () ((i32) (i32)))
+  (i32.store8  () ((i32 i32) ()))
+
   ;; section 3.4.11
   (nop () (() ()))
 
@@ -467,6 +474,5 @@
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.206
   (throw_ref () (((ref null exn)) (poly))) ; subsumption over and over
-  (i32.load8_s () ((i32) (i32)))
-  (i32.load8_u () ((i32) (i32)))
-  (i32.store8  () ((i32 i32) ())))
+
+  )

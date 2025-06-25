@@ -241,6 +241,16 @@
 (define (get-label-type env::struct x::bint)
    (vector-ref (env-labels-types env) (- (env-nlabels env) x 1)))
 
+(define (push-label! env::struct nm::symbol t::pair-nil)
+   (let ((x (env-nlabels env)))
+      (env-nlabels-set! env (+ x 1))
+      (env-labels-names-set! env (cons nm (env-labels-names env)))
+      (vector-set! (env-labels-types env) x t)))
+
+(define (pop-label! env::struct)
+   (env-nlabels-set! env (- (env-nlabels env) 1))
+   (env-labels-names-set! env (cdr (env-labels-names env))))
+
 (define (get-tag-index::bint env::struct x)
    (get-index (env-tags-table env) (env-ntags env) x 'tagidx-out-range
               'unknown-tag 'expected-tagidx))
@@ -563,7 +573,7 @@
           (valid-rt env t))))
 
 ;; section 3.2.7
-(define (valid-res env::struct l)
+(define (valid-res env::struct l::pair-nil)
    (for-each (lambda (t) (valid-vt env t)) l))
 
 ;; see where it is used
@@ -579,7 +589,7 @@
       (else (raise `(expected-instructiontype ,t)))))
 
 ;; section 3.2.9 and 6.4.6
-(define (valid-param/result env::struct l)
+(define (valid-param/result env::struct l::pair-nil)
    (match-case l
       (() (values '() '()))
       (((param (? ident?) ?vt) . ?tl)
@@ -597,6 +607,25 @@
              (else (raise `(expected-functiontype ,l)))))
        (values '() (get-results l)))
       (else (raise `(expected-functiontype ,l)))))
+
+(define (valid-blocktype/get-tl env::struct l::pair-nil)
+   (define (valid-param/result/get-tl l::pair-nil)
+      (match-case l
+         (((param . ?vts) . ?tl)
+          (multiple-value-bind (p r tl) (valid-param/result/get-tl tl)
+             (values (append (map-env valid-vt env vts) p) r tl)))
+         (((result . ?-) . ?-)
+          (define (get-results/tl l)
+             (match-case l
+                (((result . ?vts) . ?tl)
+                 (multiple-value-bind (r tl) (get-results/tl tl)
+                    (values (append (map-env valid-vt env vts) r) tl)))
+                (else (values '() l))))
+          (multiple-value-bind (r tl) (get-results/tl l)
+             (values '() r tl)))
+         (else (values '() '() l))))
+   (multiple-value-bind (p r tl) (valid-param/result/get-tl l)
+      (values (list p r) tl)))
 
 ;; section 3.2.11 and 6.4.7
 (define (valid-fldt env::struct t)
@@ -820,44 +849,85 @@
 
 (read-table *instruction-types* "instruction-types.sch")
 
+; the following function implements subsumption (section 3.4.12) in an
+; syntax-directed way
+(define (check-stack::pair-nil env::struct st::pair-nil ts::pair-nil)
+   (cond ((null? st)
+          (unless (null? ts) (raise `(empty-stack ,ts))))
+         ((null? ts) st)
+         ((equal? st '(poly)) '(poly))
+         ((<vt= env (car st) (car ts))
+          (check-stack env (cdr st) (cdr ts)))
+         (#t (raise `(non-matching-stack ,(car st) ,(car ts))))))
+
+(define (adhoc-instr env::struct i::pair st::pair-nil)
+   (define (check-block body::pair-nil t::pair-nil bt::pair l::symbol)
+     (push-label! env l t)
+     (multiple-value-bind (i st) (valid-instrs env body (car bt))
+        (let ((st-rst (check-stack env st (cadr bt))))
+          (unless (or (null? st-rst) (equal? 'poly (car st-rst)))
+            (raise `(value-left-stack ,st-rst))))
+        (pop-label! env)
+        i))
+
+   (match-case i
+      ((block (and (? ident?) ?l) . ?body)
+       (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
+          (values bt `(block ,bt ,(check-block tl (cadr bt) bt l)) '())))
+      ((block . ?rst)
+       (adhoc-instr env `(block ,(gensym "$unnamed-label") ,@rst) st))
+      ((loop (and (? ident?) ?l) . ?body)
+       (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
+          (values bt `(loop ,bt ,(check-block tl (car bt) bt l)) '())))
+      ((loop . ?rst)
+       (adhoc-instr env `(loop ,(gensym "$unnamed-label") ,@rst) st))
+      ((if (and (? ident?) ?l) . ?body)
+       (define (get-tl/then/else l::pair-nil)
+          (match-case l
+             (((then . ?then) ((kwote else) . ?else)) (values '() then else))
+             (((then . ?then)) (values '() then '()))
+             ((?hd . ?tl)
+              (multiple-value-bind (tl then else) (get-tl/then/else l)
+                 (values (cons hd tl) then else)))
+             (else (raise `(expected-then/else ,l)))))
+
+       (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
+          (values bt `(loop ,bt ,(check-block tl (car bt) bt l)) '())
+          (multiple-value-bind (tl then else) (get-tl/then/else body)
+             (values `((,@(car bt) i32) (cadr bt))
+                     `(if ,bt ,(check-block then (cadr bt) bt l)
+                              ,(check-block else (cadr bt) bt l))
+                     tl))))
+      ((if . ?rst)
+       (adhoc-instr env `(if ,(gensym "$unnamed-label") ,@rst) st))))
+
 ;; returns the type of the given instruction, the desuggared instruction and
 ;; the tail in case it is in s-expression format
 ;;
 ;; for instance with (i32.add (i32.const 0) (i32.const 0)), it will return:
 ;; (values (i32.add) ((i32 i32) (i32)) ((i32.const 0) (i32.const 0)))
-(define (typeof-instr/instr/tl env::struct i::pair)
-   (unless (hashtable-contains? *instruction-types* (car i))
-      (raise `(unknown-opcode ,i)))
+(define (typeof-instr/instr/tl env::struct i::pair st::pair-nil)
    (with-handler
       (lambda (e) (raise `(at-instruction ,i ,e)))
-      (let* ((v (hashtable-get *instruction-types* (car i)))
-             (exp-args (car v))
-             (t (cadr v))
-             (k (length exp-args)))
-         (when (< k (length (cdr i)))
-            (raise `(not-enough arguments ,i ,exp-args)))
-         (multiple-value-bind (giv-args tl) (split-at (cdr i) k)
-            (let ((args (map (lambda (f x) (f env x)) exp-args giv-args)))
-               (values (if (procedure? t) (apply t env args) t)
-                       `(,(car i) ,@args) tl))))))
+      (if (hashtable-contains? *instruction-types* (car i))
+          (let* ((v (hashtable-get *instruction-types* (car i)))
+                 (exp-args (car v))
+                 (t (cadr v))
+                 (k (length exp-args)))
+             (when (< k (length (cdr i)))
+                (raise `(not-enough arguments ,i ,exp-args)))
+             (multiple-value-bind (giv-args tl) (split-at (cdr i) k)
+                (let ((args (map (lambda (f x) (f env x)) exp-args giv-args)))
+                   (values (if (procedure? t) (apply t env args) t)
+                           `(,(car i) ,@args) tl))))
+          (adhoc-instr env i st))))
 
 ;; returns the desuggared instructions and the new stack state
 (define (valid-instrs env::struct l::pair-nil st::pair-nil)
-   ; the following function implements subsumption (section 3.4.12) in an
-   ; syntax-directed way
-   (define (check-stack st::pair-nil ts::pair-nil)
-      (cond ((null? st)
-             (unless (null? ts) (raise `(empty-stack ,ts))))
-            ((null? ts) st)
-            ((equal? st '(poly)) '(poly))
-            ((<vt= env (car st) (car ts))
-             (check-stack (cdr st) (cdr ts)))
-            (#t (raise `(non-matching-stack ,(car st) ,(car ts))))))
-
    (define (valid-instr i::pair st::pair-nil)
-      (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i)
+      (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
          (multiple-value-bind (tl st) (valid-instrs env tl st)
-            (check-stack st (car t))
+            (check-stack env st (car t))
             (if (equal? 'poly (caadr t)) ; t : ... -> (poly)
                 ; try to avoid this append (cps by hand ?)
                 (values (append tl (list i)) '(poly))
