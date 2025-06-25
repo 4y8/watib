@@ -9,6 +9,7 @@
 
 (define keep-going #f)
 (define error-list '())
+(define error-encountered? #f)
 
 (define (report f msg obj)
    (if (epair? obj)
@@ -48,6 +49,7 @@
 (read-table *const-instrs* "constant-instructions.sch")
 (define (non-constant-instr? env::struct i::pair)
    (if (or (hashtable-contains? *const-instrs* (car i))
+           (equal? (car i) 'error)
            (and (equal? (car i) 'global.get)
                 (not (car (get-global-type env (cadr i))))))
        #f
@@ -1125,9 +1127,9 @@
          ((global ?gt . ?e)
           (let ((t (valid-gt env gt)))
              (multiple-value-bind (e t') (valid-expr env e)
-                (when (length>=? t' 2)
+                (when (and (length>=? t' 2) (not (equal? 'poly (cadr t'))))
                    (raise `(too-much-value-stack ,t')))
-                (when (null? t')
+                (when (or (null? t') (equal? 'poly (car t')))
                    (raise `(missing-value-stack ,t)))
                 (unless (<vt= env (car t') (cadr t))
                    (raise `(non-matching-globaltype ,(car t') ,(cadr t))))
@@ -1138,29 +1140,29 @@
          (else (raise 'expected-modulefield)))))
 
 (define (format-exn e)
+   (set! error-encountered? #t)
    (define (rep msg obj)
      (with-handler error-notify
         (error/location "val" msg obj (cadr (cer obj)) (caddr (cer obj)))))
    (match-case e
       ((in-module ?m ?e)
-       (print "module" m)
        (rep "in module" m)
        (format-exn e))
       ((at-instruction ?i ?e)
-       (print "instruction" i)
        (rep "at instruction" i)
        (format-exn e))
-      (else (print "ERROR: " e)))
+      ("" #f)
+      (else (print "***ERROR: " e)))
    (unless keep-going
         (exit 1)))
 
 (define (valid-modulefield/handle-error env::struct m)
-   (let ((m (with-handler format-exn (valid-modulefield env m))))
-      (unless (or (null? error-list) (not m))
+   (let ((clean-m (with-handler format-exn (valid-modulefield env m))))
+      (unless (null? error-list)
          (format-exn `(in-module ,m ""))
          (for-each format-exn error-list)
          (set! error-list '()))
-      m))
+      clean-m))
 
 (define (valid-file f::pair-nil)
    (let ((env (make-env)))
@@ -1180,4 +1182,6 @@
    (if input-file
        (call-with-input-file input-file
           (lambda (ip)
-             (print (valid-file (read ip #t)))))))
+             (let ((f (valid-file (read ip #t))))
+                (unless error-encountered?
+                   (print f)))))))
