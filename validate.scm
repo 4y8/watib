@@ -90,12 +90,6 @@
        (>=fx 0 i)
        (or (>=fx 1 i) (length>=? (cdr l) (-fx i 1)))))
 
-
-(define (length=?::bool l::pair-nil i::bint)
-   (if (null? i)
-       (=fx 0 i)
-       (length=? (cdr l) (-fx i 1))))
-
 (define (index::bint lst::pair-nil x i::bint e::symbol)
       (cond ((null? lst) (raise (list e x)))
             ((equal? (car lst) x) i)
@@ -992,7 +986,29 @@
                           (values (cons l ls) tl))))
                    (else (values '() l))))
              (multiple-value-bind (ls tl) (valid-label/get-tl (cdr i))
-                (values (append lower-bound '(i32)) `(br_table ,ls) tl)))))))
+                ; by subsumption
+                (values `((,@lower-bound i32) (poly)) `(br_table ,ls) tl)))))
+
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.194
+      ((br_on_null ?lab . ?tl)
+       (when (null? st)
+          (raise 'empty-stack-reftype))
+       (let* ((l (labelidx env lab))
+              (t* (get-label-type env l)))
+          (unless (reftype? (car st))
+             (raise `(expected-reftype-stack ,st)))
+          (let ((ht (reftype->heaptype (car st))))
+             (values `((,@t* (ref null ,ht)) (,@t* (ref ,ht))) `(br_on_null ,l)
+                     tl))))
+
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.100
+      ((ref.as_non_null ?lab . ?tl)
+       (when (null? st)
+          (raise 'empty-stack-reftype))
+       (unless (reftype? (car st))
+          (raise `(expected-reftype-stack ,st)))
+       (let ((ht (reftype->heaptype (car st))))
+          (values `(((ref null ,ht)) ((ref ,ht))) 'ref.as_non_null tl)))))
 
 ;; returns the type of the given instruction, the desuggared instruction and
 ;; the tail in case it is in s-expression format
