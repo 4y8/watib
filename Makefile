@@ -10,7 +10,7 @@ val: validate.o type-abbreviations.sch numtypes.sch vectypes.sch instruction-typ
 	bigloo validate.o -o val
 
 %.o : %.scm
-	bigloo -c $< -o $@ -O2 -unsafe -g
+	bigloo -c $< -o $@ -O2 -g
 
 clean:
 	rm -f *.o

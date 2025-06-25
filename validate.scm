@@ -8,6 +8,7 @@
 ;;; are never valid
 
 (define keep-going #f)
+(define error-list '())
 
 (define (report f msg obj)
    (if (epair? obj)
@@ -72,7 +73,7 @@
    `(with-handler
        (match-lambda
          ((,e . ?tl) (raise (cons ,e' tl)))
-         (?e (raise e)))
+         (?e (print e) (raise e)))
        ,@body))
 
 (define-macro (map-env f env . l)
@@ -153,8 +154,8 @@
 
    (nglobals 0)
    (globals-table (make-hashtable))
-   (globals-types (make-vector 100000))
-   (globals-names (make-vector 100000)) ; for error reporting
+   (globals-types (make-vector 1000000))
+   (globals-names (make-vector 1000000)) ; for error reporting
 
    (ntags 0)
    (tags-table (make-hashtable))
@@ -163,7 +164,8 @@
 
    (return #f))
 
-(define (get-index::bint table range x ex-oor ex-unkwn ex-exp)
+(define (get-index::bint table range::bint x ex-oor::symbol ex-unkwn::symbol
+                         ex-exp::symbol)
    (cond
     ((number? x)
      (if (< x range)
@@ -825,10 +827,10 @@
             (#t (raise `(out-bounds-u32 ,n))))))
 
 (define (ht env::struct t)
-   (valid-ht env ht))
+   (valid-ht env t))
 
 (define (rt::pair env::struct t)
-   (valid-rt env rt))
+   (valid-rt env t))
 
 (define (funcidx::bint env::struct f)
    (get-func-index env f))
@@ -1042,9 +1044,13 @@
 ;; for instance with (i32.add (i32.const 0) (i32.const 0)), it will return:
 ;; (values (i32.add) ((i32 i32) (i32)) ((i32.const 0) (i32.const 0)))
 (define (typeof-instr/instr/tl env::struct i::pair st::pair-nil)
-
    (with-handler
-      (lambda (e) (raise `(at-instruction ,i ,e)))
+      (lambda (e)
+        (if keep-going
+            (begin
+               (set! error-list (cons `(at-instruction ,i ,e) error-list))
+               (values '(() (poly)) '(error) '()))
+            (raise `(at-instruction ,i ,e))))
       (if (hashtable-contains? *instruction-types* (car i))
           (let* ((v (hashtable-get *instruction-types* (car i)))
                  (exp-args (car v))
@@ -1061,16 +1067,15 @@
 ;; returns the desuggared instructions and the new stack state
 (define (valid-instrs env::struct l::pair-nil st::pair-nil)
    (define (valid-instr i::pair st::pair-nil)
-      (print i)
       (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
          (multiple-value-bind (tl st) (valid-instrs env tl st)
-            (print (cddr t))
             (for-each (lambda (x) (local-init! env x)) (cddr t))
             (let ((st (check-stack env st (car t))))
                (if (equal? 'poly (caadr t)) ; t : ... -> (poly) ?
                    ; try to avoid this append (cps by hand ?)
                    (values (append tl (list i)) '(poly))
-                   (values (append tl (list i)) (append (reverse (cadr t)) st)))))))
+                   (values (append tl (list i))
+                           (append (reverse (cadr t)) st)))))))
 
    (if (null? l)
        (values '() st)
@@ -1087,7 +1092,6 @@
 (define (valid-modulefield env::struct m)
    (with-handler
      (match-lambda
-        (?e (raise e))
         ((in-module ?- ?e) (raise `(in-module ,m ,e)))
         (?e (raise `(in-module ,m ,e))))
      (match-case m
@@ -1131,19 +1135,44 @@
                   (raise `(non-constant-global ,(non-constant-expr? env e))))
                (add-global! env t)
                `(global ,t ,e))))
-        (else (raise `(expected-modulefield))))))
+        (else (raise 'expected-modulefield)))))
+
+(define (format-exn e)
+   (define (rep msg obj)
+     (with-handler error-notify
+        (error/location "val" msg obj (cadr (cer obj)) (caddr (cer obj)))))
+   (match-case e
+      ((in-module ?m ?e)
+       (rep "in module" m)
+       (format-exn e))
+      ((at-instruction ?i ?e)
+       (rep "at instruction" i)
+       (format-exn e))
+      (else (print "ERROR: " e)))
+   (unless keep-going
+        (exit 1)))
+
+(define (valid-modulefield/handle-error env::struct m)
+   (let ((m (with-handler format-exn (valid-modulefield env m))))
+      (unless (null? error-list)
+         (format-exn `(in-module ,m ""))
+         (for-each format-exn error-list)
+         (set! error-list '()))
+      m))
 
 (define (valid-file f::pair-nil)
    (let ((env (make-env)))
       (match-case f
          ((or (module (? ident?) . ?mfs) (module . ?mfs) ?mfs)
-          (map-env valid-modulefield env mfs)))))
+          (map-env valid-modulefield/handle-error env mfs)))))
 
 (define (main argv)
    (define input-file #f)
    (args-parse (cdr argv)
       ((("--help" "-h") (help "Display this help message"))
        (args-parse-usage #f))
+      ((("--keep-going" "-k") (help "Continue when encountering an error"))
+       (set! keep-going #t))
       (else
        (set! input-file else)))
    (if input-file
