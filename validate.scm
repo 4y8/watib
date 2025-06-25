@@ -85,6 +85,17 @@
        '()
        (cons (apply f (map car lists)) (apply map-seq f (map cdr lists)))))
 
+(define (length>=?::bool l::pair-nil i::bint)
+   (if (null? i)
+       (>=fx 0 i)
+       (or (>=fx 1 i) (length>=? (cdr l) (-fx i 1)))))
+
+
+(define (length=?::bool l::pair-nil i::bint)
+   (if (null? i)
+       (=fx 0 i)
+       (length=? (cdr l) (-fx i 1))))
+
 (define (index::bint lst::pair-nil x i::bint e::symbol)
       (cond ((null? lst) (raise (list e x)))
             ((equal? (car lst) x) i)
@@ -852,35 +863,44 @@
 ; the following function implements subsumption (section 3.4.12) in an
 ; syntax-directed way
 (define (check-stack::pair-nil env::struct st::pair-nil ts::pair-nil)
-   (cond ((null? st)
-          (unless (null? ts) (raise `(empty-stack ,ts))))
-         ((null? ts) st)
-         ((equal? st '(poly)) '(poly))
-         ((<vt= env (car st) (car ts))
-          (check-stack env (cdr st) (cdr ts)))
-         (#t (raise `(non-matching-stack ,(car st) ,(car ts))))))
+   (define (aux::pair-nil st::pair-nil ts::pair-nil)
+      (cond ((null? st)
+             (unless (null? ts) (raise `(empty-stack ,ts))))
+            ((null? ts) st)
+            ((equal? st '(poly)) '(poly))
+            ((<vt= env (car st) (car ts))
+             (aux (cdr st) (cdr ts)))
+            (#t (raise `(non-matching-stack ,(car st) ,(car ts))))))
+   (aux st (reverse ts)))
 
 (define (adhoc-instr env::struct i::pair st::pair-nil)
    (define (check-block body::pair-nil t::pair-nil bt::pair l::symbol)
-     (push-label! env l t)
-     (multiple-value-bind (i st) (valid-instrs env body (car bt))
-        (let ((st-rst (check-stack env st (cadr bt))))
-          (unless (or (null? st-rst) (equal? 'poly (car st-rst)))
-            (raise `(value-left-stack ,st-rst))))
-        (pop-label! env)
-        i))
+     (let ((loc-init (env-locals-types env)))
+        (push-label! env l t)
+        (multiple-value-bind (i st) (valid-instrs env body (car bt))
+           (let ((st-rst (check-stack env st (cadr bt))))
+              (unless (or (null? st-rst) (equal? 'poly (car st-rst)))
+                 (raise `(value-left-stack ,st-rst))))
+           (pop-label! env)
+           (env-locals-types-set! env loc-init)
+           i)))
 
    (match-case i
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.183
       ((block (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (values bt `(block ,bt ,(check-block tl (cadr bt) bt l)) '())))
       ((block . ?rst)
        (adhoc-instr env `(block ,(gensym "$unnamed-label") ,@rst) st))
+
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.184
       ((loop (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (values bt `(loop ,bt ,(check-block tl (car bt) bt l)) '())))
       ((loop . ?rst)
        (adhoc-instr env `(loop ,(gensym "$unnamed-label") ,@rst) st))
+
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.185
       ((if (and (? ident?) ?l) . ?body)
        (define (get-tl/then/else l::pair-nil)
           (match-case l
@@ -899,9 +919,12 @@
                      tl))))
       ((if . ?rst)
        (adhoc-instr env `(if ,(gensym "$unnamed-label") ,@rst) st))
+
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.186
       ((try_table (and (? ident?) ?l) . ?body)
        (define (valid-catch/get-body l::pair-nil)
           (match-case l
+             ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.187
              (((catch ?tag ?lab) . ?tl)
               (let* ((x (tagidx env tag))
                      (l (labelidx env lab))
@@ -911,6 +934,8 @@
                     (raise `(non-matching-catch ,x ,l ,t* ,lt)))
                  (multiple-value-bind (c tl) (valid-catch/get-body tl)
                     (values (cons `(catch ,l ,x) c) tl))))
+
+             ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.188
              (((catch_ref ?tag ?lab) . ?tl)
               (let* ((x (tagidx env tag))
                      (l (labelidx env lab))
@@ -920,6 +945,8 @@
                     (raise `(non-matching-catch-ref ,x ,l ,t* ,lt)))
                  (multiple-value-bind (c tl) (valid-catch/get-body tl)
                     (values (cons `(catch_ref ,l ,x) c) tl))))
+
+             ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.189
              (((catch_all ?lab) . ?tl)
               (let* ((l (labelidx env lab))
                      (lt (get-label-type env l)))
@@ -927,6 +954,8 @@
                     (raise `(non-empty-label-catch-all ,l ,lt)))
                  (multiple-value-bind (c tl) (valid-catch/get-body tl)
                     (values (cons `(catch_all ,l) c) tl))))
+
+             ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.190
              (((catch_all_ref ?lab) . ?tl)
               (let* ((l (labelidx env lab))
                      (lt (get-label-type env l)))
@@ -939,7 +968,31 @@
           (multiple-value-bind (c tl) (valid-catch/get-body tl)
              (values bt `(try_table ,bt ,c ,(check-block tl (cadr bt) bt l))))))
       ((try_table . ?rst)
-       (adhoc-instr env `(try_table ,(gensym "$unnamed-label") ,@rst) st))))
+       (adhoc-instr env `(try_table ,(gensym "$unnamed-label") ,@rst) st))
+
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.193
+
+      ; to avoid having to compute a greatest lower bound, we check each label's
+      ; type against the stack, which will serve as a lower bound in absence of
+      ; failure and if all the label's arity are the same
+      ((br_table ?lab . ?rst)
+       (let* ((l (labelidx env lab))
+              (n (length (get-label-type env l))))
+           (unless (length>=? st (+ 1 n))
+              (raise `(empty-stack ,(drop (get-label-type env l) (length st)))))
+           (let ((lower-bound (cdr (take st (+ 1 n)))))
+             (define (valid-label/get-tl l::pair-nil)
+                (match-case l
+                   (((and (? ident?) ?lab) . ?tl)
+                    (let* ((l (labelidx env lab))
+                           (lt (get-label-type env l)))
+                       (unless (<res= env lower-bound lt)
+                          (raise `(non-matching ,lower-bound ,lt)))
+                       (multiple-value-bind (ls tl) (valid-label/get-tl tl)
+                          (values (cons l ls) tl))))
+                   (else (values '() l))))
+             (multiple-value-bind (ls tl) (valid-label/get-tl (cdr i))
+                (values (append lower-bound '(i32)) `(br_table ,ls) tl)))))))
 
 ;; returns the type of the given instruction, the desuggared instruction and
 ;; the tail in case it is in s-expression format
@@ -967,11 +1020,12 @@
    (define (valid-instr i::pair st::pair-nil)
       (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
          (multiple-value-bind (tl st) (valid-instrs env tl st)
-            (check-stack env st (car t))
-            (if (equal? 'poly (caadr t)) ; t : ... -> (poly) ?
-                ; try to avoid this append (cps by hand ?)
-                (values (append tl (list i)) '(poly))
-                (values (append tl (list i)) (append (cadr t) (st)))))))
+            (for-each (lambda (x) (local-init! env x)) (cddr t))
+            (let ((st (check-stack env st (car t))))
+               (if (equal? 'poly (caadr t)) ; t : ... -> (poly) ?
+                   ; try to avoid this append (cps by hand ?)
+                   (values (append tl (list i)) '(poly))
+                   (values (append tl (list i)) (append (cadr t) (st))))))))
 
    (if (null? l)
        (values '() st)
