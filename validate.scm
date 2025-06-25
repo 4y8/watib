@@ -1091,51 +1091,51 @@
 ;; section 6.6.13
 (define (valid-modulefield env::struct m)
    (with-handler
-     (match-lambda
-        ((in-module ?- ?e) (raise `(in-module ,m ,e)))
-        (?e (raise `(in-module ,m ,e))))
-     (match-case m
-        ; first abreviation of 6.4.9
-        ((type . ?-) (valid-modulefield env `(rec ,m)))
-        ((rec . ?l)
-         (let ((x (env-ntypes env)))
-            (valid-rect env (clean-mod-rectype! env l x) x)))
-        ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
-         (raise `todo))
-        ((data (and (? ident?) ?id) . ?rst)
-         (hashtable-put! (env-data-table env) id (env-ndata env))
-         (valid-modulefield env `(data ,@rst)))
-        ((data . ?rst)
-         ; section 6.6.12
-         (for-each (lambda (s) (unless (string? s)
-                                 (raise `(expected-string ,s))))
-                   rst)
-         ; section 3.5.9 - passive data segments are always valid, we currently
-         ; only support those
-         (env-ndata-set! env (+ 1 (env-ndata env)))
-         m)
-        ; section 6.6.7
-        ((global (export (? string?)) . ?rst)
-         (valid-modulefield env `(global ,@rst)))
-        ((global (and (? ident?) ?id) . ?rst)
-         (hashtable-put! (env-globals-table env) id (env-nglobals env))
-         (vector-set! (env-globals-names env) (env-nglobals env) id)
-         (valid-modulefield env `(global ,@rst)))
-        ; section 3.5.6
-        ((global ?gt . ?e)
-         (let ((t (valid-gt env gt)))
-            (multiple-value-bind (e t') (valid-expr env e)
-               (when (length>=? t' 2)
-                  (raise `(too-much-value-stack ,t')))
-               (when (null? t')
-                  (raise `(missing-value-stack ,t)))
-               (unless (<vt= env (car t') (cadr t))
-                  (raise `(non-matching-globaltype ,(car t') ,(cadr t))))
-               (when (non-constant-expr? env e)
-                  (raise `(non-constant-global ,(non-constant-expr? env e))))
-               (add-global! env t)
-               `(global ,t ,e))))
-        (else (raise 'expected-modulefield)))))
+      (match-lambda
+         ((in-module ?- ?e) (raise `(in-module ,m ,e)))
+         (?e (raise `(in-module ,m ,e))))
+      (match-case m
+         ; first abreviation of 6.4.9
+         ((type . ?-) (valid-modulefield env `(rec ,m)))
+         ((rec . ?l)
+          (let ((x (env-ntypes env)))
+             (valid-rect env (clean-mod-rectype! env l x) x)))
+         ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
+          (raise `todo))
+         ((data (and (? ident?) ?id) . ?rst)
+          (hashtable-put! (env-data-table env) id (env-ndata env))
+          (valid-modulefield env `(data ,@rst)))
+         ((data . ?rst)
+          ; section 6.6.12
+          (for-each (lambda (s) (unless (string? s)
+                                   (raise `(expected-string ,s))))
+                    rst)
+          ; section 3.5.9 - passive data segments are always valid, we currently
+          ; only support those
+          (env-ndata-set! env (+ 1 (env-ndata env)))
+          m)
+          ; section 6.6.7
+         ((global (export (? string?)) . ?rst)
+          (valid-modulefield env `(global ,@rst)))
+         ((global (and (? ident?) ?id) . ?rst)
+          (hashtable-put! (env-globals-table env) id (env-nglobals env))
+          (vector-set! (env-globals-names env) (env-nglobals env) id)
+          (valid-modulefield env `(global ,@rst)))
+          ; section 3.5.6
+         ((global ?gt . ?e)
+          (let ((t (valid-gt env gt)))
+             (multiple-value-bind (e t') (valid-expr env e)
+                (when (length>=? t' 2)
+                   (raise `(too-much-value-stack ,t')))
+                (when (null? t')
+                   (raise `(missing-value-stack ,t)))
+                (unless (<vt= env (car t') (cadr t))
+                   (raise `(non-matching-globaltype ,(car t') ,(cadr t))))
+                (when (non-constant-expr? env e)
+                   (raise `(non-constant-global ,(non-constant-expr? env e))))
+                (add-global! env t)
+                `(global ,t ,e))))
+         (else (raise 'expected-modulefield)))))
 
 (define (format-exn e)
    (define (rep msg obj)
@@ -1143,9 +1143,11 @@
         (error/location "val" msg obj (cadr (cer obj)) (caddr (cer obj)))))
    (match-case e
       ((in-module ?m ?e)
+       (print "module" m)
        (rep "in module" m)
        (format-exn e))
       ((at-instruction ?i ?e)
+       (print "instruction" i)
        (rep "at instruction" i)
        (format-exn e))
       (else (print "ERROR: " e)))
@@ -1154,7 +1156,7 @@
 
 (define (valid-modulefield/handle-error env::struct m)
    (let ((m (with-handler format-exn (valid-modulefield env m))))
-      (unless (null? error-list)
+      (unless (or (null? error-list) (not m))
          (format-exn `(in-module ,m ""))
          (for-each format-exn error-list)
          (set! error-list '()))
