@@ -1,3 +1,4 @@
+;; section 6.4.4 - Abbreviations
 '((anyref . (ref null any))
   (eqref  . (ref null eq))
   (i31ref . (ref null i31))
