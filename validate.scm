@@ -73,9 +73,10 @@
 
 (define-macro (replace-exception e e' . body)
    `(with-handler
-       (match-lambda
-         ((,e . ?tl) (raise (cons ,e' tl)))
-         (?e (print e) (raise e)))
+       (lambda (exn)
+          (if (equal? (car exn) ,e)
+              (raise (cons ,e' (cdr exn)))
+              (raise exn)))
        ,@body))
 
 (define-macro (map-env f env . l)
@@ -447,9 +448,12 @@
               (and (deftype? t1) (<ht= env (deftype-head t1) 'eq))))
          ((and (deftype? t1) (symbol? t2))
           (equal? (deftype-head t1) t2))
+         ((and (deftype? t1) (deftype? t2))
+          (<dt= env t1 t2))
          ((equal? 'none t1) (<ht= env t2 'any))
          ((equal? 'nofunc t1) (<ht= env t2 'func))
          ((equal? 'noextern t1) (<ht= env t2 'extern))
+         ((equal? 'noexn t1) (<ht= env t2 'exn))
          (#t #f)))
 
 (define (nullable?::bool rt::pair)
@@ -793,7 +797,6 @@
 ;; section 3.2.17
 ;; rest of the validation for types : todo
 
-
 ;; section 6.4.9
 (define (clean-mod-rectype! env::struct l x::bint)
    ; the `(rec ...) in the environment assures rolling
@@ -808,9 +811,9 @@
          (match-case st
             ((sub final ?ct) `(sub final ,(valid-ct env ct)))
             ((sub final (and ?y (? idx?)) ?ct)
-             `(sub final ,y ,(valid-ct env ct)))
+             `(sub final ,(get-type-index env y) ,(valid-ct env ct)))
             ((sub (and ?y (? idx?)) ?ct)
-             `(sub ,y ,(valid-ct env ct)))
+             `(sub ,(get-type-index env y) ,(valid-ct env ct)))
             ((sub ?ct)
              `(sub ,(valid-ct env ct)))
             (else
@@ -1155,7 +1158,7 @@
        (raise 'todo))
       ((global (and (? ident?) ?id) . ?rst)
        (add-global-name! env id)
-       (valid-importdesc env `(func ,@rst)))
+       (valid-importdesc env `(global ,@rst)))
       ((tag (and (? ident?) ?id) . ?rst)
        (add-tag-name! env id)
        (valid-importdesc env `(tag ,@rst)))

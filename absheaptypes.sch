@@ -2,6 +2,8 @@
   (nofunc . #f)
   (extern . #f)
   (noextern . #f)
+  (exn . #f)
+  (noexn . #f)
   (any . #f)
   (eq . #f)
   (i31 . #f)
