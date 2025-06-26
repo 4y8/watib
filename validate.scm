@@ -731,7 +731,7 @@
       (else (raise `(expected-fields ,l)))))
 
 ;; section 3.2.10
-(define (valid-ct env::struct t)
+(define (valid-ct env::struct t x::bint)
    (match-case t
       ((func . ?p/r)
        (multiple-value-bind (p r) (valid-param/result env p/r)
@@ -739,9 +739,7 @@
       ((array ?fldt) `(array ,(valid-fldt env fldt)))
       ((struct . ?fldts)
        (multiple-value-bind (fields names) (valid-fields/names env fldts)
-          ; we assume valid-ct is only called just before assigning a new type
-          ; index
-          (vector-set! (env-fields-names env) (env-ntypes env) names)
+          (vector-set! (env-fields-names env) x names)
           (cons 'struct fields)))
       (else (raise `(expected-comptype ,t)))))
 
@@ -820,19 +818,19 @@
                     ((type ?st)
                      (add-type! env #f `(rec ,(-fx (env-ntypes env) x))) st)
                     (else (raise `(expected-typedef ,l)))) l)))
-      (define (valid-st st)
+      (define (valid-st st x)
          (match-case st
-            ((sub final ?ct) `(sub final ,(valid-ct env ct)))
+            ((sub final ?ct) `(sub final ,(valid-ct env ct x)))
             ((sub final (and ?y (? idx?)) ?ct)
-             `(sub final ,(get-type-index env y) ,(valid-ct env ct)))
+             `(sub final ,(get-type-index env y) ,(valid-ct env ct x)))
             ((sub (and ?y (? idx?)) ?ct)
-             `(sub ,(get-type-index env y) ,(valid-ct env ct)))
+             `(sub ,(get-type-index env y) ,(valid-ct env ct x)))
             ((sub ?ct)
-             `(sub ,(valid-ct env ct)))
+             `(sub ,(valid-ct env ct x)))
             (else
               (replace-exception 'expected-comptype 'expected-subtype
-                 `(sub final ,(valid-ct env st))))))
-      (let ((rolled-sts (map valid-st sts)))
+                 `(sub final ,(valid-ct env st x))))))
+      (let ((rolled-sts (map valid-st sts (iota (length sts) x 1))))
          (for-each (lambda (i t) (set-type! env (+ x i)
                                             `(deftype ,rolled-sts ,i)))
                    (iota (length sts)) rolled-sts)
