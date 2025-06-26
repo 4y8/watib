@@ -101,6 +101,12 @@
        (>=fx 0 i)
        (or (>=fx 1 i) (length>=? (cdr l) (-fx i 1)))))
 
+(define (take-stack::pair-nil st::pair-nil i::bint)
+   (cond ((=fx i 0) '())
+         ((null? st) (raise 'empty-stack))
+         ((equal? (car st) 'poly) (make-list i 'bot))
+         (#t (cons (car st) (take-stack (cdr st) (-fx i 1))))))
+
 (define (index::bint lst::pair-nil x i::bint e::symbol)
       (cond ((null? lst) (raise (list e x)))
             ((equal? (car lst) x) i)
@@ -206,6 +212,23 @@
 (define (get-func-type::pair env::struct x::bint)
    (vector-ref (env-funcs-types env) x))
 
+(define (add-func! env::struct t::pair)
+   (let ((x (env-nfuncs env)))
+      (vector-set! (env-funcs-types env) x t)
+      (env-nfuncs-set! env (+ 1 x))))
+
+(define (add-func-name! env::struct id::symbol)
+   (hashtable-put! (env-funcs-table env) id (env-nfuncs env))
+   (vector-set! (env-funcs-names env) (env-nfuncs env) id))
+
+; we store both names and indices in refs because when we search add them
+; (during the second pass, we don't have access to function names, we could by
+; adding type names to the context during the first pass)
+(define (valid-func-ref?::bool env::struct x::bint)
+   (let ((h (env-refs env)))
+      (or (hashtable-contains? h x)
+          (hashtable-contains? h (vector-ref (env-funcs-names env) x)))))
+
 (define (get-field-index::bint env::struct t::bint f)
    (let ((v (vector-ref (env-fields-names env) t)))
       (cond
@@ -235,7 +258,8 @@
    (local-var-init?-set! (vector-ref (env-locals-types env) l) #t))
 
 (define (local-init?::bool env::struct l)
-   (local-var-init? (vector-ref (env-locals-types env) (get-local-index env l))))
+   (local-var-init? (vector-ref (env-locals-types env)
+                                (get-local-index env l))))
 
 (define (get-local-type env::struct l)
    (local-var-type (vector-ref (env-locals-types env) (get-local-index env l))))
@@ -252,6 +276,10 @@
    (let ((x (env-nglobals env)))
       (vector-set! (env-globals-types env) x t)
       (env-nglobals-set! env (+ 1 x))))
+
+(define (add-global-name! env::struct id::symbol)
+   (hashtable-put! (env-globals-table env) id (env-nglobals env))
+   (vector-set! (env-globals-names env) (env-nglobals env) id))
 
 (define (get-label-index::bint env::struct x)
   (cond
@@ -284,6 +312,15 @@
 ; only used on arguments returned by the previous function
 (define (get-tag-type::pair env::struct x::bint)
    (vector-ref (env-tags-types env) x))
+
+(define (add-tag! env::struct t::pair)
+   (let ((x (env-ntags env)))
+      (vector-set! (env-tags-types env) x t)
+      (env-ntags-set! env (+ 1 x))))
+
+(define (add-tag-name! env::struct id::symbol)
+   (hashtable-put! (env-tags-table env) id (env-ntags env))
+   (vector-set! (env-tags-names env) (env-ntags env) id))
 
 ;; deftypes (rec subtypes*).i are represented as (deftype subtypes* i))
 ;; (rec i) are represented as (rec i)
@@ -615,43 +652,41 @@
       (else (raise `(expected-instructiontype ,t)))))
 
 ;; section 3.2.9 and 6.4.6
-(define (valid-param/result env::struct l::pair-nil)
+(define (valid-names/param/result/get-tl env::struct l::pair-nil)
    (match-case l
-      (() (values '() '()))
-      (((param (? ident?) ?vt) . ?tl)
-       (multiple-value-bind (p r) (valid-param/result env tl)
-          (values (cons (valid-ht env vt) p))))
+      (((param (and (? ident?) ?id) ?vt) . ?tl)
+       (multiple-value-bind (n p r tl) (valid-names/param/result/get-tl env tl)
+          (values (cons id n) (cons (valid-vt env vt) p) r tl)))
       (((param . ?vts) . ?tl)
-       (multiple-value-bind (p r) (valid-param/result env tl)
-          (values (append (map-env valid-vt env vts) p) r)))
+       (multiple-value-bind (n p r tl) (valid-names/param/result/get-tl env tl)
+          (values (append (make-list (length vts) #f))
+                  (append (map-env valid-vt env vts) p) r tl)))
       (((result . ?-) . ?-)
-       (define (get-results l)
+       (define (get-results/tl l)
           (match-case l
              (((result . ?vts) . ?tl)
-              (append (map-env valid-vt env vts) (get-results tl)))
-             (() '())
-             (else (raise `(expected-functiontype ,l)))))
-       (values '() (get-results l)))
-      (else (raise `(expected-functiontype ,l)))))
+              (multiple-value-bind (r tl) (get-results/tl tl)
+                 (values (append (map-env valid-vt env vts) r) tl)))
+             (else (values '() l))))
+       (multiple-value-bind (r tl) (get-results/tl l)
+          (values '() '() r tl)))
+      (else (values '() '() '() l))))
+
+(define (valid-param/result env::struct l::pair-nil)
+   (multiple-value-bind (n p r tl) (valid-names/param/result/get-tl env l)
+      (unless (null? tl)
+         (raise `(expected-functiontype ,tl)))
+      (values p r)))
+
+(define (valid-tu/get-tl env::struct l::pair-nil)
+   (multiple-value-bind (n p r tl) (valid-names/param/result/get-tl env l)
+      (values n (list p r) tl)))
 
 (define (valid-blocktype/get-tl env::struct l::pair-nil)
-   (define (valid-param/result/get-tl l::pair-nil)
-      (match-case l
-         (((param . ?vts) . ?tl)
-          (multiple-value-bind (p r tl) (valid-param/result/get-tl tl)
-             (values (append (map-env valid-vt env vts) p) r tl)))
-         (((result . ?-) . ?-)
-          (define (get-results/tl l)
-             (match-case l
-                (((result . ?vts) . ?tl)
-                 (multiple-value-bind (r tl) (get-results/tl tl)
-                    (values (append (map-env valid-vt env vts) r) tl)))
-                (else (values '() l))))
-          (multiple-value-bind (r tl) (get-results/tl l)
-             (values '() r tl)))
-         (else (values '() '() l))))
-   (multiple-value-bind (p r tl) (valid-param/result/get-tl l)
-      (values (list p r) tl)))
+   (multiple-value-bind (args f tl) (valid-tu/get-tl env l)
+      (unless (null? args)
+         (raise `(named-param-blocktype ,args)))
+      (values f tl)))
 
 ;; section 3.2.11 and 6.4.7
 (define (valid-fldt env::struct t)
@@ -1002,9 +1037,7 @@
       ((br_table ?lab . ?rst)
        (let* ((l (labelidx env lab))
               (n (length (get-label-type env l))))
-           (unless (length>=? st (+ 1 n))
-              (raise `(empty-stack ,(drop (get-label-type env l) (length st)))))
-           (let ((lower-bound (cdr (take st (+ 1 n)))))
+           (let ((lower-bound (cdr (take-stack st (+ 1 n)))))
              (define (valid-label/get-tl l::pair-nil)
                 (match-case l
                    (((and (? ident?) ?lab) . ?tl)
@@ -1025,9 +1058,9 @@
               (t* (get-label-type env l)))
           (when (null? st)
              (raise 'empty-stack-reftype))
-          (unless (reftype? (car st))
-             (raise `(expected-reftype-stack ,st)))
-          (let ((ht (reftype->heaptype (car st))))
+          (let ((ht (cond ((reftype? (car st)) (reftype->heaptype (car st)))
+                          ((equal? 'poly (car st)) 'bot)
+                          (#t (raise `(expected-reftype-stack ,st))))))
              (values `((,@t* (ref null ,ht)) (,@t* (ref ,ht))) `(br_on_null ,l)
                      tl))))
 
@@ -1037,8 +1070,11 @@
           (raise 'empty-stack-reftype))
        (unless (reftype? (car st))
           (raise `(expected-reftype-stack ,st)))
-       (let ((ht (reftype->heaptype (car st))))
-          (values `(((ref null ,ht)) ((ref ,ht))) 'ref.as_non_null tl)))))
+       (let ((ht (cond ((reftype? (car st)) (reftype->heaptype (car st)))
+                       ((equal? 'poly (car st)) 'bot)
+                       (#t (raise `(expected-reftype-stack ,st))))))
+          (values `(((ref null ,ht)) ((ref ,ht))) 'ref.as_non_null tl)))
+      (else (raise `(unknown-opcode ,(car i))))))
 
 ;; returns the type of the given instruction, the desuggared instruction and
 ;; the tail in case it is in s-expression format
@@ -1090,6 +1126,99 @@
 (define (valid-expr env::struct l::pair-nil)
    (valid-instrs env l '()))
 
+;; section 6.6.3 and
+(define (valid-importdesc env::struct d)
+   (match-case d
+      ((func (and (? ident?) ?id) . ?rst)
+       (add-func-name! env id)
+       (valid-importdesc env `(func ,@rst)))
+      ((memory (and (? ident?) ?id) . ?rst)
+       (raise 'todo))
+      ((global (and (? ident?) ?id) . ?rst)
+       (add-global-name! env id)
+       (valid-importdesc env `(func ,@rst)))
+      ((tag (and (? ident?) ?id) . ?rst)
+       (add-tag-name! env id)
+       (valid-importdesc env `(tag ,@rst)))
+
+      ((func . ?ft)
+       (multiple-value-bind (p r) (valid-param/result env ft)
+          (add-func! env `(deftype (sub final (func ,p ,r)) ,0))))
+      ((global ?gt)
+       (add-global! env (valid-gt env gt)))
+      ((tag . ?tt)
+       (multiple-value-bind (p r) (valid-param/result env tt)
+          (add-tag! env `(deftype (sub final (func ,p ,r)) ,0))))
+      (else (raise `(expected-importdesc ,d)))))
+
+(define (type-pass-modulefield env::struct m)
+   (with-handler
+      (match-lambda
+         ((in-module ?- ?e) (raise `(in-module ,m ,e)))
+         (?e (raise `(in-module ,m ,e))))
+      (match-case m
+         ; first abreviation of 6.4.9
+         ((type . ?-) (type-pass-modulefield env `(rec ,m)))
+         ((rec . ?l)
+          (let ((x (env-ntypes env)))
+             (valid-rect env (clean-mod-rectype! env l x) x)
+             #f))
+         (else m))))
+
+(define (first-pass-modulefield env::struct m)
+   (with-handler
+      (match-lambda
+         ((in-module ?- ?e) (raise `(in-module ,m ,e)))
+         (?e (raise `(in-module ,m ,e))))
+      (match-case m
+         ; section 6.6.4 (abbreviations)
+         ((func (export (? string?)) . ?rst)
+          (first-pass-modulefield env `(func ,@rst)))
+         ((func (import (and (? string?) ?nm1) (and (? string?) ?nm2)) . ?rst)
+          (first-pass-modulefield env `(import ,nm1 ,nm2 (func ,@rst))))
+         ; section 6.6.4
+         ((func (and (? ident?) ?id) . ?rst)
+          (add-func-name! env id)
+          (first-pass-modulefield env `(func ,@rst)))
+         ((func . ?rst)
+          (multiple-value-bind (args f tl) (valid-tu/get-tl env rst)
+             (add-func! env `(deftype (sub final (func ,@f)) ,0))
+             `(func ,(- (env-nfuncs env) 1) ,f ,args ,tl)))
+         ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
+          (raise 'todo))
+         ((data (and (? ident?) ?id) . ?rst)
+          (hashtable-put! (env-data-table env) id (env-ndata env))
+          (first-pass-modulefield env `(data ,@rst)))
+         ((data . ?rst)
+          ; section 6.6.12
+          (for-each (lambda (s) (unless (string? s)
+                                   (raise `(expected-string ,s)))) rst)
+          ; section 3.5.9 - passive data segments are always valid, we currently
+          ; only support those
+          (env-ndata-set! env (+ 1 (env-ndata env)))
+          m)
+          ; section 6.6.7
+         ((global (and (? ident?) ?id) . ?rst)
+          (add-global-name! env id)
+          (first-pass-modulefield env `(global ,@rst)))
+         ((global ?gt . ?e)
+          (define (add-func-refs! l)
+             (cond ((pair? l)
+                    (if (equal? 'ref.func (car l))
+                        (hashtable-put! (env-refs env) (cadr l) #t)
+                        (for-each add-func-refs! l)))))
+
+          (let ((t (valid-gt env gt)))
+             (add-global! env t)
+             (add-func-refs! e)
+             `(global ,(- (env-nglobals env) 1) ,t ,e)))
+
+         ; section 6.6.3
+         ((import (and (? string?) ?mod) (and (? string?) ?nm) ?d)
+          (valid-importdesc env d)
+          #f)
+         (else (raise `expected-modulefield)))))
+
 ;; section 6.6.13
 (define (valid-modulefield env::struct m)
    (with-handler
@@ -1097,35 +1226,11 @@
          ((in-module ?- ?e) (raise `(in-module ,m ,e)))
          (?e (raise `(in-module ,m ,e))))
       (match-case m
-         ; first abreviation of 6.4.9
-         ((type . ?-) (valid-modulefield env `(rec ,m)))
-         ((rec . ?l)
-          (let ((x (env-ntypes env)))
-             (valid-rect env (clean-mod-rectype! env l x) x)))
-         ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
-          (raise `todo))
-         ((data (and (? ident?) ?id) . ?rst)
-          (hashtable-put! (env-data-table env) id (env-ndata env))
-          (valid-modulefield env `(data ,@rst)))
-         ((data . ?rst)
-          ; section 6.6.12
-          (for-each (lambda (s) (unless (string? s)
-                                   (raise `(expected-string ,s))))
-                    rst)
-          ; section 3.5.9 - passive data segments are always valid, we currently
-          ; only support those
-          (env-ndata-set! env (+ 1 (env-ndata env)))
-          m)
-          ; section 6.6.7
-         ((global (export (? string?)) . ?rst)
-          (valid-modulefield env `(global ,@rst)))
-         ((global (and (? ident?) ?id) . ?rst)
-          (hashtable-put! (env-globals-table env) id (env-nglobals env))
-          (vector-set! (env-globals-names env) (env-nglobals env) id)
-          (valid-modulefield env `(global ,@rst)))
           ; section 3.5.6
-         ((global ?gt . ?e)
-          (let ((t (valid-gt env gt)))
+         ((global ?nglobals ?t ?e)
+          (let ((old-nglobals (env-nglobals env)))
+             ; globals can only refer to the previous ones
+             (env-nglobals-set! env nglobals)
              (multiple-value-bind (e t') (valid-expr env e)
                 (when (and (length>=? t' 2) (not (equal? 'poly (cadr t'))))
                    (raise `(too-much-value-stack ,t')))
@@ -1135,8 +1240,9 @@
                    (raise `(non-matching-globaltype ,(car t') ,(cadr t))))
                 (when (non-constant-expr? env e)
                    (raise `(non-constant-global ,(non-constant-expr? env e))))
-                (add-global! env t)
+                (env-nglobals-set! env old-nglobals)
                 `(global ,t ,e))))
+         ((func ?funcidx ?args ?t ?e) '())
          (else (raise 'expected-modulefield)))))
 
 (define (format-exn e)
@@ -1183,5 +1289,6 @@
        (call-with-input-file input-file
           (lambda (ip)
              (let ((f (valid-file (read ip #t))))
-                (unless error-encountered?
-                   (print f)))))))
+                (if error-encountered?
+                    (exit 1)
+                    (print f)))))))

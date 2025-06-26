@@ -139,7 +139,7 @@
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.98
   (ref.func (,funcidx) ,(lambda (env x)
-                           (unless (hashtable-contains? (env-refs env) x)
+                           (unless (valid-func-ref? env x)
                               (raise `(undeclared-funcref ,x)))
                            `(() ((ref ,(get-func-type env x))))))
 
