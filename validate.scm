@@ -152,8 +152,8 @@
 
    (nfuncs 0)
    (funcs-table (make-hashtable))
-   (funcs-types (make-vector 0))
-   (funcs-names (make-vector 0)) ; for error reporting
+   (funcs-types (make-vector 100000))
+   (funcs-names (make-vector 100000)) ; for error reporting
 
    (refs (make-hashtable))
 
@@ -167,8 +167,8 @@
 
    (ntags 0)
    (tags-table (make-hashtable))
-   (tags-types (make-vector 0))
-   (tags-names (make-vector 0)) ; for error reporting
+   (tags-types (make-vector 100000))
+   (tags-names (make-vector 100000)) ; for error reporting
 
    (return #f))
 
@@ -1284,7 +1284,7 @@
    (set! error-encountered? #t)
    (define (rep msg obj)
      (with-handler error-notify
-        (error/location "val" msg obj (cadr (cer obj)) (caddr (cer obj)))))
+        (error/location "val" msg "" (cadr (cer obj)) (caddr (cer obj)))))
    (match-case e
       ((in-module ?m ?e)
        (rep "in module" m)
@@ -1314,7 +1314,9 @@
                                     mfs))
                  (env-mfs (map-env (mf-pass/handle-error env-pass-mf) env
                                    type-mfs)))
-            (map-env (mf-pass/handle-error valid-pass-mf) env env-mfs))))))
+             (print (env-funcs-types env))
+             (exit 1)
+             (map-env (mf-pass/handle-error valid-pass-mf) env env-mfs))))))
 
 (define (main argv)
    (define input-file #f)
