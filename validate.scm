@@ -1116,6 +1116,8 @@
    (define (valid-instr i::pair st::pair-nil)
       (with-handler
          (lambda (e)
+           (if (isa? e &error)
+               (raise e))
            (if keep-going
                (begin
                   (set! error-list (cons `(at-instruction ,i ,e) error-list))
@@ -1188,7 +1190,10 @@
    (with-handler
       (match-lambda
          ((in-module ?- ?e) (raise `(in-module ,m ,e)))
-         (?e (raise `(in-module ,m ,e))))
+         (?e
+           (if (isa? e &error)
+               (raise e))
+          (raise `(in-module ,m ,e))))
       (match-case m
          ; first abreviation of 6.4.9
          ((type . ?-) (type-pass-mf env `(rec ,m)))
@@ -1205,7 +1210,10 @@
    (with-handler
       (match-lambda
          ((in-module ?- ?e) (raise `(in-module ,m ,e)))
-         (?e (raise `(in-module ,m ,e))))
+         (?e
+          (if (isa? e &error)
+              (raise e))
+          (raise `(in-module ,m ,e))))
       (match-case m
          (#f #f)
          ; section 6.6.4 (abbreviations)
@@ -1263,7 +1271,10 @@
    (with-handler
       (match-lambda
          ((in-module ?- ?e) (raise `(in-module ,m ,e)))
-         (?e (raise `(in-module ,m ,e))))
+         (?e
+          (if (isa? e &error)
+              (raise e))
+          (raise `(in-module ,m ,e))))
       (match-case m
          (#f #f)
           ; section 3.5.6
@@ -1296,6 +1307,8 @@
          (else (raise `(expected-modulefield ,m))))))
 
 (define (format-exn e)
+   (if (isa? e &error)
+              (raise e))
    (set! error-encountered? #t)
    (define (rep msg obj)
      (with-handler error-notify
