@@ -150,9 +150,9 @@
   ; argument to these functions
   (ref.eq () (((ref null eq) (ref null eq)) (i32)))
   ; by subsumption
-  (ref.test (,rt) ,(lambda (- rt) `((,rt) (i32))))
+  (ref.test (,rt) ,(lambda (env rt) `((,(rt-upperbound env rt)) (i32))))
   ; by subsumption
-  (ref.cast (,rt) ,(lambda (- rt) `((,rt) (,rt))))
+  (ref.cast (,rt) ,(lambda (env rt) `((,(rt-upperbound env rt)) (,rt))))
 
   ;; section 3.4.3
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.104

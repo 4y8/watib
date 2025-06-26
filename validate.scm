@@ -71,6 +71,18 @@
        `(ref ,(reftype->heaptype t1))
        t1))
 
+(define (ht-upperbound::symbol env::struct t)
+   (match-case t
+      ((or any none eq i31 struct array) 'any)
+      ((or func nofunc) 'func)
+      ((or extern noextern) 'extern)
+      ((or exn noexn) 'exn)
+      ((? idx?) (ht-upperbound env (get-type env t)))
+      ((? deftype?) (ht-upperbound env (deftype-head t)))))
+
+(define (rt-upperbound::pair env::struct t)
+   `(ref null ,(ht-upperbound env (reftype->heaptype t))))
+
 (define-macro (replace-exception e e' . body)
    `(with-handler
        (lambda (exn)
@@ -149,7 +161,7 @@
 
    (nlabels 0)
    (labels-names '())
-   (labels-types (make-vector 0))
+   (labels-types (make-vector 1000))
 
    (nfuncs 0)
    (funcs-table (make-hashtable))
@@ -248,7 +260,7 @@
 (define (get-local-index env::struct l)
    (cond
     ((number? l)
-     (if (< l (env-nlocals env))
+     (if (< l (vector-length (env-locals-types env)))
          l
          (raise `(localidx-out-of-range ,l))))
     ((ident? l)
@@ -1087,38 +1099,38 @@
 ;; for instance with (i32.add (i32.const 0) (i32.const 0)), it will return:
 ;; (values (i32.add) ((i32 i32) (i32)) ((i32.const 0) (i32.const 0)))
 (define (typeof-instr/instr/tl env::struct i::pair st::pair-nil)
-   (with-handler
-      (lambda (e)
-        (if keep-going
-            (begin
-               (set! error-list (cons `(at-instruction ,i ,e) error-list))
-               (values '(() (poly)) '(error) '()))
-            (raise `(at-instruction ,i ,e))))
-      (if (hashtable-contains? *instruction-types* (car i))
-          (let* ((v (hashtable-get *instruction-types* (car i)))
-                 (exp-args (car v))
-                 (t (cadr v))
-                 (k (length exp-args)))
-             (when (< (length (cdr i)) k)
-                (raise `(not-enough arguments ,i ,exp-args)))
-             (multiple-value-bind (giv-args tl) (split-at (cdr i) k)
-                (let ((args (map (lambda (f x) (f env x)) exp-args giv-args)))
-                   (values (if (procedure? t) (apply t env args) t)
-                           `(,(car i) ,@args) tl))))
-          (adhoc-instr env i st))))
+   (if (hashtable-contains? *instruction-types* (car i))
+       (let* ((v (hashtable-get *instruction-types* (car i)))
+              (exp-args (car v))
+              (t (cadr v))
+              (k (length exp-args)))
+          (when (< (length (cdr i)) k)
+             (raise `(not-enough arguments ,i ,exp-args)))
+          (multiple-value-bind (giv-args tl) (split-at (cdr i) k)
+             (let ((args (map (lambda (f x) (f env x)) exp-args giv-args)))
+                (values (if (procedure? t) (apply t env args) t)
+                         `(,(car i) ,@args) tl))))
+       (adhoc-instr env i st)))
 
 ;; returns the desuggared instructions and the new stack state
 (define (valid-instrs env::struct l::pair-nil st::pair-nil)
    (define (valid-instr i::pair st::pair-nil)
-      (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
-         (multiple-value-bind (tl st) (valid-instrs env tl st)
-            (for-each (lambda (x) (local-init! env x)) (cddr t))
-            (let ((st (check-stack env st (car t))))
-               (if (equal? 'poly (caadr t)) ; t : ... -> (poly) ?
-                   ; try to avoid this append (cps by hand ?)
-                   (values (append tl (list i)) '(poly))
-                   (values (append tl (list i))
-                           (append (reverse (cadr t)) st)))))))
+      (with-handler
+         (lambda (e)
+           (if keep-going
+               (begin
+                  (set! error-list (cons `(at-instruction ,i ,e) error-list))
+                  (values '((error)) '()))
+               (raise `(at-instruction ,i ,e))))
+         (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
+            (multiple-value-bind (tl st) (valid-instrs env tl st)
+               (for-each (lambda (x) (local-init! env x)) (cddr t))
+               (let ((st (check-stack env st (car t))))
+                  (if (equal? 'poly (caadr t)) ; t : ... -> (poly) ?
+                      ; try to avoid this append (cps by hand ?)
+                      (values (append tl (list i)) '(poly))
+                      (values (append tl (list i))
+                              (append (reverse (cadr t)) st))))))))
 
    (if (null? l)
        (values '() st)
@@ -1271,7 +1283,7 @@
                    (raise `(non-constant-global ,(non-constant-expr? env e))))
                 (env-nglobals-set! env old-nglobals)
                 `(global ,t ,e))))
-         ((func ?funcidx ?args ?t ?e)
+         ((func ?funcidx ?t ?args ?e)
           (multiple-value-bind (n lts body) (valid-names/local/get-tl env e)
              (env-locals-names-set! env (append args n))
              (env-locals-types-set!
@@ -1280,7 +1292,7 @@
                                          (car t)) lts)))
              (env-return-set! env (cadr t))
              `(func ,t ,(map local-var-type lts)
-               ,(check-block env body (cadr t) `(() (cadr t)) #f))))
+               ,(check-block env body (cadr t) `(() ,(cadr t)) #f))))
          ((data . ?-) m)
          (else (raise `(expected-modulefield ,m))))))
 
