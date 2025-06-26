@@ -295,7 +295,7 @@
 (define (get-label-type env::struct x::bint)
    (vector-ref (env-labels-types env) (- (env-nlabels env) x 1)))
 
-(define (push-label! env::struct nm::symbol t::pair-nil)
+(define (push-label! env::struct nm t::pair-nil)
    (let ((x (env-nlabels env)))
       (env-nlabels-set! env (+ x 1))
       (env-labels-names-set! env (cons nm (env-labels-names env)))
@@ -932,32 +932,33 @@
             (#t (raise `(non-matching-stack ,(car st) ,(car ts))))))
    (aux st (reverse ts)))
 
-(define (adhoc-instr env::struct i::pair st::pair-nil)
-   (define (check-block body::pair-nil t::pair-nil bt::pair l::symbol)
-     (let ((loc-init (env-locals-types env)))
-        (push-label! env l t)
-        (multiple-value-bind (i st) (valid-instrs env body (car bt))
-           (let ((st-rst (check-stack env st (cadr bt))))
-              (unless (or (null? st-rst) (equal? 'poly (car st-rst)))
-                 (raise `(value-left-stack ,st-rst))))
-           (pop-label! env)
-           (env-locals-types-set! env loc-init)
-           i)))
+(define (check-block::pair-nil env::struct body::pair-nil t::pair-nil
+                               bt::pair l)
+   (let ((loc-init (env-locals-types env)))
+      (push-label! env l t)
+      (multiple-value-bind (i st) (valid-instrs env body (car bt))
+         (let ((st-rst (check-stack env st (cadr bt))))
+            (unless (or (null? st-rst) (equal? 'poly (car st-rst)))
+               (raise `(value-left-stack ,st-rst))))
+         (pop-label! env)
+         (env-locals-types-set! env loc-init)
+         i)))
 
+(define (adhoc-instr env::struct i::pair st::pair-nil)
    (match-case i
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.183
       ((block (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
-          (values bt `(block ,bt ,(check-block tl (cadr bt) bt l)) '())))
+          (values bt `(block ,bt ,(check-block env tl (cadr bt) bt l)) '())))
       ((block . ?rst)
-       (adhoc-instr env `(block ,(gensym "$unnamed-label") ,@rst) st))
+       (adhoc-instr env `(block ,#f ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.184
       ((loop (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
-          (values bt `(loop ,bt ,(check-block tl (car bt) bt l)) '())))
+          (values bt `(loop ,bt ,(check-block env tl (car bt) bt l)) '())))
       ((loop . ?rst)
-       (adhoc-instr env `(loop ,(gensym "$unnamed-label") ,@rst) st))
+       (adhoc-instr env `(loop ,#f ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.185
       ((if (and (? ident?) ?l) . ?body)
@@ -973,11 +974,11 @@
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (multiple-value-bind (tl then else) (get-tl/then/else body)
              (values `((,@(car bt) i32) (cadr bt))
-                     `(if ,bt ,(check-block then (cadr bt) bt l)
-                              ,(check-block else (cadr bt) bt l))
+                     `(if ,bt ,(check-block env then (cadr bt) bt l)
+                              ,(check-block env else (cadr bt) bt l))
                      tl))))
       ((if . ?rst)
-       (adhoc-instr env `(if ,(gensym "$unnamed-label") ,@rst) st))
+       (adhoc-instr env `(if ,#f ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.186
       ((try_table (and (? ident?) ?l) . ?body)
@@ -1025,9 +1026,10 @@
              (?tl (values '() tl))))
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (multiple-value-bind (c tl) (valid-catch/get-body tl)
-             (values bt `(try_table ,bt ,c ,(check-block tl (cadr bt) bt l))))))
+             (values bt `(try_table ,bt ,c
+                          ,(check-block env tl (cadr bt) bt l))))))
       ((try_table . ?rst)
-       (adhoc-instr env `(try_table ,(gensym "$unnamed-label") ,@rst) st))
+       (adhoc-instr env `(try_table ,#f ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.193
 
@@ -1126,7 +1128,24 @@
 (define (valid-expr env::struct l::pair-nil)
    (valid-instrs env l '()))
 
-;; section 6.6.3 and
+;; section 3.5.3
+(define (valid-loct::struct env::struct t)
+   (let ((vt (valid-vt env t)))
+      (make-local-var (defaultable? vt) vt)))
+
+;; section 6.6.4
+(define (valid-names/local/get-tl env::struct l::pair-nil)
+   (match-case l
+      (((local (and (? ident?) ?id) ?vt) . ?tl)
+       (multiple-value-bind (n l tl) (valid-names/local/get-tl env tl)
+          (values (cons id n) (cons (valid-loct env vt) l) tl)))
+      (((local . ?vts) . ?tl)
+       (multiple-value-bind (n l tl) (valid-names/local/get-tl env tl)
+          (values (append (make-list (length vts) #f) n)
+                  (append (map-env valid-loct env vts) l) tl)))
+      (else (values '() '() l))))
+
+;; section 6.6.3 and 3.5.12
 (define (valid-importdesc env::struct d)
    (match-case d
       ((func (and (? ident?) ?id) . ?rst)
@@ -1151,44 +1170,48 @@
           (add-tag! env `(deftype (sub final (func ,p ,r)) ,0))))
       (else (raise `(expected-importdesc ,d)))))
 
-(define (type-pass-modulefield env::struct m)
+(define (type-pass-mf env::struct m)
    (with-handler
       (match-lambda
          ((in-module ?- ?e) (raise `(in-module ,m ,e)))
          (?e (raise `(in-module ,m ,e))))
       (match-case m
          ; first abreviation of 6.4.9
-         ((type . ?-) (type-pass-modulefield env `(rec ,m)))
+         ((type . ?-) (type-pass-mf env `(rec ,m)))
          ((rec . ?l)
           (let ((x (env-ntypes env)))
              (valid-rect env (clean-mod-rectype! env l x) x)
              #f))
          (else m))))
 
-(define (first-pass-modulefield env::struct m)
+(define (decorate::epair m::epair l::pair)
+   (econs (car l) (cdr l) (cer m)))
+
+(define (env-pass-mf env::struct m)
    (with-handler
       (match-lambda
          ((in-module ?- ?e) (raise `(in-module ,m ,e)))
          (?e (raise `(in-module ,m ,e))))
       (match-case m
+         (#f #f)
          ; section 6.6.4 (abbreviations)
          ((func (export (? string?)) . ?rst)
-          (first-pass-modulefield env `(func ,@rst)))
+          (env-pass-mf env (decorate m `(func ,@rst))))
          ((func (import (and (? string?) ?nm1) (and (? string?) ?nm2)) . ?rst)
-          (first-pass-modulefield env `(import ,nm1 ,nm2 (func ,@rst))))
+          (env-pass-mf env (decorate m `(import ,nm1 ,nm2 (func ,@rst)))))
          ; section 6.6.4
          ((func (and (? ident?) ?id) . ?rst)
           (add-func-name! env id)
-          (first-pass-modulefield env `(func ,@rst)))
+          (env-pass-mf env (decorate m `(func ,@rst))))
          ((func . ?rst)
           (multiple-value-bind (args f tl) (valid-tu/get-tl env rst)
              (add-func! env `(deftype (sub final (func ,@f)) ,0))
-             `(func ,(- (env-nfuncs env) 1) ,f ,args ,tl)))
+             (decorate m `(func ,(- (env-nfuncs env) 1) ,f ,args ,tl))))
          ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
           (raise 'todo))
          ((data (and (? ident?) ?id) . ?rst)
           (hashtable-put! (env-data-table env) id (env-ndata env))
-          (first-pass-modulefield env `(data ,@rst)))
+          (env-pass-mf env (decorate m `(data ,@rst))))
          ((data . ?rst)
           ; section 6.6.12
           (for-each (lambda (s) (unless (string? s)
@@ -1200,7 +1223,9 @@
           ; section 6.6.7
          ((global (and (? ident?) ?id) . ?rst)
           (add-global-name! env id)
-          (first-pass-modulefield env `(global ,@rst)))
+          (env-pass-mf env (decorate m `(global ,@rst))))
+         ((global (export (? string?)) . ?rst)
+          (env-pass-mf env (decorate m `(global ,@rst))))
          ((global ?gt . ?e)
           (define (add-func-refs! l)
              (cond ((pair? l)
@@ -1211,21 +1236,22 @@
           (let ((t (valid-gt env gt)))
              (add-global! env t)
              (add-func-refs! e)
-             `(global ,(- (env-nglobals env) 1) ,t ,e)))
+             (decorate m `(global ,(- (env-nglobals env) 1) ,t ,e))))
 
          ; section 6.6.3
          ((import (and (? string?) ?mod) (and (? string?) ?nm) ?d)
           (valid-importdesc env d)
           #f)
-         (else (raise `expected-modulefield)))))
+         (else (raise 'expected-modulefield)))))
 
 ;; section 6.6.13
-(define (valid-modulefield env::struct m)
+(define (valid-pass-mf env::struct m)
    (with-handler
       (match-lambda
          ((in-module ?- ?e) (raise `(in-module ,m ,e)))
          (?e (raise `(in-module ,m ,e))))
       (match-case m
+         (#f #f)
           ; section 3.5.6
          ((global ?nglobals ?t ?e)
           (let ((old-nglobals (env-nglobals env)))
@@ -1242,8 +1268,17 @@
                    (raise `(non-constant-global ,(non-constant-expr? env e))))
                 (env-nglobals-set! env old-nglobals)
                 `(global ,t ,e))))
-         ((func ?funcidx ?args ?t ?e) '())
-         (else (raise 'expected-modulefield)))))
+         ((func ?funcidx ?args ?t ?e)
+          (multiple-value-bind (n lts body) (valid-names/local/get-tl env e)
+             (env-locals-names-set! env (append args n))
+             (env-locals-types-set!
+              env
+              (list->vector (append (map (lambda (vt) (make-local-var #t vt))
+                                         (car t)) lts)))
+             (env-return-set! env (cadr t))
+             `(func ,t ,(map local-var-type lts)
+               ,(check-block env body (cadr t) `(() (cadr t)) #f))))
+         (else (raise `(expected-modulefield ,m))))))
 
 (define (format-exn e)
    (set! error-encountered? #t)
@@ -1262,19 +1297,24 @@
    (unless keep-going
         (exit 1)))
 
-(define (valid-modulefield/handle-error env::struct m)
-   (let ((clean-m (with-handler format-exn (valid-modulefield env m))))
-      (unless (null? error-list)
-         (format-exn `(in-module ,m ""))
-         (for-each format-exn error-list)
-         (set! error-list '()))
-      clean-m))
+(define (mf-pass/handle-error f)
+   (lambda (env::struct m)
+      (let ((clean-m (with-handler format-exn (f env m))))
+         (unless (null? error-list)
+            (format-exn `(in-module ,m ""))
+            (for-each format-exn error-list)
+            (set! error-list '()))
+         clean-m)))
 
 (define (valid-file f::pair-nil)
    (let ((env (make-env)))
       (match-case f
          ((or (module (? ident?) . ?mfs) (module . ?mfs) ?mfs)
-          (map-env valid-modulefield/handle-error env mfs)))))
+          (let* ((type-mfs (map-env (mf-pass/handle-error type-pass-mf) env
+                                    mfs))
+                 (env-mfs (map-env (mf-pass/handle-error env-pass-mf) env
+                                   type-mfs)))
+            (map-env (mf-pass/handle-error valid-pass-mf) env env-mfs))))))
 
 (define (main argv)
    (define input-file #f)
