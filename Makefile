@@ -9,6 +9,9 @@ was: was.o leb128.o opcodes.sch
 val: validate.o type-abbreviations.sch numtypes.sch vectypes.sch instruction-types.sch
 	bigloo validate.o -o val
 
+validate.o: validate.scm type-abbreviations.sch numtypes.sch vectypes.sch instruction-types.sch
+	bigloo -c validate.scm -o validate.o -O2 -g
+
 %.o : %.scm
 	bigloo -c $< -o $@ -O2 -g
 

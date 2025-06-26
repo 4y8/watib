@@ -264,7 +264,7 @@
        (let ((ft (get-array-ft env x)))
           (unless (equal? (car ft) 'var)
              (raise `(set-const ,x)))
-          `(((ref null ,x) i32 (unpack-ft ft)) ()))))
+          `(((ref null ,x) i32 ,(unpack-ft ft)) ()))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.115
   (array.len () (((ref null array)) (i32)))
@@ -276,7 +276,7 @@
        (let ((ft (get-array-ft env x)))
           (unless (equal? (car ft) 'var)
              (raise `(set-const ,x)))
-          `(((ref null ,x) i32 (unpack-ft ft) i32) ()))))
+          `(((ref null ,x) i32 ,(unpack-ft ft) i32) ()))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.117
   (array.copy
@@ -313,9 +313,8 @@
   ;; we do not support vector instructions yet
 
   ;; section 3.4.7
-
-  ; by subsumption
-  (drop () ((any) ()))
+  ; the top value type doesn't exist in wasm, we use it as a symetric to bot
+  (drop () ((top) ()))
 
   ; we do not support select yet; as it has an optionnal argument, we can't
   ; treat it here yet, an option would be to use additionnal symbols in the
@@ -334,13 +333,13 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.154
   (local.set
    (,localidx)
-   ,(lambda (env x) `((,(get-local-type env x)) () . (x))))
+   ,(lambda (env x) `((,(get-local-type env x)) () . (,x))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.155
   (local.tee
    (,localidx)
    ,(lambda (env x) `((,(get-local-type env x))
-                     (,(get-local-type env x)) . (x))))
+                      (,(get-local-type env x)) . (,x))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.156
   (global.get
@@ -370,7 +369,7 @@
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.191
   ; t_1 = epsilon by subsumption
-  (br (,labelidx) (lambda (env l) `(,(get-label-type env l) (poly))))
+  (br (,labelidx) ,(lambda (env l) `(,(get-label-type env l) (poly))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.192
   (br_if
@@ -447,7 +446,7 @@
        (let ((t (expand (get-func-type env x))))
           (unless (env-return env)
              (raise `cannot-return))
-          (unless (<res= env (cadr t) (env-return env))
+          (unless (<res= env (caddr t) (env-return env))
              (raise `(non-matching ,(caddr t) ,(env-return env))))
           ; subsumption
           `(,(cadr t) (poly)))))

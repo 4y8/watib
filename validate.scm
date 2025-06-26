@@ -485,41 +485,14 @@
 ;; section 3.3.5
 (define (<vt=::bool env::struct t1 t2)
    (or (equal? t1 'bot)
+       (equal? t2 'top)
        (and (numtype? t1) (numtype? t2) (equal? t1 t2))
+       (and (vectype? t1) (vectype? t2) (equal? t1 t2))
        (and (reftype? t1) (reftype? t2) (<rt= env t1 t2))))
 
 ;; section 3.3.6
 (define (<res=::bool env l1 l2)
    (every' (lambda (t1 t2) (<vt= env t1 t2)) l1 l2))
-
-;; instruction types [t1*] --->x* [t2*] are represented as ((t1*) (t2*) (x*)),
-;; where x is the index (as an integer of the variable)
-
-;; we do not need to prefix it with a special symbol (what we did for deftypes),
-;; because instruction types are not added as an option for another kind of type
-;; (i.e. there is no t ::= ... | instrtype in the spec)
-
-;; section 3.3.7
-(define (<it=::bool env::struct t1::pair t2::pair)
-   (let* ((t11 (car t1))
-          (t12 (cadr t1))
-          (x1  (caddr t1))
-          (tt21 (car t2))
-          (tt22 (cadr t2))
-          (x2  (caddr t2))
-          (n11 (length t11))
-          (n12 (length t12))
-          (n21 (length tt21))
-          (n22 (length tt22)))
-      (and
-      ; bind some values and use split to avoid redundant computations ?
-       (and (equal? (- n21 n11) (- n22 n12))
-            (equal? (take tt21 (- n22 n12)) (take tt22 (- n22 n12))))
-       (<res= env (drop tt21 (- n22 n12)) t11)
-       (<res= env t12 (drop tt22 (- n22 n11)))
-       (every (lambda (x) (or (member x x1) (local-init? env x))) x2))))
-
-;; function types are represented like instruction types but without the locals
 
 ;; section 3.3.8
 (define (<funct=::bool env::struct t1::pair t2::pair)
@@ -1090,6 +1063,7 @@
                        ((equal? 'poly (car st)) 'bot)
                        (#t (raise `(expected-reftype-stack ,st))))))
           (values `(((ref null ,ht)) ((ref ,ht))) 'ref.as_non_null tl)))
+
       (else (raise `(unknown-opcode ,(car i))))))
 
 ;; returns the type of the given instruction, the desuggared instruction and
@@ -1127,7 +1101,8 @@
             (multiple-value-bind (tl st) (valid-instrs env tl st)
                (for-each (lambda (x) (local-init! env x)) (cddr t))
                (let ((st (check-stack env st (car t))))
-                  (if (equal? 'poly (caadr t)) ; t : ... -> (poly) ?
+                  ; t : ... -> (poly) ?
+                  (if (and (not (null? (cadr t)))(equal? 'poly (caadr t)))
                       ; try to avoid this append (cps by hand ?)
                       (values (append tl (list i)) '(poly))
                       (values (append tl (list i))
