@@ -383,7 +383,7 @@
 ;; we use the same slopiness as in eq-clos-st?
 (define (unroll-st sts st)
    (cond ((or (symbol? st) (idx? st)) st)
-         ((and (rectype? st)) `(deftype ,sts ,(cadr st)))
+         ((rectype? st) `(deftype ,sts ,(cadr st)))
          ((pair? st) (map (lambda (st) (unroll-st sts st)) st))
          ((null? st) st)
          ; we don't report here like elsewhere, because this function doesn't
@@ -408,12 +408,12 @@
 
 (define (roll-rect::pair env::struct rect::pair x::bint)
    (let ((n (+fx x (length (cdr rect)))))
-      `(rec ,@(map (lambda (st) (roll-st env st x n)) (cdr rect)))))
+      (map (lambda (st) (roll-st env st x n)) (cdr rect))))
 
 (define (roll* env::struct rect::pair x::bint)
    (let ((rolled-rect (roll-rect env rect x)))
       (list-tabulate (length (cdr rect))
-                     (lambda (i) `(deftype ,(cdr rect) ,i)))))
+                     (lambda (i) `(deftype ,rolled-rect ,i)))))
 
 (define (expand t)
    (match-case (unroll-dt t)
@@ -1162,12 +1162,12 @@
 
       ((func . ?ft)
        (multiple-value-bind (p r) (valid-param/result env ft)
-          (add-func! env `(deftype (sub final (func ,p ,r)) ,0))))
+          (add-func! env `(deftype ((sub final (func ,p ,r))) ,0))))
       ((global ?gt)
        (add-global! env (valid-gt env gt)))
       ((tag . ?tt)
        (multiple-value-bind (p r) (valid-param/result env tt)
-          (add-tag! env `(deftype (sub final (func ,p ,r)) ,0))))
+          (add-tag! env `(deftype ((sub final (func ,p ,r))) ,0))))
       (else (raise `(expected-importdesc ,d)))))
 
 (define (type-pass-mf env::struct m)
@@ -1205,7 +1205,7 @@
           (env-pass-mf env (decorate m `(func ,@rst))))
          ((func . ?rst)
           (multiple-value-bind (args f tl) (valid-tu/get-tl env rst)
-             (add-func! env `(deftype (sub final (func ,@f)) ,0))
+             (add-func! env `(deftype ((sub final (func ,@f))) ,0))
              (decorate m `(func ,(- (env-nfuncs env) 1) ,f ,args ,tl))))
          ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
           (raise 'todo))
@@ -1278,6 +1278,7 @@
              (env-return-set! env (cadr t))
              `(func ,t ,(map local-var-type lts)
                ,(check-block env body (cadr t) `(() (cadr t)) #f))))
+         ((data . ?-) m)
          (else (raise `(expected-modulefield ,m))))))
 
 (define (format-exn e)
@@ -1314,8 +1315,6 @@
                                     mfs))
                  (env-mfs (map-env (mf-pass/handle-error env-pass-mf) env
                                    type-mfs)))
-             (print (env-funcs-types env))
-             (exit 1)
              (map-env (mf-pass/handle-error valid-pass-mf) env env-mfs))))))
 
 (define (main argv)
