@@ -700,7 +700,7 @@
 
 (define (valid-blocktype/get-tl env::struct l::pair-nil)
    (multiple-value-bind (args f tl) (valid-tu/get-tl env l)
-      (unless (null? args)
+      (unless (every not args)
          (raise `(named-param-blocktype ,args)))
       (values f tl)))
 
@@ -726,7 +726,8 @@
       (((field . ?fldts) . ?tl)
        (multiple-value-bind (fields names) (valid-fields/names env tl)
           (values (append (map-env valid-fldt env fldts) fields)
-                  (append (map (lambda (-) (gensym)) fldts) names))))
+                  (append (map (lambda (-) (gensym "$unnamedfield")) fldts)
+                          names))))
       (else (raise `(expected-fields ,l)))))
 
 ;; section 3.2.10
@@ -966,14 +967,14 @@
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (values bt `(block ,bt ,(check-block env tl (cadr bt) bt l)) '())))
       ((block . ?rst)
-       (adhoc-instr env `(block ,#f ,@rst) st))
+       (adhoc-instr env `(block ,(gensym "$unnamed-label") ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.184
       ((loop (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (values bt `(loop ,bt ,(check-block env tl (car bt) bt l)) '())))
       ((loop . ?rst)
-       (adhoc-instr env `(loop ,#f ,@rst) st))
+       (adhoc-instr env `(loop ,(gensym "$unnamed-label") ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.185
       ((if (and (? ident?) ?l) . ?body)
@@ -982,18 +983,18 @@
              (((then . ?then) ((kwote else) . ?else)) (values '() then else))
              (((then . ?then)) (values '() then '()))
              ((?hd . ?tl)
-              (multiple-value-bind (tl then else) (get-tl/then/else l)
+              (multiple-value-bind (tl then else) (get-tl/then/else tl)
                  (values (cons hd tl) then else)))
              (else (raise `(expected-then/else ,l)))))
 
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
-          (multiple-value-bind (tl then else) (get-tl/then/else body)
-             (values `((,@(car bt) i32) (cadr bt))
+          (multiple-value-bind (tl then else) (get-tl/then/else tl)
+             (values `((,@(car bt) i32) ,(cadr bt))
                      `(if ,bt ,(check-block env then (cadr bt) bt l)
                               ,(check-block env else (cadr bt) bt l))
                      tl))))
       ((if . ?rst)
-       (adhoc-instr env `(if ,#f ,@rst) st))
+       (adhoc-instr env `(if ,(gensym "$unnamed-label") ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.186
       ((try_table (and (? ident?) ?l) . ?body)
@@ -1044,7 +1045,7 @@
              (values bt `(try_table ,bt ,c
                           ,(check-block env tl (cadr bt) bt l))))))
       ((try_table . ?rst)
-       (adhoc-instr env `(try_table ,#f ,@rst) st))
+       (adhoc-instr env `(try_table ,(gensym "$unnamed-label") ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.193
 
