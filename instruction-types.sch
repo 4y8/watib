@@ -141,7 +141,7 @@
   (ref.func (,funcidx) ,(lambda (env x)
                            (unless (valid-func-ref? env x)
                               (raise `(undeclared-funcref ,x)))
-                           `(() ((ref ,(get-func-type env x))))))
+                           `(() ((ref ,(func-get-type env x))))))
 
   ; by subsumption (section 3.4.12)
   (ref.is_null () (((ref null any)) (i32)))
@@ -212,8 +212,8 @@
    (,typeidx)
    ,(lambda (env x)
        (let ((ft (get-array-ft env x)))
-         (unless (defaultable? (cadr ft))
-              (raise `(expected-defaultable ,x ,(cadr ft))))
+         (unless (defaultable? (unpack-ft ft))
+              (raise `(expected-defaultable ,x ,(unpack-ft ft))))
          `((i32) ((ref ,x))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.110
@@ -328,29 +328,29 @@
    ,(lambda (env x)
        (unless (local-init? env x)
           (raise `(get-unset-local ,x)))
-       `(() (,(get-local-type env x)))))
+       `(() (,(local-get-type env x)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.154
   (local.set
    (,localidx)
-   ,(lambda (env x) `((,(get-local-type env x)) () . (,x))))
+   ,(lambda (env x) `((,(local-get-type env x)) () . (,x))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.155
   (local.tee
    (,localidx)
-   ,(lambda (env x) `((,(get-local-type env x))
-                      (,(get-local-type env x)) . (,x))))
+   ,(lambda (env x) `((,(local-get-type env x))
+                      (,(local-get-type env x)) . (,x))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.156
   (global.get
    (,globalidx)
-   ,(lambda (env x) `(() (,(cadr (get-global-type env x))))))
+   ,(lambda (env x) `(() (,(cadr (global-get-type env x))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.156
   (global.set
    (,globalidx)
    ,(lambda (env x)
-       (let ((t (get-global-type env x)))
+       (let ((t (global-get-type env x)))
          (unless (car t)
             (raise `(set-const ,x)))
          `((,(cadr t)) ()))))
@@ -427,7 +427,7 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.199
   ; if x is a funcidx, its defined type has to expand to a type of the form
   ; (func (t1*) (t2))
-  (call (,funcidx) ,(lambda (env x) (cdr (expand (get-func-type env x)))))
+  (call (,funcidx) ,(lambda (env x) (cdr (expand (func-get-type env x)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.200
   (call_ref
@@ -443,7 +443,7 @@
   (return_call
    (,funcidx)
    ,(lambda (env x)
-       (let ((t (expand (get-func-type env x))))
+       (let ((t (expand (func-get-type env x))))
           (unless (env-return env)
              (raise `cannot-return))
           (unless (<res= env (caddr t) (env-return env))
@@ -469,7 +469,7 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.205
   (throw
    (,tagidx)
-   ,(lambda (env x) `(,(cadr (expand (get-tag-type env x))) (poly))))
+   ,(lambda (env x) `(,(cadr (expand (tag-get-type env x))) (poly))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.206
   (throw_ref () (((ref null exn)) (poly))) ; subsumption over and over

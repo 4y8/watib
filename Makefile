@@ -10,10 +10,10 @@ val: validate.o type-abbreviations.sch numtypes.sch vectypes.sch instruction-typ
 	bigloo validate.o -o val
 
 validate.o: validate.scm type-abbreviations.sch numtypes.sch vectypes.sch instruction-types.sch
-	bigloo -c validate.scm -o validate.o -O2 -g
+	bigloo -c validate.scm -o validate.o -O2
 
 %.o : %.scm
-	bigloo -c $< -o $@ -O2 -g
+	bigloo -c $< -o $@ -O2
 
 clean:
 	rm -f *.o

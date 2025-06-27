@@ -11,11 +11,6 @@
 (define error-list '())
 (define error-encountered? #f)
 
-(define (report f msg obj)
-   (if (epair? obj)
-       (error/location f msg obj (cadr (cer obj)) (caddr (cer obj)))
-       (error f msg obj)))
-
 (read-table *numtypes* "numtypes.sch")
 (define (numtype?::bool t)
    (hashtable-contains? *numtypes* t))
@@ -51,7 +46,7 @@
    (if (or (hashtable-contains? *const-instrs* (car i))
            (equal? (car i) 'error)
            (and (equal? (car i) 'global.get)
-                (not (car (get-global-type env (cadr i))))))
+                (not (car (global-get-type env (cadr i))))))
        #f
        i))
 
@@ -101,9 +96,6 @@
        (and (apply f (map car lists)) (apply every' f (map cdr lists)))))
 
 ;; evaluation order is not unspecified in the standard, we enforce one here
-
-;; not tail recursive, but not destined to be used no big inputs (rec vectors
-;; arent't large)
 (define (map-seq f . lists)
    (if (any null? lists)
        '()
@@ -114,11 +106,17 @@
        (>=fx 0 i)
        (or (>=fx 1 i) (length>=? (cdr l) (-fx i 1)))))
 
-(define (take-stack::pair-nil st::pair-nil i::bint)
+(define (stack-take::pair-nil st::pair-nil i::bint)
    (cond ((=fx i 0) '())
          ((null? st) (raise 'empty-stack))
          ((equal? (car st) 'poly) (make-list i 'bot))
-         (#t (cons (car st) (take-stack (cdr st) (-fx i 1))))))
+         (#t (cons (car st) (stack-take (cdr st) (-fx i 1))))))
+
+(define (stack-drop::pair-nil st::pair-nil i::bint)
+   (cond ((=fx i 0) '())
+         ((null? st) (raise 'empty-stack))
+         ((equal? (car st) 'poly) '(poly))
+         (#t (stack-drop (cdr st) (-fx i 1)))))
 
 (define (index::bint lst::pair-nil x i::bint e::symbol)
       (cond ((null? lst) (raise (list e x)))
@@ -161,32 +159,37 @@
 
    (nlabels 0)
    (labels-names '())
-   (labels-types (make-vector 1000))
+   (labels-types (make-vector 10000))
 
-   (nfuncs 0)
-   (funcs-table (make-hashtable))
-   (funcs-types (make-vector 100000))
-   (funcs-names (make-vector 100000)) ; for error reporting
+   (nfunc 0)
+   (func-table (make-hashtable))
+   (func-types (make-vector 100000))
+   (func-names (make-vector 100000)) ; for error reporting
 
    (refs (make-hashtable))
 
    (ndata 0)
    (data-table (make-hashtable))
 
-   (nglobals 0)
-   (globals-table (make-hashtable))
-   (globals-types (make-vector 1000000))
-   (globals-names (make-vector 1000000)) ; for error reporting
+   (nglobal 0)
+   (global-table (make-hashtable))
+   (global-types (make-vector 1000000))
+   (global-names (make-vector 1000000)) ; for error reporting
 
-   (ntags 0)
-   (tags-table (make-hashtable))
-   (tags-types (make-vector 100000))
-   (tags-names (make-vector 100000)) ; for error reporting
+   (ntag 0)
+   (tag-table (make-hashtable))
+   (tag-types (make-vector 100000))
+   (tag-names (make-vector 100000)) ; for error reporting
+
+   (nmem 0)
+   (mem-table (make-hashtable))
+   (mem-types (make-vector 100000))
+   (mem-names (make-vector 100000))
 
    (return #f))
 
-(define (get-index::bint table range::bint x ex-oor::symbol ex-unkwn::symbol
-                         ex-exp::symbol)
+(define-inline (get-index::bint table range::bint x ex-oor::symbol ex-unkwn::symbol
+                                ex-exp::symbol)
    (cond
     ((number? x)
      (if (< x range)
@@ -217,32 +220,40 @@
          (idx (get-type-index env id)))
      (vector-set! v idx (cons t (cdr (vector-ref v idx))))))
 
-(define (get-func-index::bint env::struct x)
-   (get-index (env-funcs-table env) (env-nfuncs env) x 'funcidx-out-of-range
-              'unknown-function 'expected-funcidx))
+(define-macro (table-boilerplate x)
+   `(begin
+       (define (,(symbol-append x '-get-index::bint) env::struct x)
+          (get-index (,(symbol-append 'env- x '-table) env)
+                     (,(symbol-append 'env-n x) env) x
+                     ',(symbol-append x 'idx-out-of-range)
+                     ',(symbol-append 'unknown- x)
+                     ',(symbol-append 'expected- x 'idx)))
 
-; only used on arguments returned by the previous function
-(define (get-func-type::pair env::struct x::bint)
-   (vector-ref (env-funcs-types env) x))
+       (define (,(symbol-append x '-get-type::pair) env::struct x::bint)
+          (vector-ref (,(symbol-append 'env- x '-types) env) x))
 
-(define (add-func! env::struct t::pair)
-   (let ((x (env-nfuncs env)))
-      (vector-set! (env-funcs-types env) x t)
-      (env-nfuncs-set! env (+ 1 x))))
+       (define (,(symbol-append x '-add!) env::struct t::pair)
+          (let ((x (,(symbol-append 'env-n x) env)))
+             (vector-set! (,(symbol-append 'env- x '-types) env) x t)
+             (,(symbol-append 'env-n x '-set!) env (+ 1 x))))
 
-(define (add-func-name! env::struct id::symbol)
-   (hashtable-put! (env-funcs-table env) id (env-nfuncs env))
-   (vector-set! (env-funcs-names env) (env-nfuncs env) id))
+       (define (,(symbol-append x '-add-name!) env::struct id::symbol)
+          (hashtable-put! (,(symbol-append 'env- x '-table) env) id
+                          (,(symbol-append 'env-n x) env))
+          (vector-set! (,(symbol-append 'env- x '-names) env)
+                       (,(symbol-append 'env-n x) env) id))))
 
-; we store both names and indices in refs because when we search add them
-; (during the second pass, we don't have access to function names, we could by
-; adding type names to the context during the first pass)
+(table-boilerplate func)
+(table-boilerplate global)
+(table-boilerplate tag)
+(table-boilerplate mem)
+
 (define (valid-func-ref?::bool env::struct x::bint)
    (let ((h (env-refs env)))
       (or (hashtable-contains? h x)
-          (hashtable-contains? h (vector-ref (env-funcs-names env) x)))))
+          (hashtable-contains? h (vector-ref (env-func-names env) x)))))
 
-(define (get-field-index::bint env::struct t::bint f)
+(define (field-get-index::bint env::struct t::bint f)
    (let ((v (vector-ref (env-fields-names env) t)))
       (cond
        ((number? f)
@@ -253,11 +264,11 @@
      (index v f 0 'unknown-field))
     (#t (raise `(expected-fieldidx ,t))))))
 
-(define (get-data-index::bint env::struct x)
+(define (data-get-index::bint env::struct x)
    (get-index (env-data-table env) (env-ndata env) x 'dataidx-out-range
               'unknown-data 'expected-dataidx))
 
-(define (get-local-index env::struct l)
+(define (local-get-index env::struct l)
    (cond
     ((number? l)
      (if (< l (vector-length (env-locals-types env)))
@@ -272,27 +283,10 @@
 
 (define (local-init?::bool env::struct l)
    (local-var-init? (vector-ref (env-locals-types env)
-                                (get-local-index env l))))
+                                (local-get-index env l))))
 
-(define (get-local-type env::struct l)
-   (local-var-type (vector-ref (env-locals-types env) (get-local-index env l))))
-
-(define (get-global-index::bint env::struct x)
-   (get-index (env-globals-table env) (env-nglobals env) x 'globalidx-out-range
-              'unknown-global 'expected-globalidx))
-
-; only used on arguments returned by the previous function
-(define (get-global-type::pair env::struct x::bint)
-   (vector-ref (env-globals-types env) x))
-
-(define (add-global! env::struct t::pair)
-   (let ((x (env-nglobals env)))
-      (vector-set! (env-globals-types env) x t)
-      (env-nglobals-set! env (+ 1 x))))
-
-(define (add-global-name! env::struct id::symbol)
-   (hashtable-put! (env-globals-table env) id (env-nglobals env))
-   (vector-set! (env-globals-names env) (env-nglobals env) id))
+(define (local-get-type env::struct l)
+   (local-var-type (vector-ref (env-locals-types env) (local-get-index env l))))
 
 (define (get-label-index::bint env::struct x)
   (cond
@@ -317,23 +311,6 @@
 (define (pop-label! env::struct)
    (env-nlabels-set! env (- (env-nlabels env) 1))
    (env-labels-names-set! env (cdr (env-labels-names env))))
-
-(define (get-tag-index::bint env::struct x)
-   (get-index (env-tags-table env) (env-ntags env) x 'tagidx-out-range
-              'unknown-tag 'expected-tagidx))
-
-; only used on arguments returned by the previous function
-(define (get-tag-type::pair env::struct x::bint)
-   (vector-ref (env-tags-types env) x))
-
-(define (add-tag! env::struct t::pair)
-   (let ((x (env-ntags env)))
-      (vector-set! (env-tags-types env) x t)
-      (env-ntags-set! env (+ 1 x))))
-
-(define (add-tag-name! env::struct id::symbol)
-   (hashtable-put! (env-tags-table env) id (env-ntags env))
-   (vector-set! (env-tags-names env) (env-ntags env) id))
 
 ;; deftypes (rec subtypes*).i are represented as (deftype subtypes* i))
 ;; (rec i) are represented as (rec i)
@@ -624,22 +601,6 @@
           t
           (valid-rt env t))))
 
-;; section 3.2.7
-(define (valid-res env::struct l::pair-nil)
-   (for-each (lambda (t) (valid-vt env t)) l))
-
-;; see where it is used
-;; section 3.2.8
-(define (valid-it env::struct t)
-   (match-case t ; the shape test might be useless
-      ((?t1 ?t2 ?x)
-       (valid-res env t1)
-       (valid-res env t2)
-       (if (list? x) ; once again, might be useless
-           (for-each (lambda (v) (local-init? env v)) x)
-           (raise `(expected-locals ,x))))
-      (else (raise `(expected-instructiontype ,t)))))
-
 ;; section 3.2.9 and 6.4.6
 (define (valid-names/param/result/get-tl env::struct l::pair-nil)
    (match-case l
@@ -778,9 +739,6 @@
       (else (replace-exception 'expected-valtype 'expected-globaltype
                 (list #f (valid-vt env t))))))
 
-;; section 3.2.17
-;; rest of the validation for types : todo
-
 ;; section 6.4.9
 (define (clean-mod-rectype! env::struct l x::bint)
    ; the `(rec ...) in the environment assures rolling
@@ -857,7 +815,7 @@
    (valid-rt env t))
 
 (define (funcidx::bint env::struct f)
-   (get-func-index env f))
+   (func-get-index env f))
 
 (define last-type #f)
 
@@ -869,22 +827,22 @@
 (define (fieldidx::bint env::struct x)
    (unless (vector-ref (env-fields-names env) last-type)
       (raise `(expected-struct ,last-type ,(expand (get-type env last-type)))))
-   (get-field-index env last-type x))
+   (field-get-index env last-type x))
 
 (define (dataidx::bint env::struct x)
-   (get-data-index env x))
+   (data-get-index env x))
 
 (define (localidx::bint env::struct x)
-   (get-local-index env x))
+   (local-get-index env x))
 
 (define (globalidx::bint env::struct x)
-   (get-global-index env x))
+   (global-get-index env x))
 
 (define (labelidx::bint env::struct x)
    (get-label-index env x))
 
 (define (tagidx::bint env::struct x)
-   (get-tag-index env x))
+   (tag-get-index env x))
 
 (define (get-struct-fldts env::struct x::bint)
    (match-case (expand (get-type env x))
@@ -931,21 +889,21 @@
          (env-locals-types-set! env loc-init)
          i)))
 
-(define (adhoc-instr env::struct i::pair st::pair-nil)
+(define (valid-blockinstr env::struct i::pair st::pair-nil)
    (match-case i
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.183
       ((block (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (values bt `(block ,bt ,(check-block env tl (cadr bt) bt l)) '())))
       ((block . ?rst)
-       (adhoc-instr env `(block ,(gensym "$unnamed-label") ,@rst) st))
+       (valid-blockinstr env `(block ,(gensym "$unnamed-label") ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.184
       ((loop (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (values bt `(loop ,bt ,(check-block env tl (car bt) bt l)) '())))
       ((loop . ?rst)
-       (adhoc-instr env `(loop ,(gensym "$unnamed-label") ,@rst) st))
+       (valid-blockinstr env `(loop ,(gensym "$unnamed-label") ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.185
       ((if (and (? ident?) ?l) . ?body)
@@ -965,7 +923,7 @@
                               ,(check-block env else (cadr bt) bt l))
                      tl))))
       ((if . ?rst)
-       (adhoc-instr env `(if ,(gensym "$unnamed-label") ,@rst) st))
+       (valid-blockinstr env `(if ,(gensym "$unnamed-label") ,@rst) st))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.186
       ((try_table (and (? ident?) ?l) . ?body)
@@ -975,7 +933,7 @@
              (((catch ?tag ?lab) . ?tl)
               (let* ((x (tagidx env tag))
                      (l (labelidx env lab))
-                     (t* (cadr (expand (get-tag-type env x))))
+                     (t* (cadr (expand (tag-get-type env x))))
                      (lt (get-label-type env l)))
                  (unless (<res= env t* lt)
                     (raise `(non-matching-catch ,x ,l ,t* ,lt)))
@@ -986,7 +944,7 @@
              (((catch_ref ?tag ?lab) . ?tl)
               (let* ((x (tagidx env tag))
                      (l (labelidx env lab))
-                     (t* (cadr (expand (get-tag-type env x))))
+                     (t* (cadr (expand (tag-get-type env x))))
                      (lt (get-label-type env l)))
                  (unless (<res= env (append t* '((ref exn))) lt)
                     (raise `(non-matching-catch-ref ,x ,l ,t* ,lt)))
@@ -1016,53 +974,7 @@
              (values bt `(try_table ,bt ,c
                           ,(check-block env tl (cadr bt) bt l))))))
       ((try_table . ?rst)
-       (adhoc-instr env `(try_table ,(gensym "$unnamed-label") ,@rst) st))
-
-      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.193
-
-      ; to avoid having to compute a greatest lower bound, we check each label's
-      ; type against the stack, which will serve as a lower bound in absence of
-      ; failure and if all the label's arity are the same
-      ((br_table ?lab . ?rst)
-       (let* ((l (labelidx env lab))
-              (n (length (get-label-type env l))))
-           (let ((lower-bound (cdr (take-stack st (+ 1 n)))))
-             (define (valid-label/get-tl l::pair-nil)
-                (match-case l
-                   (((and (? ident?) ?lab) . ?tl)
-                    (let* ((l (labelidx env lab))
-                           (lt (get-label-type env l)))
-                       (unless (<res= env lower-bound lt)
-                          (raise `(non-matching ,lower-bound ,lt)))
-                       (multiple-value-bind (ls tl) (valid-label/get-tl tl)
-                          (values (cons l ls) tl))))
-                   (else (values '() l))))
-             (multiple-value-bind (ls tl) (valid-label/get-tl (cdr i))
-                ; by subsumption
-                (values `((,@lower-bound i32) (poly)) `(br_table ,ls) tl)))))
-
-      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.194
-      ((br_on_null ?lab . ?tl)
-       (let* ((l (labelidx env lab))
-              (t* (get-label-type env l)))
-          (when (null? st)
-             (raise 'empty-stack-reftype))
-          (let ((ht (cond ((reftype? (car st)) (reftype->heaptype (car st)))
-                          ((equal? 'poly (car st)) 'bot)
-                          (#t (raise `(expected-reftype-stack ,st))))))
-             (values `((,@t* (ref null ,ht)) (,@t* (ref ,ht))) `(br_on_null ,l)
-                     tl))))
-
-      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.100
-      ((ref.as_non_null ?lab . ?tl)
-       (when (null? st)
-          (raise 'empty-stack-reftype))
-       (unless (reftype? (car st))
-          (raise `(expected-reftype-stack ,st)))
-       (let ((ht (cond ((reftype? (car st)) (reftype->heaptype (car st)))
-                       ((equal? 'poly (car st)) 'bot)
-                       (#t (raise `(expected-reftype-stack ,st))))))
-          (values `(((ref null ,ht)) ((ref ,ht))) 'ref.as_non_null tl)))
+       (valid-blockinstr env `(try_table ,(gensym "$unnamed-label") ,@rst) st))
 
       (else (raise `(unknown-opcode ,(car i))))))
 
@@ -1083,7 +995,64 @@
              (let ((args (map (lambda (f x) (f env x)) exp-args giv-args)))
                 (values (if (procedure? t) (apply t env args) t)
                          `(,(car i) ,@args) tl))))
-       (adhoc-instr env i st)))
+       (valid-blockinstr env i st)))
+
+(define (adhoc-instr?::bool s)
+   (or (equal? s 'br_table) (equal? s 'br_on_null) (equal? s 'ref.as_non_null)))
+
+(define (adhoc-instr env::struct i::pair st::pair-nil)
+   (match-case i
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.193
+
+      ; to avoid having to compute a greatest lower bound, we check each label's
+      ; type against the stack, which will serve as a lower bound in absence of
+      ; failure and if all the label's arity are the same
+      ((br_table ?lab . ?rst)
+       (let* ((l (labelidx env lab))
+              (n (length (get-label-type env l))))
+
+          (define (get-label/tl l::pair-nil)
+             (match-case l
+                (((and (? ident?) ?lab) . ?tl)
+                    (multiple-value-bind (ls tl) (get-label/tl tl)
+                       (values (cons (labelidx env lab) ls) tl)))
+                (else (values '() l))))
+
+          (multiple-value-bind (ls tl) (get-label/tl (cdr i))
+             (multiple-value-bind (i st) (valid-instrs env tl st)
+                (let* ((st (check-stack env st '(i32)))
+                       (lower-bound (stack-take st n)))
+                   (define (valid-label l::bint)
+                      (let ((lt (get-label-type env l)))
+                         (unless (<res= env lower-bound lt)
+                            (raise `(non-matching ,lower-bound ,lt)))))
+                   (for-each valid-label ls)
+                   (values (append i `((br_table ,ls))) '(poly)))))))
+
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.194
+      ((br_on_null ?lab . ?tl)
+       (let* ((l (labelidx env lab))
+              (t* (get-label-type env l)))
+          (multiple-value-bind (i st) (valid-instrs env tl st)
+             (when (null? st)
+                (raise 'empty-stack-reftype))
+             (let ((ht (cond ((reftype? (car st)) (reftype->heaptype (car st)))
+                             ((equal? 'poly (car st)) 'bot)
+                             (#t (raise `(expected-reftype-stack ,st))))))
+               (values (append i `((br_on_null ,l)))
+                       (append (cons `(ref ,ht) (reverse t*))
+                               (check-stack env (stack-drop st 1) t*)))))))
+
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.100
+      ((ref.as_non_null ?lab . ?tl)
+       (multiple-value-bind (i st) (valid-instrs env tl st)
+          (when (null? st)
+             (raise 'empty-stack-reftype))
+          (let ((ht (cond ((reftype? (car st)) (reftype->heaptype (car st)))
+                          ((equal? 'poly (car st)) 'bot)
+                          (#t (raise `(expected-reftype-stack ,st))))))
+             (values (append i '((ref.as_non_null)))
+                     (cons `(ref ht) (stack-drop st 1))))))))
 
 ;; returns the desuggared instructions and the new stack state
 (define (valid-instrs env::struct l::pair-nil st::pair-nil)
@@ -1097,16 +1066,18 @@
                   (set! error-list (cons `(at-instruction ,i ,e) error-list))
                   (values '((error)) '()))
                (raise `(at-instruction ,i ,e))))
-         (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
-            (multiple-value-bind (tl st) (valid-instrs env tl st)
-               (for-each (lambda (x) (local-init! env x)) (cddr t))
-               (let ((st (check-stack env st (car t))))
-                  ; t : ... -> (poly) ?
-                  (if (and (not (null? (cadr t)))(equal? 'poly (caadr t)))
-                      ; try to avoid this append (cps by hand ?)
-                      (values (append tl (list i)) '(poly))
-                      (values (append tl (list i))
-                              (append (reverse (cadr t)) st))))))))
+         (if (adhoc-instr? (car i))
+             (adhoc-instr env i st)
+             (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
+                (multiple-value-bind (tl st) (valid-instrs env tl st)
+                   (for-each (lambda (x) (local-init! env x)) (cddr t))
+                   (let ((st (check-stack env st (car t))))
+                       ; t : ... -> (poly) ?
+                      (if (and (not (null? (cadr t)))(equal? 'poly (caadr t)))
+                           ; try to avoid this append (cps by hand ?)
+                          (values (append tl (list i)) '(poly))
+                          (values (append tl (list i))
+                                  (append (reverse (cadr t)) st)))))))))
 
    (if (null? l)
        (values '() st)
@@ -1140,25 +1111,25 @@
 (define (valid-importdesc env::struct d)
    (match-case d
       ((func (and (? ident?) ?id) . ?rst)
-       (add-func-name! env id)
+       (func-add-name! env id)
        (valid-importdesc env `(func ,@rst)))
       ((memory (and (? ident?) ?id) . ?rst)
        (raise 'todo))
       ((global (and (? ident?) ?id) . ?rst)
-       (add-global-name! env id)
+       (global-add-name! env id)
        (valid-importdesc env `(global ,@rst)))
       ((tag (and (? ident?) ?id) . ?rst)
-       (add-tag-name! env id)
+       (tag-add-name! env id)
        (valid-importdesc env `(tag ,@rst)))
 
       ((func . ?ft)
        (multiple-value-bind (p r) (valid-param/result env ft)
-          (add-func! env `(deftype ((sub final (func ,p ,r))) ,0))))
+          (func-add! env `(deftype ((sub final (func ,p ,r))) ,0))))
       ((global ?gt)
-       (add-global! env (valid-gt env gt)))
+       (global-add! env (valid-gt env gt)))
       ((tag . ?tt)
        (multiple-value-bind (p r) (valid-param/result env tt)
-          (add-tag! env `(deftype ((sub final (func ,p ,r))) ,0))))
+          (tag-add! env `(deftype ((sub final (func ,p ,r))) ,0))))
       (else (raise `(expected-importdesc ,d)))))
 
 (define (type-pass-mf env::struct m)
@@ -1198,19 +1169,20 @@
           (env-pass-mf env (decorate m `(import ,nm1 ,nm2 (func ,@rst)))))
          ; section 6.6.4
          ((func (and (? ident?) ?id) . ?rst)
-          (add-func-name! env id)
+          (func-add-name! env id)
           (env-pass-mf env (decorate m `(func ,@rst))))
          ((func . ?rst)
           (multiple-value-bind (args f tl) (valid-tu/get-tl env rst)
-             (add-func! env `(deftype ((sub final (func ,@f))) ,0))
-             (decorate m `(func ,(- (env-nfuncs env) 1) ,f ,args ,tl))))
+             (func-add! env `(deftype ((sub final (func ,@f))) ,0))
+             (decorate m `(func ,(- (env-nfunc env) 1) ,f ,args ,tl))))
+
          ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
           (raise 'todo))
+          ; section 6.6.12
          ((data (and (? ident?) ?id) . ?rst)
           (hashtable-put! (env-data-table env) id (env-ndata env))
           (env-pass-mf env (decorate m `(data ,@rst))))
          ((data . ?rst)
-          ; section 6.6.12
           (for-each (lambda (s) (unless (string? s)
                                    (raise `(expected-string ,s)))) rst)
           ; section 3.5.9 - passive data segments are always valid, we currently
@@ -1219,7 +1191,7 @@
           m)
           ; section 6.6.7
          ((global (and (? ident?) ?id) . ?rst)
-          (add-global-name! env id)
+          (global-add-name! env id)
           (env-pass-mf env (decorate m `(global ,@rst))))
          ((global (export (? string?)) . ?rst)
           (env-pass-mf env (decorate m `(global ,@rst))))
@@ -1231,14 +1203,15 @@
                         (for-each add-func-refs! l)))))
 
           (let ((t (valid-gt env gt)))
-             (add-global! env t)
+             (global-add! env t)
              (add-func-refs! e)
-             (decorate m `(global ,(- (env-nglobals env) 1) ,t ,e))))
+             (decorate m `(global ,(- (env-nglobal env) 1) ,t ,e))))
 
          ; section 6.6.3
          ((import (and (? string?) ?mod) (and (? string?) ?nm) ?d)
           (valid-importdesc env d)
           #f)
+
          (else (raise 'expected-modulefield)))))
 
 ;; section 6.6.13
@@ -1253,10 +1226,10 @@
       (match-case m
          (#f #f)
           ; section 3.5.6
-         ((global ?nglobals ?t ?e)
-          (let ((old-nglobals (env-nglobals env)))
-             ; globals can only refer to the previous ones
-             (env-nglobals-set! env nglobals)
+         ((global ?nglobal ?t ?e)
+          (let ((old-nglobal (env-nglobal env)))
+             ; global can only refer to the previous ones
+             (env-nglobal-set! env nglobal)
              (multiple-value-bind (e t') (valid-expr env e)
                 (when (and (length>=? t' 2) (not (equal? 'poly (cadr t'))))
                    (raise `(too-much-value-stack ,t')))
@@ -1266,7 +1239,7 @@
                    (raise `(non-matching-globaltype ,(car t') ,(cadr t))))
                 (when (non-constant-expr? env e)
                    (raise `(non-constant-global ,(non-constant-expr? env e))))
-                (env-nglobals-set! env old-nglobals)
+                (env-nglobal-set! env old-nglobal)
                 `(global ,t ,e))))
          ((func ?funcidx ?t ?args ?e)
           (multiple-value-bind (n lts body) (valid-names/local/get-tl env e)
@@ -1276,8 +1249,9 @@
               (list->vector (append (map (lambda (vt) (make-local-var #t vt))
                                          (car t)) lts)))
              (env-return-set! env (cadr t))
-             `(func ,t ,(map local-var-type lts)
-               ,(check-block env body (cadr t) `(() ,(cadr t)) #f))))
+             (replace-exception 'empty-stack 'no-return-value-stack
+                `(func ,funcidx ,t ,(map local-var-type lts)
+                  ,(check-block env body (cadr t) `(() ,(cadr t)) #f)))))
          ((data . ?-) m)
          (else (raise `(expected-modulefield ,m))))))
 
@@ -1290,15 +1264,21 @@
         (error/location "val" msg "" (cadr (cer obj)) (caddr (cer obj)))))
    (match-case e
       ((in-module ?m ?e)
-       (rep "in module" m)
+       ;(rep "in module" m)
        (format-exn e))
       ((at-instruction ?i ?e)
-       (rep "at instruction" i)
+       ;(rep "at instruction" i)
        (format-exn e))
       ("" #f)
-      (else (print "***ERROR: " e)))
+      (else (display "***ERROR: " (current-error-port))
+            (display e (current-error-port))
+            (newline (current-error-port))))
    (unless keep-going
-        (exit 1)))
+        (exit 1))
+   (when (number? keep-going)
+      (set! keep-going (-fx keep-going 1))
+      (if (=fx 0 keep-going)
+          (set! keep-going #f))))
 
 (define (mf-pass/handle-error f)
    (lambda (env::struct m)
@@ -1326,6 +1306,8 @@
        (args-parse-usage #f))
       ((("--keep-going" "-k") (help "Continue when encountering an error"))
        (set! keep-going #t))
+      (("--stop-after" ?n (help "Stop after encountering N errors"))
+        (set! keep-going (string->number n)))
       (else
        (set! input-file else)))
    (if input-file
