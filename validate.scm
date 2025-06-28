@@ -10,6 +10,9 @@
 (define keep-going #f)
 (define error-list '())
 (define error-encountered? #f)
+(define silent #f)
+
+(define *reported-missing-idents* (make-hashtable))
 
 (read-table *numtypes* "numtypes.sch")
 (define (numtype?::bool t)
@@ -81,7 +84,7 @@
 (define-macro (replace-exception e e' . body)
    `(with-handler
        (lambda (exn)
-          (if (equal? (car exn) ,e)
+          (if (and (pair? exn) (equal? (car exn) ,e))
               (raise (cons ,e' (cdr exn)))
               (raise exn)))
        ,@body))
@@ -188,8 +191,8 @@
 
    (return #f))
 
-(define-inline (get-index::bint table range::bint x ex-oor::symbol ex-unkwn::symbol
-                                ex-exp::symbol)
+(define-inline (get-index::bint table range::bint x ex-oor ex-unkwn
+                                ex-exp)
    (cond
     ((number? x)
      (if (< x range)
@@ -225,9 +228,7 @@
        (define (,(symbol-append x '-get-index::bint) env::struct x)
           (get-index (,(symbol-append 'env- x '-table) env)
                      (,(symbol-append 'env-n x) env) x
-                     ',(symbol-append x 'idx-out-of-range)
-                     ',(symbol-append 'unknown- x)
-                     ',(symbol-append 'expected- x 'idx)))
+                     '(idx-out-of-range ,x) '(unknown ,x) '(expected ,x 'idx)))
 
        (define (,(symbol-append x '-get-type::pair) env::struct x::bint)
           (vector-ref (,(symbol-append 'env- x '-types) env) x))
@@ -241,7 +242,10 @@
           (hashtable-put! (,(symbol-append 'env- x '-table) env) id
                           (,(symbol-append 'env-n x) env))
           (vector-set! (,(symbol-append 'env- x '-names) env)
-                       (,(symbol-append 'env-n x) env) id))))
+                       (,(symbol-append 'env-n x) env) id))
+
+       (define (,(symbol-append x 'idx::bint) env::struct x)
+          (,(symbol-append x '-get-index) env x))))
 
 (table-boilerplate func)
 (table-boilerplate global)
@@ -372,13 +376,9 @@
 
 ;; we use the same slopiness as in eq-clos-st?
 (define (unroll-st sts st)
-   (cond ((or (symbol? st) (idx? st)) st)
-         ((rectype? st) `(deftype ,sts ,(cadr st)))
+   (cond ((rectype? st) `(deftype ,sts ,(cadr st)))
          ((pair? st) (map (lambda (st) (unroll-st sts st)) st))
-         ((null? st) st)
-         ; we don't report here like elsewhere, because this function doesn't
-         ; follow structural rules
-         (#t (raise `(internal-unroll-st ,st)))))
+         (else st)))
 
 ;; expects well formed arguments
 (define (unroll-dt::pair t::pair)
@@ -489,9 +489,9 @@
 
 (define (<fldt=::bool env::struct t1::pair t2::pair)
    (match-case (cons t1 t2)
-      (((const ?st1) . (const ?st2))
+      (((#f ?st1) . (#f ?st2))
        (<st= env st1 st2))
-      (((var ?st1) . (var ?st2))
+      (((#t ?st1) . (#t ?st2))
        (and (<st= env st1 st2) (<st= env st2 st1)))
       (else #f)))
 
@@ -555,25 +555,6 @@
    ; types are the same
    (<fldt= env t1 t2))
 
-;; section 3.3.16
-(define (<tagt=::bool env::struct t1 t2)
-   (and (<dt= env t1 t2) (<dt= env t2 t1)))
-
-;; section 3.3.17
-(define (<et=::bool env::struct t1 t2)
-   (match-case (cons t1 t2)
-      (((func ?ft1) . (func ?ft2))
-       (<funct= env ft1 ft2))
-      (((table ?tt1) . (table ?tt2))
-       (<tt= env tt1 tt2))
-      (((mem ?mt1) . (mem ?mt2))
-       (<mt= mt1 mt2))
-      (((global ?gt1) . (global ?gt2))
-       (<gt= env gt1 gt2))
-      (((tag ?tagt1) . (tag ?tagt2))
-       (<tagt= env tagt1 tagt2))
-      (else #f)))
-
 ;;; validation functions take types in the text-format and return the internal
 ;;; representation if there wasn't any problem
 
@@ -603,20 +584,24 @@
 
 ;; section 3.2.9 and 6.4.6
 (define (valid-names/param/result/get-tl env::struct l::pair-nil)
+   (define (valid-vt-at pos::epair t)
+      (with-default-value 'error dec: `(at ,pos)
+         (lambda () (valid-vt env t))))
+
    (match-case l
       (((param (and (? ident?) ?id) ?vt) . ?tl)
        (multiple-value-bind (n p r tl) (valid-names/param/result/get-tl env tl)
-          (values (cons id n) (cons (valid-vt env vt) p) r tl)))
+          (values (cons id n) (cons (valid-vt-at (car l) vt) p) r tl)))
       (((param . ?vts) . ?tl)
        (multiple-value-bind (n p r tl) (valid-names/param/result/get-tl env tl)
           (values (append (make-list (length vts) #f))
-                  (append (map-env valid-vt env vts) p) r tl)))
+                  (append (map-env valid-vt-at (car l) vts) p) r tl)))
       (((result . ?-) . ?-)
        (define (get-results/tl l)
           (match-case l
              (((result . ?vts) . ?tl)
               (multiple-value-bind (r tl) (get-results/tl tl)
-                 (values (append (map-env valid-vt env vts) r) tl)))
+                 (values (append (map-env valid-vt-at (car l) vts) r) tl)))
              (else (values '() l))))
        (multiple-value-bind (r tl) (get-results/tl l)
           (values '() '() r tl)))
@@ -638,6 +623,18 @@
          (raise `(named-param-blocktype ,args)))
       (values f tl)))
 
+(define (with-default-value def #!key (dec '()) #!rest body)
+   (with-handler
+      (lambda (e)
+         (if (isa? e &error)
+             (raise e))
+         (if keep-going
+             (begin
+                (set! error-list (cons e error-list))
+                 def)
+             (raise e)))
+       ((car body))))
+
 ;; section 3.2.11 and 6.4.7
 (define (valid-fldt env::struct t)
    (define (valid-st t)
@@ -645,10 +642,12 @@
          (if (packedtype? t)
              t
              (valid-vt env t))))
-   (match-case t
-      ((mut ?st) `(var ,(valid-st st)))
-      (?st (replace-exception 'expected-storagetype 'expected-fieldtype
-              `(const ,(valid-st st))))))
+   (with-default-value '(#f error)
+      (lambda ()
+         (match-case t
+            ((mut ?st) `(#t ,(valid-st st)))
+            (?st (replace-exception 'expected-storagetype 'expected-fieldtype
+                    `(#f ,(valid-st st))))))))
 
 ;; section 6.4.7
 (define (valid-fields/names env::struct l)
@@ -734,10 +733,12 @@
 
 ;; section 3.2.18 and 6.4.14
 (define (valid-gt::pair env::struct t)
-   (match-case t
-      ((mut ?vt) (list #t (valid-vt env vt)))
-      (else (replace-exception 'expected-valtype 'expected-globaltype
-                (list #f (valid-vt env t))))))
+   (with-default-value '(#f error)
+      (lambda ()
+         (match-case t
+            ((mut ?vt) (list #t (valid-vt env vt)))
+            (else (replace-exception 'expected-valtype 'expected-globaltype
+                     (list #f (valid-vt env t))))))))
 
 ;; section 6.4.9
 (define (clean-mod-rectype! env::struct l x::bint)
@@ -750,17 +751,20 @@
                      (add-type! env #f `(rec ,(-fx (env-ntypes env) x))) st)
                     (else (raise `(expected-typedef ,l)))) l)))
       (define (valid-st st x)
-         (match-case st
-            ((sub final ?ct) `(sub final ,(valid-ct env ct x)))
-            ((sub final (and ?y (? idx?)) ?ct)
-             `(sub final ,(get-type-index env y) ,(valid-ct env ct x)))
-            ((sub (and ?y (? idx?)) ?ct)
-             `(sub ,(get-type-index env y) ,(valid-ct env ct x)))
-            ((sub ?ct)
-             `(sub ,(valid-ct env ct x)))
-            (else
-              (replace-exception 'expected-comptype 'expected-subtype
-                 `(sub final ,(valid-ct env st x))))))
+         (with-default-value '(sub final (error)) dec: `(at-subtype ,st)
+            (lambda ()
+               (match-case st
+                  ((sub final ?ct) `(sub final ,(valid-ct env ct x)))
+                  ((sub final (and ?y (? idx?)) ?ct)
+                   `(sub final ,(get-type-index env y) ,(valid-ct env ct x)))
+                  ((sub (and ?y (? idx?)) ?ct)
+                   `(sub ,(get-type-index env y) ,(valid-ct env ct x)))
+                  ((sub ?ct)
+                   `(sub ,(valid-ct env ct x)))
+                  (else
+                   (replace-exception 'expected-comptype 'expected-subtype
+                      `(sub final ,(valid-ct env st x))))))))
+
       (let ((rolled-sts (map valid-st sts (iota (length sts) x 1))))
          (for-each (lambda (i t) (set-type! env (+ x i)
                                             `(deftype ,rolled-sts ,i)))
@@ -814,9 +818,6 @@
 (define (rt::pair env::struct t)
    (valid-rt env t))
 
-(define (funcidx::bint env::struct f)
-   (func-get-index env f))
-
 (define last-type #f)
 
 (define (typeidx::bint env::struct i)
@@ -835,14 +836,8 @@
 (define (localidx::bint env::struct x)
    (local-get-index env x))
 
-(define (globalidx::bint env::struct x)
-   (global-get-index env x))
-
 (define (labelidx::bint env::struct x)
    (get-label-index env x))
-
-(define (tagidx::bint env::struct x)
-   (tag-get-index env x))
 
 (define (get-struct-fldts env::struct x::bint)
    (match-case (expand (get-type env x))
@@ -972,7 +967,7 @@
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (multiple-value-bind (c tl) (valid-catch/get-body tl)
              (values bt `(try_table ,bt ,c
-                          ,(check-block env tl (cadr bt) bt l))))))
+                          ,(check-block env tl (cadr bt) bt l)) '()))))
       ((try_table . ?rst)
        (valid-blockinstr env `(try_table ,(gensym "$unnamed-label") ,@rst) st))
 
@@ -1013,7 +1008,7 @@
 
           (define (get-label/tl l::pair-nil)
              (match-case l
-                (((and (? ident?) ?lab) . ?tl)
+                (((and (? idx?) ?lab) . ?tl)
                     (multiple-value-bind (ls tl) (get-label/tl tl)
                        (values (cons (labelidx env lab) ls) tl)))
                 (else (values '() l))))
@@ -1052,7 +1047,7 @@
                           ((equal? 'poly (car st)) 'bot)
                           (#t (raise `(expected-reftype-stack ,st))))))
              (values (append i '((ref.as_non_null)))
-                     (cons `(ref ht) (stack-drop st 1))))))))
+                     (cons `(ref ,ht) (stack-drop st 1))))))))
 
 ;; returns the desuggared instructions and the new stack state
 (define (valid-instrs env::struct l::pair-nil st::pair-nil)
@@ -1064,8 +1059,9 @@
            (if keep-going
                (begin
                   (set! error-list (cons `(at-instruction ,i ,e) error-list))
-                  (values '((error)) '()))
+                  (values '((error)) '(poly)))
                (raise `(at-instruction ,i ,e))))
+
          (if (adhoc-instr? (car i))
              (adhoc-instr env i st)
              (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
@@ -1131,6 +1127,15 @@
        (multiple-value-bind (p r) (valid-param/result env tt)
           (tag-add! env `(deftype ((sub final (func ,p ,r))) ,0))))
       (else (raise `(expected-importdesc ,d)))))
+
+; section 6.6.9 and
+(define (valid-exportdesc env::struct d)
+   (match-case d
+      ((func ?id) (funcidx env id))
+      ((memory ?id) (memidx env id))
+      ((global ?id) (globalidx env id))
+      ((tag ?id) (tagidx env id))
+      (else (raise `(expected-exportdesc ,d)))))
 
 (define (type-pass-mf env::struct m)
    (with-handler
@@ -1212,6 +1217,22 @@
           (valid-importdesc env d)
           #f)
 
+         ; we don't have all the indices yet, so we can't validate an
+         ; exportdesc's
+         ((export . ?-) m)
+
+         ; section 6.6.8 and 3.5.7
+         ((tag (and (? ident?) ?id) . ?rst)
+          (tag-add-name! env id)
+          (env-pass-mf env (decorate m `(tag ,@rst))))
+         ((tag . ?tu)
+          (multiple-value-bind (p r) (valid-param/result env tu)
+             (unless (null? r)
+                (tag-add! env '(deftype ((sub final (error))) ,0))
+                (raise `(non-empty-tag-result ,r)))
+             (tag-add! env `(deftype ((sub final (func ,p ,r))) ,0)))
+          #f)
+
          (else (raise 'expected-modulefield)))))
 
 ;; section 6.6.13
@@ -1253,32 +1274,36 @@
                 `(func ,funcidx ,t ,(map local-var-type lts)
                   ,(check-block env body (cadr t) `(() ,(cadr t)) #f)))))
          ((data . ?-) m)
+         ((export (? string?) ?d)
+          (valid-exportdesc env d))
          (else (raise `(expected-modulefield ,m))))))
 
 (define (format-exn e)
    (if (isa? e &error)
-              (raise e))
+       (raise e))
    (set! error-encountered? #t)
    (define (rep msg obj)
      (with-handler error-notify
-        (error/location "val" msg "" (cadr (cer obj)) (caddr (cer obj)))))
+        (when (epair? obj)
+           (error/location "val" msg "" (cadr (cer obj)) (caddr (cer obj))))))
    (match-case e
       ((in-module ?m ?e)
-       ;(rep "in module" m)
+       (unless silent (rep "in module" m))
        (format-exn e))
       ((at-instruction ?i ?e)
-       ;(rep "at instruction" i)
+       (unless silent (rep "at instruction" i))
        (format-exn e))
       ("" #f)
-      (else (display "***ERROR: " (current-error-port))
-            (display e (current-error-port))
-            (newline (current-error-port))))
+      (else
+       (when (number? keep-going)
+          (set! keep-going (-fx keep-going 1))
+          (if (=fx 0 keep-going)
+              (set! keep-going #f)))
+       (display "***ERROR: " (current-error-port))
+       (display e (current-error-port))
+       (newline (current-error-port))))
    (unless keep-going
-        (exit 1))
-   (when (number? keep-going)
-      (set! keep-going (-fx keep-going 1))
-      (if (=fx 0 keep-going)
-          (set! keep-going #f))))
+        (exit 1)))
 
 (define (mf-pass/handle-error f)
    (lambda (env::struct m)
@@ -1292,7 +1317,7 @@
 (define (valid-file f::pair-nil)
    (let ((env (make-env)))
       (match-case f
-         ((or (module (? ident?) . ?mfs) (module . ?mfs) ?mfs)
+         ((or (module (? ident?) . ?mfs) (module . ?mfs))
           (let* ((type-mfs (map-env (mf-pass/handle-error type-pass-mf) env
                                     mfs))
                  (env-mfs (map-env (mf-pass/handle-error env-pass-mf) env
@@ -1307,7 +1332,9 @@
       ((("--keep-going" "-k") (help "Continue when encountering an error"))
        (set! keep-going #t))
       (("--stop-after" ?n (help "Stop after encountering N errors"))
-        (set! keep-going (string->number n)))
+       (set! keep-going (string->number n)))
+      (("-s" (help "Display less verbose error messages"))
+       (set! silent #t))
       (else
        (set! input-file else)))
    (if input-file
