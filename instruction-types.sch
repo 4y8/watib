@@ -419,10 +419,10 @@
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.198
   (return () ,(lambda (env)
-                (unless (env-return env)
-                  (raise `cannot-return))
-                ; once again, subsumption
-                `(,(env-return env) (poly))))
+                 (unless (env-return env)
+                    (raise `cannot-return))
+                 ; once again, subsumption
+                 `(,(env-return env) (poly))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.199
   ; if x is a funcidx, its defined type has to expand to a type of the form
@@ -433,9 +433,9 @@
   (call_ref
    (,typeidx)
    ,(lambda (env x)
-      (match-case (expand (get-type env x))
-         ((func ?t1 ?t2) `((,@t1 (ref null ,x)) ,t2))
-         (?t (raise `(expected-function ,t))))))
+       (match-case (expand (get-type env x))
+          ((func ?t1 ?t2) `((,@t1 (ref null ,x)) ,t2))
+          (?t (raise `(expected-function ,t))))))
 
   ; we do not support call_indirect yet
 
@@ -456,13 +456,13 @@
    (,typeidx)
    ,(lambda (env x)
        (match-case (expand (get-type env x))
-         ((func ?t1 ?t2)
-          (unless (env-return env)
-             (raise `cannot-return))
-          (unless (<res= env t2 (env-return env))
-             (raise `(non-matching t2 ,(env-return env))))
-          `((,@t1 (ref null ,x)) (poly)))
-         (?t (raise `(expected-function ,t))))))
+          ((func ?t1 ?t2)
+           (unless (env-return env)
+              (raise `cannot-return))
+           (unless (<res= env t2 (env-return env))
+              (raise `(non-matching t2 ,(env-return env))))
+           `((,@t1 (ref null ,x)) (poly)))
+          (?t (raise `(expected-function ,t))))))
 
   ; we do not support return_call_indirect yet
 
@@ -473,5 +473,4 @@
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.206
   (throw_ref () (((ref null exn)) (poly))) ; subsumption over and over
-
   )
