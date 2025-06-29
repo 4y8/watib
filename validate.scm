@@ -207,7 +207,51 @@
    (last-type #f)
    (error-list '()))
 
-(define-inline (get-index::bint table range::bint x ex-oor ex-unkwn ex-exp)
+(define (copy-env::struct env::struct)
+   (make-env
+    (env-ntypes env)
+    (env-types-table env)
+    (env-types-vector env)
+    (env-fields-names env)
+
+    0
+    '()
+    (make-vector 0)
+
+    0
+    '()
+    (make-vector 10000)
+
+    (env-nfunc env)
+    (env-func-table env)
+    (env-func-types env)
+    (env-func-names env)
+
+    (env-refs env)
+
+    (env-ndata env)
+    (env-data-table env)
+
+    (env-nglobal env)
+    (env-global-table env)
+    (env-global-types env)
+    (env-global-names env)
+
+    (env-ntag env)
+    (env-tag-table env)
+    (env-tag-types env)
+    (env-tag-names env)
+
+    (env-nmem env)
+    (env-mem-table env)
+    (env-mem-types env)
+    (env-mem-names env)
+
+    #f
+    #f
+    '()))
+
+(define (get-index::bint table range::bint x ex-oor ex-unkwn ex-exp)
    (cond
     ((number? x)
      (if (<fx x range)
@@ -254,6 +298,8 @@
              (,(symbol-append 'env-n x '-set!) env (+fx 1 x))))
 
        (define (,(symbol-append x '-add-name!) env::struct id::symbol)
+          (when (hashtable-contains? (,(symbol-append 'env- x '-table) env) id)
+             (raise `(name-already-used ,id)))
           (hashtable-put! (,(symbol-append 'env- x '-table) env) id
                           (,(symbol-append 'env-n x) env))
           (vector-set! (,(symbol-append 'env- x '-names) env)
@@ -328,7 +374,7 @@
       (vector-set! (env-labels-types env) x t)))
 
 (define (pop-label! env::struct)
-   (env-nlabels-set! env (- (env-nlabels env) 1))
+   (env-nlabels-set! env (-fx (env-nlabels env) 1))
    (env-labels-names-set! env (cdr (env-labels-names env))))
 
 ;; deftypes (rec subtypes*).i are represented as (deftype subtypes* i))
@@ -350,22 +396,6 @@
 
 ;; we could do the equality check respecting all the structure but we can use
 ;; our representations slopiness to do things shorter
-(define (eq-clos-ct? env::struct t1 t2)
-   #f)
-(define (eq-clos-ht? env::struct t1 t2)
-   #f)
-
-(define (structural-eq-clos-st? env::struct t1 t2)
-   (match-case (cons t1 t2)
-      ((or ((sub final ?ht1 ?cts1) . (sub final ?ht2 ?cts2))
-           ((sub (and (not final) ?ht1) ?cts1) .
-            (sub (and (not final) ?ht2) ?cts2)))
-       (and (eq-clos-ht? env ht1 ht2)
-            (every' (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2)))
-      ((or ((sub final ?cts1) . (sub final ?cts2)) ((sub ?cts1) . (sub ?cts2)))
-       (every' (lambda (ct1 ct2) eq-clos-ct? env ct1 ct2) cts1 cts2))
-      (else #f)))
-
 (define (eq-clos-st?::bool env::struct t1 t2)
    (cond
       ((symbol? t1) (eq? t1 t2))
@@ -379,7 +409,7 @@
       ((and (pair? t1) (pair? t2))
        (every' (lambda (t1 t2) eq-clos-st? env t1 t2) t1 t2))
       ((and (null? t1) (null? t2)) #t)
-      (#t #f)))
+      (else #f)))
 
 (define (eq-clos-dt?::bool env::struct t1::pair t2::pair)
    (and (=fx (caddr t1) (caddr t2))
@@ -473,11 +503,11 @@
 
 ;; section 3.3.5
 (define (<vt=::bool env::struct t1 t2)
-   (or (eq? t1 'bot)
+   (or (eq? t1 t2)
        ;(and (numtype? t1) (numtype? t2) (eq? t1 t2))
        ;(and (vectype? t1) (vectype? t2) (eq? t1 t2))
-       (eq? t1 t2)
        (and (reftype? t1) (reftype? t2) (<rt= env t1 t2))
+       (eq? t1 'bot)
        (eq? t2 'top)))
 
 ;; section 3.3.6
@@ -536,37 +566,6 @@
        #t
        (let ((ht (get-sub-heaptype (unroll-dt t1))))
           (and ht (<ht= env ht t2)))))
-
-;; section 3.3.12
-
-;; limits are represented as (min . max) when there is a max and (min . #f)
-;; otherwise
-(define (<lim=::bool l1::pair l2::pair)
-   (and (<= (car l2) (car l1))
-        (if (cdr l2)
-            (and (cdr l1) (<= (cdr l1) (cdr l2)))
-            #t)))
-
-;; section 3.3.13
-(define (<tt=::bool env::struct t1::pair t2::pair)
-   (match-case (cons t1 t2)
-      (((?at ?l1 ?rt1) . (?at ?l2 ?rt2))
-       (and (<lim= l1 l2)
-            (<rt= env l1 l2)
-            (<rt= env l2 l1)))
-      (else #f)))
-
-;; section 3.3.14
-(define (<mt=::bool t1 t2)
-   (match-case (cons t1 t2)
-      (((?at ?l1) . (?at ?l2))
-       (<lim= l1 l2))))
-
-;; section 3.3.15
-(define (<gt=::bool env::struct t1 t2)
-   ; when the underlying types are valtypes matching for fieldtypes and global
-   ; types are the same
-   (<fldt= env t1 t2))
 
 ;;; validation functions take types in the text-format and return the internal
 ;;; representation if there wasn't any problem
@@ -1343,52 +1342,6 @@
    (unless keep-going
         (exit 1)))
 
-(define (copy-env::struct env::struct)
-   (make-env
-    (env-ntypes env)
-    (env-types-table env)
-    (env-types-vector env)
-    (env-fields-names env)
-
-    0
-    '()
-   ; relevant information can only be accessed by index ; find the index of a
-   ; name first to access by name
-   (make-vector 0)
-
-   0
-   '()
-   (make-vector 10000)
-
-   (env-nfunc env)
-   (env-func-table env)
-   (env-func-types env)
-   (env-func-names env)
-
-   (env-refs env)
-
-   (env-ndata env)
-   (env-data-table env)
-
-   (env-nglobal env)
-   (env-global-table env)
-   (env-global-types env)
-   (env-global-names env)
-
-   (env-ntag env)
-   (env-tag-table env)
-   (env-tag-types env)
-   (env-tag-names env)
-
-   (env-nmem env)
-   (env-mem-table env)
-   (env-mem-types env)
-   (env-mem-names env)
-
-   #f
-   #f
-   '()))
-
 (define (valid-file f::pair-nil)
    (let ((env (make-env)))
       (define (mf-pass/handle-error f)
@@ -1404,7 +1357,6 @@
          ((or (module (? ident?) . ?mfs) (module . ?mfs))
           (let* ((type-mfs (map (mf-pass/handle-error type-pass-mf) mfs)))
              (for-each (mf-pass/handle-error env-pass-mf) type-mfs)
-
              (if (= nthreads 1)
                  (begin
                     (valid-globals env)
@@ -1436,6 +1388,7 @@
 
 (define (main argv)
    (define input-file #f)
+
    (args-parse (cdr argv)
       ((("--help" "-h") (help "Display this help message"))
        (args-parse-usage #f))
@@ -1449,6 +1402,7 @@
        (set! nthreads (string->number n)))
       (else
        (set! input-file else)))
+
    (if input-file
        (call-with-input-file input-file
           (lambda (ip)
