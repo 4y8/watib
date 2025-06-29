@@ -1,5 +1,5 @@
 (module validate
-   (library srfi1)
+   (library srfi1 pthread)
    (include "read-table.sch")
    (main main))
 
@@ -8,18 +8,19 @@
 ;;; are never valid
 
 (define keep-going #f)
-(define error-list '())
 (define error-encountered? #f)
 (define silent #f)
+(define nthreads 1)
 
-(define-macro (with-default-value def dec . body)
+(define-macro (with-default-value env def dec . body)
    `(with-handler
        (lambda (e)
           (if (isa? e &error)
               (raise e))
           (if keep-going
               (begin
-                 (set! error-list (cons (append ,dec (list e)) error-list))
+                 (env-error-list-set! ,env (cons (append ,dec (list e))
+                                                 (env-error-list ,env)))
                  ,def)
               (raise (append ,dec (list e)))))
        ,@body))
@@ -201,7 +202,10 @@
    (mem-types (make-vector 100000))
    (mem-names (make-vector 100000)) ; for error reporting
 
-   (return #f))
+   (return #f)
+
+   (last-type #f)
+   (error-list '()))
 
 (define-inline (get-index::bint table range::bint x ex-oor ex-unkwn ex-exp)
    (cond
@@ -594,7 +598,7 @@
 ;; section 3.2.9 and 6.4.6
 (define (valid-names/param/result/get-tl env::struct l::pair-nil)
    (define (valid-vt-at pos::epair t)
-      (with-default-value 'error `(at ,pos)
+      (with-default-value env 'error `(at ,pos)
          (valid-vt env t)))
 
    (match-case l
@@ -639,7 +643,7 @@
          (if (packedtype? t)
              t
              (valid-vt env t))))
-   (with-default-value '(#f error) '()
+   (with-default-value env '(#f error) '()
       (match-case t
          ((mut ?st) `(#t ,(valid-st st)))
          (?st (replace-exception 'expected-storagetype 'expected-fieldtype
@@ -715,17 +719,18 @@
              (cons n m)))))
 
 ;; section 3.2.16 and 6.4.13
-(define (valid-mt t)
-   (with-default-value '(error (0)) '()
+(define (valid-mt env::struct t)
+   (with-default-value env '(error (0)) '()
       (match-case t
          (((and ?at (? addrtype?)) . ?l)
-          (list at (valid-lim l (bit-lshllong #l1 (-llong (type-size at) #l16)))))
+          (list at
+                (valid-lim l (bit-lshllong #l1 (-llong (type-size at) #l16)))))
          ; section 6.4.10
-         (else (valid-mt `(i32 ,@t))))))
+         (else (valid-mt env `(i32 ,@t))))))
 
 ;; section 3.2.18 and 6.4.14
 (define (valid-gt::pair env::struct t)
-   (with-default-value '(#f error) '()
+   (with-default-value env '(#f error) '()
          (match-case t
             ((mut ?vt) (list #t (valid-vt env vt)))
             (else (replace-exception 'expected-valtype 'expected-globaltype
@@ -742,7 +747,7 @@
                      (add-type! env #f `(rec ,(-fx (env-ntypes env) x))) st)
                     (else (raise `(expected-typedef ,l)))) l)))
       (define (valid-st st x)
-         (with-default-value '(sub final (error)) `(at-subtype ,st)
+         (with-default-value env '(sub final (error)) `(at-subtype ,st)
                (match-case st
                   ((sub final ?ct) `(sub final ,(valid-ct env ct x)))
                   ((sub final (and ?y (? idx?)) ?ct)
@@ -808,17 +813,15 @@
 (define (rt::pair env::struct t)
    (valid-rt env t))
 
-(define last-type #f)
-
 (define (typeidx::bint env::struct i)
-   (set! last-type (get-type-index env i))
-   last-type)
+   (env-last-type-set! env (get-type-index env i))
+   (env-last-type env))
 
 ;; to work, needs to be called after typeidx
 (define (fieldidx::bint env::struct x)
-   (unless (vector-ref (env-fields-names env) last-type)
-      (raise `(expected-struct ,last-type ,(expand (get-type env last-type)))))
-   (field-get-index env last-type x))
+   (unless (vector-ref (env-fields-names env) (env-last-type env))
+      (raise `(expected-struct ,(env-last-type env) ,(expand (get-type env (env-last-type env))))))
+   (field-get-index env (env-last-type env) x))
 
 (define (dataidx::bint env::struct x)
    (data-get-index env x))
@@ -1042,7 +1045,7 @@
 ;; returns the desuggared instructions and the new stack state
 (define (valid-instrs env::struct l::pair-nil st::pair-nil)
    (define (valid-instr i::pair st::pair-nil)
-      (with-default-value (values '((error)) '(poly)) `(at-instruction ,i)
+      (with-default-value env (values '((error)) '(poly)) `(at-instruction ,i)
             (if (adhoc-instr? (car i))
                 (adhoc-instr env i st)
                 (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
@@ -1106,7 +1109,7 @@
        (vector-set! *globals* (env-nglobal env) #f)
        (global-add! env (valid-gt env gt)))
       ((memory . ?mt)
-       (mem-add! env (valid-mt mt)))
+       (mem-add! env (valid-mt env mt)))
       ((tag . ?tt)
        (multiple-value-bind (p r) (valid-param/result env tt)
           (tag-add! env `(deftype ((sub final (func ,p ,r))) ,0))))
@@ -1162,7 +1165,7 @@
 (define *exports* '())
 
 (define (env-pass-mf env::struct m)
-   (with-default-value #f `(in-module ,m ,e)
+   (with-default-value env #f `(in-module ,m ,e)
       (match-case m
          (#f #f)
          ; section 6.6.4 (abbreviations)
@@ -1242,7 +1245,7 @@
          ((memory (import (and (? string?) ?nm1) (and (? string?) ?nm2)) . ?rst)
           (env-pass-mf env (decorate m `(import ,nm1 ,nm2 (memory ,@rst)))))
          ((memory . ?mt)
-          (mem-add! env (valid-mt mt)))
+          (mem-add! env (valid-mt env mt)))
 
          (else (raise 'expected-modulefield)))))
 
@@ -1285,10 +1288,10 @@
             (when f
                (with-handler format-exn
                   (valid-function env f (+fx (*fx a i) b)))
-               (unless (null? error-list)
+               (unless (null? (env-error-list env))
                   (format-exn `(at-pos ,(function-pos f) ""))
-                  (for-each format-exn error-list)
-                  (set! error-list '())))))))
+                  (for-each format-exn (env-error-list env))
+                  (env-error-list-set! env '())))))))
 
 (define (valid-globals env::struct)
    (let ((x (env-nglobal env)))
@@ -1298,10 +1301,10 @@
            (when g
                (with-handler format-exn
                   (valid-global env g i))
-               (unless (null? error-list)
+               (unless (null? (env-error-list env))
                   (format-exn `(at-pos ,(global-pos g) ""))
-                  (for-each format-exn error-list)
-                  (set! error-list '())))))))
+                  (for-each format-exn (env-error-list env))
+                  (env-error-list-set! env '())))))))
 
 (define (valid-exports env::struct)
    (for-each (lambda (d) (valid-exportdesc env d)) *exports*))
@@ -1340,26 +1343,96 @@
    (unless keep-going
         (exit 1)))
 
+(define (copy-env::struct env::struct)
+   (make-env
+    (env-ntypes env)
+    (env-types-table env)
+    (env-types-vector env)
+    (env-fields-names env)
+
+    0
+    '()
+   ; relevant information can only be accessed by index ; find the index of a
+   ; name first to access by name
+   (make-vector 0)
+
+   0
+   '()
+   (make-vector 10000)
+
+   (env-nfunc env)
+   (env-func-table env)
+   (env-func-types env)
+   (env-func-names env)
+
+   (env-refs env)
+
+   (env-ndata env)
+   (env-data-table env)
+
+   (env-nglobal env)
+   (env-global-table env)
+   (env-global-types env)
+   (env-global-names env)
+
+   (env-ntag env)
+   (env-tag-table env)
+   (env-tag-types env)
+   (env-tag-names env)
+
+   (env-nmem env)
+   (env-mem-table env)
+   (env-mem-types env)
+   (env-mem-names env)
+
+   #f
+   #f
+   '()))
+
 (define (valid-file f::pair-nil)
    (let ((env (make-env)))
       (define (mf-pass/handle-error f)
          (lambda (m)
             (let ((clean-m (with-handler format-exn (f env m))))
-               (unless (null? error-list)
+               (unless (null? (env-error-list env))
                  (format-exn `(in-module ,m ""))
-                 (for-each format-exn error-list)
-                 (set! error-list '()))
+                 (for-each format-exn (env-error-list env))
+                 (env-error-list-set! env '()))
                clean-m)))
 
       (match-case f
          ((or (module (? ident?) . ?mfs) (module . ?mfs))
           (let* ((type-mfs (map (mf-pass/handle-error type-pass-mf) mfs)))
              (for-each (mf-pass/handle-error env-pass-mf) type-mfs)
-             (valid-globals env)
-             (valid-exports env)
-             (valid-functions env 1 0)
-             (exit 1)
-             )))))
+
+             (if (= nthreads 1)
+                 (begin
+                    (valid-globals env)
+                    (valid-exports env)
+                    (valid-functions env 1 0))
+                 (let ((ts (cons
+                            (instantiate::pthread
+                             (body
+                              (lambda ()
+                                 (valid-globals (copy-env env))
+                                 (valid-functions (copy-env env) nthreads 0))))
+                            (cons
+                             (instantiate::pthread
+                              (body
+                               (lambda ()
+                                  (valid-exports (copy-env env))
+                                  (valid-functions (copy-env env) nthreads 1))))
+                             (list-tabulate
+                              (-fx nthreads 2)
+                              (lambda (i)
+                                 (instantiate::pthread
+                                  (body
+                                   (lambda ()
+                                      (valid-exports (copy-env env))
+                                      (valid-functions (copy-env env) nthreads
+                                                       (+fx 2 i)))))))))))
+                    (map thread-start-joinable! ts)
+                    (map thread-join! ts))))))))
 
 (define (main argv)
    (define input-file #f)
@@ -1372,6 +1445,8 @@
        (set! keep-going (string->number n)))
       (("-s" (help "Display less verbose error messages"))
        (set! silent #t))
+      (("-j" ?n (help "Use multiple threads"))
+       (set! nthreads (string->number n)))
       (else
        (set! input-file else)))
    (if input-file
@@ -1379,5 +1454,4 @@
           (lambda (ip)
              (let ((f (valid-file (read ip #t))))
                 (if error-encountered?
-                    (exit 1)
-                    (print f)))))))
+                    (exit 1)))))))
