@@ -597,7 +597,7 @@
 ;; section 3.2.9 and 6.4.6
 (define (valid-names/param/result/get-tl env::struct l::pair-nil)
    (define (valid-vt-at pos::epair t)
-      (with-default-value env 'error `(at ,pos)
+      (with-default-value env 'error `(at ,(cer pos))
          (valid-vt env t)))
 
    (match-case l

@@ -15,7 +15,7 @@ validate.o: validate.scm type-abbreviations.sch numtypes.sch vectypes.sch instru
 %.o : %.scm
 	bigloo -c $< -o $@ -O2
 
-rapport.pdf:
+rapport.pdf: rapport.tex
 	latexmk -pdf rapport.tex
 
 clean:
