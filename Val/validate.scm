@@ -27,16 +27,16 @@
 
 (define *reported-missing-idents* (make-hashtable))
 
-(read-table *numtypes* "numtypes.sch")
+(read-table *numtypes* "Val/numtypes.sch")
 (define (numtype?::bool t)
    (hashtable-contains? *numtypes* t))
-(read-table *vectypes* "vectypes.sch")
+(read-table *vectypes* "Val/vectypes.sch")
 (define (vectype?::bool t)
    (hashtable-contains? *vectypes* t))
-(read-table *packedtypes* "packedtypes.sch")
+(read-table *packedtypes* "Val/packedtypes.sch")
 (define (packedtype?::bool t)
    (hashtable-contains? *packedtypes* t))
-(read-table *absheaptype* "absheaptypes.sch")
+(read-table *absheaptype* "Val/absheaptypes.sch")
 (define (absheaptype?::bool t)
    (hashtable-contains? *absheaptype* t))
 (read-table *reftypes-abbreviations* "type-abbreviations.sch")
@@ -57,7 +57,7 @@
 
 ;; section 3.4.13
 ;; only use on desuggared instructions
-(read-table *const-instrs* "constant-instructions.sch")
+(read-table *const-instrs* "Val/constant-instructions.sch")
 (define (non-constant-instr? env::struct i::pair)
    (if (or (hashtable-contains? *const-instrs* (car i))
            (eq? (car i) 'error)
@@ -339,6 +339,9 @@
     ((ident? f)
      (index v f 0 'unknown-field))
     (#t (raise `(expected-fieldidx ,t))))))
+
+(define (field-get-name env::struct x::bint y::bint)
+   (list-ref (vector-ref (env-fields-names env) x) y))
 
 (define (data-get-index::bint env::struct x)
    (get-index (env-data-table env) (env-ndata env) x 'dataidx-out-range
@@ -859,7 +862,7 @@
       (multiple-value-bind (t* tl) (split-at t'* (- (length t'*) 1))
          (values t* (car tl)))))
 
-(read-table *instruction-types* "instruction-types.sch")
+(read-table *instruction-types* "Val/instruction-types.sch")
 
 ; the following function implements subsumption (section 3.4.12) in an
 ; syntax-directed way
@@ -1355,8 +1358,13 @@
 
       ((got-packed ?x ?t)
        (fprintf (current-error-port)
-                "***ERROR: used array.get on type ~a while its fields have a packed type (~a)\n"
+                "***ERROR: used array.get on type ~a while its elements have a packed type (~a)\n"
                 (get-type-name env x) t))
+
+      ((got-packed ?x ?y ?t)
+       (fprintf (current-error-port)
+                "***ERROR: used struct.get on type ~a on field ~a while it has a packed type (~a)\n"
+                (get-type-name env x) (field-get-name env x y) t))
 
       ((non-matching-stack ?t1 ?t2)
        (define (display-type t p)

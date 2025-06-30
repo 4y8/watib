@@ -1,0 +1,20 @@
+* watib
+Watib (WebAssembly Toolchain In Bigloo) is a (WIP) WebAssembly toolchain. It
+focuses on being user friendly and fast.
+
+** Building
+To build watib, a working [[https://www-sop.inria.fr/indes/fp/Bigloo/][bigloo]] distribution is required. You can, then, build it with:
+#+BEGIN_SRC sh
+make
+#+END_SRC
+** Using
+Once built, ~watib~ can be called on a WebAssembly Text file to validate,
+optimise and convert it to binary format. It supports several options:
++ ~-o <file>~ to specify an output file,
++ ~-k~ or ~--keep-going~ to continue validation after an error has been
+  encoutered (won't produce an output file),
++ ~-j <n>~ to use more than one job.
+** Overview
++ The ~Val~ directory contains the validation logic. In particular, the
+  ~instruction-types.sch~ file contains the descritption of the type of most
+  instructions.
