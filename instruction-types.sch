@@ -143,8 +143,8 @@
                               (raise `(undeclared-funcref ,x)))
                            `(() ((ref ,(func-get-type env x))))))
 
-  ; by subsumption (section 3.4.12)
-  (ref.is_null () (((ref null any)) (i32)))
+  ; ref.is_null is treated in an ad-hoc way
+
   ; ref.as_non_null can't be treated here because there is a link between the
   ; input type and the output type, could be solved by giving the stack as an
   ; argument to these functions

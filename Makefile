@@ -1,4 +1,4 @@
-all: opt was val
+all: opt was wal
 
 opt: dead-functions-elimination2.scm
 	bigloo dead-functions-elimination2.scm -o opt
@@ -6,11 +6,11 @@ opt: dead-functions-elimination2.scm
 was: was.o leb128.o opcodes.sch
 	bigloo was.o leb128.o -o was
 
-val: validate.o type-abbreviations.sch numtypes.sch vectypes.sch instruction-types.sch
-	bigloo validate.o -o val
+wal: Val/validate.o Ast/node.o
+	bigloo Val/validate.o -o wal
 
-validate.o: validate.scm type-abbreviations.sch numtypes.sch vectypes.sch instruction-types.sch
-	bigloo -c validate.scm -o validate.o -O3 -unsafe
+Val/validate.o: Val/validate.scm type-abbreviations.sch numtypes.sch vectypes.sch instruction-types.sch
+	bigloo -c Val/validate.scm -o Val/validate.o -O3 -unsafe
 
 %.o : %.scm
 	bigloo -c $< -o $@ -O2
