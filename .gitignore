@@ -1,5 +1,6 @@
 *.o
-as
-opt
+was
+wal
+watib
 *.escm
 *.wasm
