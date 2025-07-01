@@ -2,6 +2,11 @@
    (library srfi1 pthread)
    (include "read-table.sch")
    (import (env_env "Env/env.scm"))
+   (import (type_type "Type/type.scm"))
+   (import (type_match "Type/match.scm"))
+   (import (misc_list "Misc/list.scm"))
+   (import (misc_parse "Misc/parse.scm"))
+   (import (ast_node "Ast/node.scm"))
    (main main))
 
 ;;; we force everywhere the number of type indices after sub final? to be one;
@@ -26,36 +31,6 @@
               (raise (append ,dec (list e)))))
        ,@body))
 
-(define *reported-missing-idents* (make-hashtable))
-
-(read-table *numtypes* "Val/numtypes.sch")
-(define (numtype?::bool t)
-   (hashtable-contains? *numtypes* t))
-(read-table *vectypes* "Val/vectypes.sch")
-(define (vectype?::bool t)
-   (hashtable-contains? *vectypes* t))
-(read-table *packedtypes* "Val/packedtypes.sch")
-(define (packedtype?::bool t)
-   (hashtable-contains? *packedtypes* t))
-(read-table *absheaptype* "Val/absheaptypes.sch")
-(define (absheaptype?::bool t)
-   (hashtable-contains? *absheaptype* t))
-(read-table *reftypes-abbreviations* "type-abbreviations.sch")
-(define (reftype-abv?::bool t)
-   (hashtable-contains? *reftypes-abbreviations* t))
-(define (reftype?::bool t)
-   (or (reftype-abv? t) (and (pair? t) (eq? 'ref (car t)))))
-(define (valtype?::bool t)
-   (or (reftype? t) (numtype? t) (vectype? t)))
-(define (addrtype?::bool t)
-   (or (eq? t 'i32) (eq? t 'i64)))
-
-;; section 3.2.20
-(define (defaultable? t)
-   (or (vectype? t)
-       (numtype? t)
-       (and (reftype? t) (nullable? t))))
-
 ;; section 3.4.13
 ;; only use on desuggared instructions
 (read-table *const-instrs* "Val/constant-instructions.sch")
@@ -70,31 +45,6 @@
 (define (non-constant-expr? env::env e::pair-nil)
    (find (lambda (i) (non-constant-instr? env i)) e))
 
-;; section 2.3.8
-(define (unpack t)
-   (if (packedtype? t) 'i32 t))
-
-(define (unpack-ft t)
-   (unpack (cadr t)))
-
-;; section 3.1.1 (convention)
-(define (type-diff t1 t2)
-   (if (nullable? t2)
-       `(ref ,(reftype->heaptype t1))
-       t1))
-
-(define (ht-upperbound::symbol env::env t)
-   (match-case t
-      ((or any none eq i31 struct array) 'any)
-      ((or func nofunc) 'func)
-      ((or extern noextern) 'extern)
-      ((or exn noexn) 'exn)
-      ((? idx?) (ht-upperbound env (type-get env t)))
-      ((? deftype?) (ht-upperbound env (deftype-head t)))))
-
-(define (rt-upperbound::pair env::env t)
-   `(ref null ,(ht-upperbound env (reftype->heaptype t))))
-
 (define-macro (replace-exception e e' . body)
    `(with-handler
        (lambda (exn)
@@ -105,23 +55,6 @@
 
 (define-macro (map-env f env . l)
    `(map (lambda (x) (,f ,env x)) ,@l))
-
-;; like every but returns #f if the lists are not of the same length
-(define (every' f . lists)
-   (if (any null? lists)
-       (every null? lists)
-       (and (apply f (map car lists)) (apply every' f (map cdr lists)))))
-
-;; evaluation order is not unspecified in the standard, we enforce one here
-(define (map-seq f . lists)
-   (if (any null? lists)
-       '()
-       (cons (apply f (map car lists)) (apply map-seq f (map cdr lists)))))
-
-(define (length>=?::bool l::pair-nil i::bint)
-   (if (null? l)
-       (>=fx 0 i)
-       (or (>=fx 1 i) (length>=? (cdr l) (-fx i 1)))))
 
 (define (stack-take::pair-nil st::pair-nil i::bint)
    (cond ((=fx i 0) '())
@@ -142,214 +75,10 @@
          ((eq? 'poly (car st)) (values 'bot st))
          (else (raise `(expected-reftype-stack ,st)))))
 
-(define (type-size::llong t)
-   (match-case t
-      (i8 #l8)
-      (i16 #l16)
-      (i32 #l32)
-      (i64 #l64)))
-
-(define (ident? x)
-   (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0))))
-
-(define (idx? x)
-   (or (ident? x)
-       (number? x)))
-
 (define (valid-func-ref?::bool env::env x::bint)
    (let ((h (-> env refs)))
       (or (hashtable-contains? h x)
           (hashtable-contains? h (vector-ref (-> env func-names) x)))))
-
-;; deftypes type x = (rec subtypes*).i are represented as (deftype x subtypes*
-;; i)); (rec i) are represented as (rec i)
-(define (deftype?::bool t)
-   (and (pair? t) (eq? 'deftype (car t))))
-
-(define (rectype?::bool t)
-   (and (pair? t) (eq? 'rec (car t))))
-
-;; avoid full expansion when it is not needed
-(define (deftype-head t::pair)
-   (match-case (cdr (list-ref (caddr t) (cadddr t))) ; remove the "sub" keyword
-      ((or (final ?- (?hd . ?-))
-           (final (?hd . ?-))
-           (?- (?hd . ?-))
-           ((?hd . ?-)))
-       hd)))
-
-;; we could do the equality check respecting all the structure but we can use
-;; our representations slopiness to do things shorter
-(define (eq-clos-st?::bool env::env t1 t2)
-   (cond
-      ((symbol? t1) (eq? t1 t2))
-      ((idx? t1) (eq-clos-st? env (type-get env t1) t2))
-      ((idx? t2) (eq-clos-st? env t1 (type-get env t2)))
-      ; we suppose defined types are already closed, i.e. we have to put closed
-      ; types in the context, otherwise, we may have to close the whole context
-      ; each time we want to close a type
-      ((or (deftype? t1) (rectype? t1) (deftype? t2) (rectype? t2))
-       (equal? (cddr t1) (cddr t2)))
-      ((and (pair? t1) (pair? t2))
-       (every' (lambda (t1 t2) eq-clos-st? env t1 t2) t1 t2))
-      ((and (null? t1) (null? t2)) #t)
-      (else #f)))
-
-(define (eq-clos-dt?::bool env::env t1::pair t2::pair)
-   (and (=fx (cadddr t1) (cadddr t2))
-        (every' (lambda (st1 st2) eq-clos-st? env st1 st2)
-                (caddr t1) (caddr t2))))
-
-;; section 3.1.3
-
-;; we use the same slopiness as in eq-clos-st?
-(define (unroll-st x::bint sts st)
-   (cond ((rectype? st) `(deftype ,(+fx (cadr st) x) ,sts ,(cadr st)))
-         ((pair? st) (map (lambda (st) (unroll-st x sts st)) st))
-         (else st)))
-
-;; expects well formed arguments
-(define (unroll-dt::pair t::pair)
-   (unroll-st (cadr t) (caddr t) (list-ref (caddr t) (cadddr t))))
-
-(define (roll-st env::env st x::bint n::bint)
-   (cond
-    ((idx? st)
-     (let ((id (type-get-index env st)))
-        (if (and (<=fx x id) (<fx id n))
-            `(rec ,(-fx id x))
-            st)))
-    ((pair? st) (map (lambda (st) (roll-st env st x n)) st))
-    (else st)))
-
-(define (roll-rect::pair env::env rect::pair x::bint)
-   (let ((n (+fx x (length (cdr rect)))))
-      (map (lambda (st) (roll-st env st x n)) (cdr rect))))
-
-(define (roll* env::env rect::pair x::bint)
-   (let ((rolled-rect (roll-rect env rect x)))
-      (list-tabulate (length (cdr rect))
-                     (lambda (i) `(deftype ,(+fx i x) ,rolled-rect ,i)))))
-
-(define (expand t)
-   (match-case (cdr (unroll-dt t)) ; remove the sub keyword
-      ((or (final ?- ?ct)
-           (final ?ct)
-           (?- ?ct)
-           (?ct))
-       ct)))
-
-;; subtyping relation return only a boolean, which is good if it is true, but in
-;; case of failure we might want a reason to explain it (kind of a constructive
-;; proof that not (t1 < t2), could thus be solved by writing a function not-<
-;; that returns #f in case t1 < t2 and a reason for why it is not the case
-;; otherwise)
-;;
-;; we could probably speed up the subtyping comparaisons by inserting eq?
-;; shortcuts at the write place, the official validation tool does it for
-;; defined types; we probably need benchmarks for that
-
-;; section 3.3.3
-(define (<ht=::bool env::env t1 t2)
-   (cond ((equal? t1 t2) #t)
-         ((eq? t1 'bot) #t)
-         ((idx? t1) (<ht= env (type-get env t1) t2))
-         ((idx? t2) (<ht= env t1 (type-get env t2)))
-         ((eq? 'none t1) (<ht= env t2 'any))
-         ((eq? 'nofunc t1) (<ht= env t2 'func))
-         ((eq? 'noextern t1) (<ht= env t2 'extern))
-         ((eq? 'noexn t1) (<ht= env t2 'exn))
-         ((eq? t2 'any) (<ht= env t1 'eq))
-         ((eq? t2 'eq)
-          (or (eq? t1 'i31)
-              (eq? t1 'struct)
-              (eq? t1 'array)
-              (and (deftype? t1) (<ht= env (deftype-head t1) 'eq))))
-         ((and (deftype? t1) (symbol? t2))
-          (eq? (deftype-head t1) t2))
-         ((and (deftype? t1) (deftype? t2))
-          (<dt= env t1 t2))
-         (#t #f)))
-
-(define (nullable?::bool rt::pair)
-   (eq? (cadr rt) 'null))
-
-(define (reftype->heaptype rt::pair)
-   (if (nullable? rt)
-       (caddr rt)
-       (cadr rt)))
-
-;; actually does redundant checks, could be expanded to avoid them
-;; section 3.3.4
-(define (<rt=::bool env::env t1::pair t2::pair)
-   (and (or (nullable? t2) (not (nullable? t1)))
-        (<ht= env (reftype->heaptype t1) (reftype->heaptype t2))))
-
-;; section 3.3.5
-(define (<vt=::bool env::env t1 t2)
-   (or (eq? t1 t2)
-       ;(and (numtype? t1) (numtype? t2) (eq? t1 t2))
-       ;(and (vectype? t1) (vectype? t2) (eq? t1 t2))
-       (and (reftype? t1) (reftype? t2) (<rt= env t1 t2))
-       (eq? t1 'bot)
-       (eq? t2 'top)))
-
-;; section 3.3.6
-(define (<res=::bool env l1 l2)
-   (every' (lambda (t1 t2) (<vt= env t1 t2)) l1 l2))
-
-;; section 3.3.8
-(define (<funct=::bool env::env t1::pair t2::pair)
-   (let ((t11 (car t1))
-         (t12 (cadr t1))
-         (t21 (car t2))
-         (t22 (cadr t2)))
-      (and
-       (<res= env t21 t11)
-       (<res= env t12 t22))))
-
-;; section 3.3.10
-(define (<st=::bool env t1 t2)
-  (or ; (and (packedtype? t1) (eq? t1 t2))
-      (eq? t1 t2)
-      (and (valtype? t1) (valtype? t2) (<vt= env t1 t2))))
-
-(define (<fldt=::bool env::env t1::pair t2::pair)
-   (match-case (cons t1 t2)
-      (((#f ?st1) . (#f ?st2))
-       (<st= env st1 st2))
-      (((#t ?st1) . (#t ?st2))
-       (and (<st= env st1 st2) (<st= env st2 st1)))
-      (else #f)))
-
-;; section 3.3.9
-(define (<ct=::bool env::env t1::pair t2::pair)
-   (match-case (cons t1 t2)
-      (((array ?fldt1) . (array ?fldt2))
-       (<fldt= env fldt1 fldt2))
-      (((func . ?funct1) . (func . ?funct2))
-       (<funct= env funct1 funct2))
-      (((struct . ?fldts1) . (struct . ?fldts2))
-       (let ((n1 (length fldts1))
-             (n2 (length fldts2)))
-          (and (<= n2 n1)
-               (every (lambda (fldt1 fldt2) (<fldt= env fldt1 fldt2))
-                      fldts1 fldts2))))
-      (else #f)))
-
-;; section 3.3.11
-(define (get-sub-heaptype st)
-   (match-case (cdr st)
-      ((or (final ?ht ?-)
-           ((and (not final) ?ht) ?-))
-       ht)
-      (else #f)))
-
-(define (<dt=::bool env::env t1 t2)
-   (if (eq-clos-dt? env t1 t2)
-       #t
-       (let ((ht (get-sub-heaptype (unroll-dt t1))))
-          (and ht (<ht= env ht t2)))))
 
 ;;; validation functions take types in the text-format and return the internal
 ;;; representation if there wasn't any problem
@@ -647,7 +376,14 @@
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.183
       ((block (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
-          (values bt `(block ,bt ,(check-block env tl (cadr bt) bt l)) '())))
+          (values bt
+                  (instantiate::block
+                   (intype (car bt))
+                   (outtype (cadr bt))
+                   (parent (-> env parent))
+                   (opcode 'bloc)
+                   (body (check-block env tl (cadr bt) bt l)))
+                  '())))
       ((block . ?rst)
        (valid-blockinstr env `(block ,(gensym "$unnamed-label") ,@rst) st))
 
@@ -1146,6 +882,33 @@
    (unless keep-going
         (exit 1)))
 
+(define (multijob env::env)
+   (define (dupenv)
+      (duplicate::env env (label-types (make-vector 10000))))
+
+   (let ((ts (cons
+              (instantiate::pthread
+               (body
+                (lambda ()
+                  (valid-globals (dupenv))
+                  (valid-functions (dupenv) nthreads 0))))
+              (cons
+               (instantiate::pthread
+                (body
+                 (lambda ()
+                   (valid-exports (dupenv))
+                   (valid-functions (dupenv) nthreads 1))))
+               (list-tabulate
+                (-fx nthreads 2)
+                (lambda (i)
+                  (instantiate::pthread
+                   (body
+                    (lambda ()
+                      (valid-exports (dupenv))
+                      (valid-functions (dupenv) nthreads (+fx 2 i)))))))))))
+     (map thread-start-joinable! ts)
+     (map thread-join! ts)))
+
 (define (valid-file f::pair-nil)
    (let ((env::env (instantiate::env)))
       (define (mf-pass/handle-error f)
@@ -1167,41 +930,7 @@
                     (valid-globals env)
                     (valid-exports env)
                     (valid-functions env 1 0))
-                 (let ((ts (cons
-                            (instantiate::pthread
-                             (body
-                              (lambda ()
-                                 (valid-globals (duplicate::env env))
-                                 (valid-functions (duplicate::env
-                                                   env
-                                                   (label-types
-                                                    (make-vector 10000)))
-                                                  nthreads 0))))
-                            (cons
-                             (instantiate::pthread
-                              (body
-                               (lambda ()
-                                  (valid-exports (duplicate::env env))
-                                  (valid-functions (duplicate::env
-                                                    env
-                                                    (label-types
-                                                     (make-vector 10000)))
-                                                   nthreads 1))))
-                             (list-tabulate
-                              (-fx nthreads 2)
-                              (lambda (i)
-                                 (instantiate::pthread
-                                  (body
-                                   (lambda ()
-                                      (valid-exports (duplicate::env env))
-                                      (valid-functions (duplicate::env
-                                                        env
-                                                        (label-types
-                                                         (make-vector 10000)))
-                                                       nthreads
-                                                       (+fx 2 i)))))))))))
-                    (map thread-start-joinable! ts)
-                    (map thread-join! ts))))))))
+                 (multijob env)))))))
 
 (define (main argv)
    (define input-file #f)

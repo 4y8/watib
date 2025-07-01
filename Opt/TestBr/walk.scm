@@ -19,7 +19,7 @@
               (=fx x idx))
            #f)))
 
-(define-method (replace-var! i::block x::bint y::bint t)
+(define-method (replace-var! i::sequence x::bint y::bint t)
    (define (walk-list!::bool l::pair-nil)
       (match-case l
          (() #f)
@@ -36,12 +36,6 @@
    ; we do it like that because we do not want lazy evaluation
    (let ((b (replace-var! (-> i else) x y t)))
      (or (call-next-method) b)))
-
-(define-method (replace-var! i::loop x::bint y::bint t)
-   (replace-var! (-> i body) x y t))
-
-(define-method (replace-var! i::try_table x::bint y::bint t)
-   (replace-var! (-> i body) x y t))
 
 (define-generic (incr-labels! i::instruction)
   #f)
@@ -63,7 +57,7 @@
    (incr-labels-param! (-> i y))
    (incr-labels-param! (-> i z)))
 
-(define-method (incr-labels! i::block)
+(define-method (incr-labels! i::sequence)
    (for-each incr-labels! (-> i body)))
 
 (define-method (incr-labels! i::if-then)
@@ -77,7 +71,7 @@
    (define (incr-labels-catch! c::catch-branch)
      (set! (-> c label) (+fx 1 (-> c label))))
    (for-each incr-labels-catch! (-> i catches))
-   (incr-labels! (-> i body)))
+   (call-next-method))
 
 (define-generic (if-test->br! i::instruction)
    i)
@@ -88,12 +82,6 @@
 (define-method (if-test->br! i::if-else)
    (if-test->br! (-> i else))
    (call-next-method))
-
-(define-method (if-test->br! i::loop)
-   (if-test->br! (-> i body)))
-
-(define-method (if-test->br! i::try_table)
-   (if-test->br! (-> i body)))
 
 (define (isa-ref.test? i::instruction)
    (eq? (-> i opcode) 'ref.test))
@@ -176,7 +164,7 @@
                  ,@body))))
    (-> i then))
 
-(define-method (if-test->br! i::block)
+(define-method (if-test->br! i::sequence)
    (define (walk-list! l::pair-nil)
       (if (and (not (null? l)) (not (null? (cdr l))) (not (null? (cddr l)))
                (isa-local.get? (car l)) (isa-ref.test? (cadr l))

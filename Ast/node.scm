@@ -1,5 +1,8 @@
 (module ast_node
-   (export (class func::object
+   (export
+           (class modulefield::object)
+
+           (class func::modulefield
               body::block
               locals::pair-nil)
 
@@ -36,17 +39,18 @@
               default::bint
               labels::pair-nil)
 
-           (class if-then::instruction
-              then::block)
-
-           (class if-else::if-then
-              else::block)
-
-           (class block::instruction
+           (class sequence::instruction
               body::pair-nil)
 
-           (class loop::instruction
-              body::block)
+           (class if-then::instruction
+              then::instruction)
+
+           (class if-else::if-then
+              else::instruction)
+
+           (class block::sequence)
+
+           (class loop::sequence)
 
            (class catch-branch::object
               label::bint)
@@ -61,6 +65,5 @@
 
            (class catch_all_ref::catch-branch)
 
-           (class try_table::instruction
-              catches::pair-nil
-              body::block)))
+           (class try_table::sequence
+              catches::pair-nil)))

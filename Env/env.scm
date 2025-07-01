@@ -1,4 +1,5 @@
 (module env_env
+   (import (ast_node "Ast/node.scm"))
            ;; section 3.1.6
    (export (class env::object
               (ntype::bint (default 0))
@@ -44,7 +45,8 @@
 
               (return::pair-nil (default '()))
               (last-type (default #f))
-              (error-list::pair-nil (default '())))
+              (error-list::pair-nil (default '()))
+              (parent::modulefield (default (instantiate::modulefield))))
 
            (class local-var::object
               type

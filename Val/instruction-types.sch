@@ -402,7 +402,7 @@
              (raise `(non-matching ,rt2 ,rt1)))
           (unless (<rt= env rt2 rt')
              (raise `(non-matching ,rt2 ,rt')))
-          `((,@t* ,rt1) (,@t* ,(type-diff rt1 rt2))))))
+          `((,@t* ,rt1) (,@t* ,(rt-diff rt1 rt2))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.197
   (br_on_cast_fail
@@ -413,8 +413,8 @@
              (raise `(expected-reftype-label ,rt')))
           (unless (<rt= env rt2 rt1)
              (raise `(non-matching ,rt2 ,rt1)))
-          (unless (<rt= env (type-diff rt1 rt2) rt')
-             (raise `(non-matching (type-diff rt1 rt2) ,rt')))
+          (unless (<rt= env (rt-diff rt1 rt2) rt')
+             (raise `(non-matching (rt-diff rt1 rt2) ,rt')))
           `((,@t* ,rt1) (,@t* ,rt2)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.198
