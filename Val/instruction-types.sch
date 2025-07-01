@@ -138,7 +138,7 @@
   (ref.null (,ht) ,(lambda (- ht) `(() ((ref null ,ht)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.98
-  (ref.func (,funcidx) ,(lambda (env x)
+  (ref.func (,funcidx) ,(lambda (env::env x)
                            (unless (valid-func-ref? env x)
                               (raise `(undeclared-funcref ,x)))
                            `(() ((ref ,(func-get-type env x))))))
@@ -158,12 +158,12 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.104
   (struct.new
    (,typeidx)
-   ,(lambda (env x) `(,(map unpack-ft (get-struct-fldts env x)) ((ref ,x)))))
+   ,(lambda (env::env x) `(,(map unpack-ft (get-struct-fldts env x)) ((ref ,x)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.105
   (struct.new_default
    (,typeidx)
-   ,(lambda (env x)
+   ,(lambda (env::env x)
        (for-each (lambda (t) (unless (defaultable? t)
                                (raise `(expected-defaultable ,t))))
                  (map unpack-ft (get-struct-fldts env x)))
@@ -369,13 +369,13 @@
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.191
   ; t_1 = epsilon by subsumption
-  (br (,labelidx) ,(lambda (env l) `(,(get-label-type env l) (poly))))
+  (br (,labelidx) ,(lambda (env l) `(,(label-get-type env l) (poly))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.192
   (br_if
    (,labelidx)
    ,(lambda (env l)
-       (let ((t (get-label-type env l)))
+       (let ((t (label-get-type env l)))
           `((,@t i32) ,t))))
 
   ; br_table is dealt with in an-hoc way
@@ -386,7 +386,7 @@
   (br_on_non_null
    (,labelidx)
    ,(lambda (env l)
-      (multiple-value-bind (t* tl) (get-label-last-rest env l)
+      (multiple-value-bind (t* tl) (label-get-last-rest env l)
          (unless (reftype? tl)
             (raise `(expected-reftype-label ,tl)))
          `((,@t* (ref null ,(reftype->heaptype tl))) ,t*))))
@@ -395,7 +395,7 @@
   (br_on_cast
    (,labelidx ,rt ,rt)
    ,(lambda (env l rt1 rt2)
-       (multiple-value-bind (t* rt') (get-label-last-rest env l)
+       (multiple-value-bind (t* rt') (label-get-last-rest env l)
           (unless (reftype? rt')
              (raise `(expected-reftype-label ,rt')))
           (unless (<rt= env rt2 rt1)
@@ -408,7 +408,7 @@
   (br_on_cast_fail
    (,labelidx ,rt ,rt)
    ,(lambda (env l rt1 rt2)
-       (multiple-value-bind (t* rt') (get-label-last-rest env l)
+       (multiple-value-bind (t* rt') (label-get-last-rest env l)
           (unless (reftype? rt')
              (raise `(expected-reftype-label ,rt')))
           (unless (<rt= env rt2 rt1)
@@ -418,11 +418,11 @@
           `((,@t* ,rt1) (,@t* ,rt2)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.198
-  (return () ,(lambda (env)
-                 (unless (env-return env)
+  (return () ,(lambda (env::env)
+                 (unless (-> env return)
                     (raise `cannot-return))
                  ; once again, subsumption
-                 `(,(env-return env) (poly))))
+                 `(,(-> env return) (poly))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.199
   ; if x is a funcidx, its defined type has to expand to a type of the form
@@ -432,8 +432,8 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.200
   (call_ref
    (,typeidx)
-   ,(lambda (env x)
-       (match-case (expand (get-type env x))
+   ,(lambda (env::env x)
+       (match-case (expand (type-get env x))
           ((func ?t1 ?t2) `((,@t1 (ref null ,x)) ,t2))
           (?t (raise `(expected-function ,t))))))
 
@@ -442,25 +442,25 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.202
   (return_call
    (,funcidx)
-   ,(lambda (env x)
+   ,(lambda (env::env x)
        (let ((t (expand (func-get-type env x))))
-          (unless (env-return env)
+          (unless (-> env return)
              (raise `cannot-return))
-          (unless (<res= env (caddr t) (env-return env))
-             (raise `(non-matching ,(caddr t) ,(env-return env))))
+          (unless (<res= env (caddr t) (-> env return))
+             (raise `(non-matching ,(caddr t) ,(-> env return))))
           ; subsumption
           `(,(cadr t) (poly)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.203
   (return_call_ref
    (,typeidx)
-   ,(lambda (env x)
-       (match-case (expand (get-type env x))
+   ,(lambda (env::env x)
+       (match-case (expand (type-get env x))
           ((func ?t1 ?t2)
-           (unless (env-return env)
+           (unless (-> env return)
               (raise `cannot-return))
-           (unless (<res= env t2 (env-return env))
-              (raise `(non-matching t2 ,(env-return env))))
+           (unless (<res= env t2 (-> env return))
+              (raise `(non-matching t2 ,(-> env return))))
            `((,@t1 (ref null ,x)) (poly)))
           (?t (raise `(expected-function ,t))))))
 
@@ -469,7 +469,7 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.205
   (throw
    (,tagidx)
-   ,(lambda (env x) `(,(cadr (expand (tag-get-type env x))) (poly))))
+   ,(lambda (env::env x) `(,(cadr (expand (tag-get-type env x))) (poly))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.206
   (throw_ref () (((ref null exn)) (poly))) ; subsumption over and over
