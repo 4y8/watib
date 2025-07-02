@@ -219,8 +219,8 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.110
   (array.new_fixed
    (,typeidx ,u32)
-   ,(lambda (env x::typeidxp n::nump)
-       `(,(make-list (-> n num) (unpack-ft (get-array-ft x)))
+   ,(lambda (env x::typeidxp n::idxp)
+       `(,(make-list (-> n idx) (unpack-ft (get-array-ft x)))
          ((ref ,(-> x idx))))))
 
   ; we do not support array.new_elem yet

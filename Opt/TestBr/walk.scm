@@ -180,7 +180,7 @@
                 (if (isa? if-else (caddr l))
                     (block-gen-else! (car l) var (car ot) rt (caddr l))
                     (block-gen-no-else! (car l) var (car ot) rt (caddr l)))
-                (set-car! l (with-access::if-then (caddr l) ((then then)) then))
+                (set-car! l (with-access::if-then (caddr l) (then) then))
                 (set-cdr! l (cdddr l))))
           (if (not (null? l))
               (walk-list! (cdr l)))))

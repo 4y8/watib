@@ -16,6 +16,9 @@
   (call_ref        . ((,typeidx) . "\x14"))
   (return_call_ref . ((,typeidx) . "\x15"))
 
+  (br_on_null     . ((,labelidx) . "\xD5"))
+  (br_on_non_null . ((,labelidx) . "\xD6"))
+
   (drop . (() . "\x1A"))
 
   (local.get  . ((,localidx) . "\x20"))

@@ -23,42 +23,43 @@
 
            (abstract-class parameter)
 
-           (class labelidxp::parameter
-              idx::bint
+           (class idxp::parameter
+              idx::bint)
+
+           (class labelidxp::idxp
               type::pair-nil)
 
-           (class funcidxp::parameter
-              idx::bint
+           (class funcidxp::idxp
               type::pair)
 
-           (class localidxp::parameter
+           (class localidxp::idxp
               init?::bool
-              type
-              idx::bint)
-
-           (class typeidxp::parameter
-              idx::bint
               type)
 
-           (class tagidxp::parameter
-              idx::bint
+           (class typeidxp::idxp
+              type)
+
+           (class tagidxp::idxp
               type::pair)
 
-           (class globalidxp::parameter
-              idx::bint
+           (class globalidxp::idxp
               mut?::bool
               type)
 
-           (class fieldidxp::parameter
-              idx::bint
+           (class fieldidxp::idxp
               mut?::bool
               type)
 
-           (class memidxp::parameter
-              idx::bint)
-           (class dataidxp::parameter
-              idx::bint)
-           (class nump::parameter
+           (class memidxp::idxp)
+           (class dataidxp::idxp)
+
+           (class i32p::parameter
+              num)
+           (class i64p::parameter
+              num)
+           (class f32p::parameter
+              num)
+           (class f64p::parameter
               num)
 
            (class typep::parameter
@@ -83,10 +84,10 @@
               body::pair-nil)
 
            (class if-then::instruction
-              then::instruction)
+              then::sequence)
 
            (class if-else::if-then
-              else::instruction)
+              else::sequence)
 
            (class block::sequence)
 

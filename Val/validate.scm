@@ -298,18 +298,18 @@
                  (raise `(expected-number ,n)))))
          (#t (raise `(expected-number ,n)))))
 
-(define (i32 env::env n)
+(define (i32::i32p env::env n)
    (let ((n (wnumber->number n)))
-      (instantiate::nump
+      (instantiate::i32p
        (num
         (cond ((not (integer? n)) (raise `(expected-int ,n)))
               ((and (<= n 2147483647) (>= n -2147483648)) n)
               ((and (> n 2147483647) (<= n 4294967295)) (- n (* 2 2147483648)))
               (#t (raise `(out-bounds-i32 ,n))))))))
 
-(define (i64 env::env n)
+(define (i64::i64p env::env n)
    (let ((n (wnumber->number n)))
-      (instantiate::nump
+      (instantiate::i64p
        (num
         (cond ((not (integer? n)) (raise `(expected-int ,n)))
               ((and (<= n 9223372036854775807) (>= n -9223372036854775808)) n)
@@ -317,16 +317,16 @@
                (- n (* 2 9223372036854775808)))
               (#t (raise `(out-bounds-i64 ,n))))))))
 
-(define (f32::nump env::env n)
-   (instantiate::nump (num (wnumber->number n))))
+(define (f32::f32p env::env n)
+   (instantiate::f32p (num (wnumber->number n))))
 
-(define (f64::nump env::env n)
-   (instantiate::nump (num (wnumber->number n))))
+(define (f64::f64p env::env n)
+   (instantiate::f64p (num (wnumber->number n))))
 
-(define (u32 env::env n)
+(define (u32::idxp env::env n)
    (let ((n (wnumber->number n)))
-      (instantiate::nump
-       (num
+      (instantiate::idxp
+       (idx
         (cond ((not (integer? n)) (raise `(expected-int ,n)))
               ((and (<= n 4294967295) (>= n 0)) n)
               (#t (raise `(out-bounds-u32 ,n))))))))
@@ -746,7 +746,7 @@
                            (body tl)
                            (locals '())
                            (pos (cer m))))
-             (func-add! env `(deftype -1 ((sub final (func ,@f))) ,0))))
+             (func-add! env `(deftype -1 ((sub final (func ,@f))) 0))))
 
          ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
           (raise 'todo))

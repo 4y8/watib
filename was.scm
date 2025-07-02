@@ -664,13 +664,6 @@
              (write-byte #x04 exportp)
              (tagidx '() '() t exportp))))
 
-      ;; todo : add checks (with file position)
-      (define (take/drop l k::bint)
-         (if (=fx 0 k)
-             (values '() l)
-             (multiple-value-bind (tk drp) (take/drop (cdr l) (-fx k 1))
-                                  (values (cons (car l) tk) drp))))
-
       (define (new-write-instruction! locals labls i out-port)
          (define (go i)
             (new-write-instruction! locals labls i out-port))
@@ -715,7 +708,7 @@
              (let* ((t (hashtable-get *opcodes* (car i)))
                     (args (car t))
                     (bytes (cdr t)))
-                (multiple-value-bind (vals tl) (take/drop (cdr i) (length args))
+                (multiple-value-bind (vals tl) (split-at (cdr i) (length args))
                    (for-each go tl)
                    (display bytes out-port)
                    (for-each

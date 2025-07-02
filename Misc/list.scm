@@ -3,7 +3,6 @@
            (map-seq f . lists)
            (length>=?::bool l::pair-nil i::bint)))
 
-
 ;; like every but returns #f if the lists are not of the same length
 (define (every' f . lists)
    (if (any null? lists)
