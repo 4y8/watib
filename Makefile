@@ -1,4 +1,4 @@
-SRCS = Val/validate.scm Opt/TestBr/walk.scm Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm Misc/parse.scm
+SRCS = watib.scm Opt/optimise.scm Val/validate.scm Bin/binary.scm Opt/TestBr/walk.scm Opt/UnCast/walk.scm Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm Misc/parse.scm
 
 OBJS = $(SRCS:.scm=.o)
 

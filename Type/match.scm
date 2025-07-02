@@ -1,9 +1,10 @@
 (module type_match
    (library srfi1)
-   (import (env_env "Env/env.scm"))
-   (import (type_type "Type/type.scm"))
-   (import (misc_parse "Misc/parse.scm"))
-   (import (misc_list "Misc/list.scm"))
+   (import (env_env "Env/env.scm")
+           (type_type "Type/type.scm")
+           (misc_parse "Misc/parse.scm")
+           (misc_list "Misc/list.scm"))
+
    (export (<rt=::bool env::env t1::pair t2::pair)
            (<vt=::bool env::env t1 t2)
            (<res=::bool env l1 l2)

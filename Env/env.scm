@@ -2,55 +2,7 @@
    (from (ast_node "Ast/node.scm"))
    (import (type_type "Type/type.scm"))
    (import (misc_parse "Misc/parse.scm"))
-           ;; section 3.1.6
-   (export (class env::object
-              (ntype::bint (default 0))
-              (type-table (default (create-hashtable eqtest: eq?)))
-              (types::vector (default (make-vector 100000)))
-              (type-names::vector (default (make-vector 100000)))
-
-              (field-names::vector (default (make-vector 100000)))
-
-              (nlocal::bint (default 0))
-              (local-names::pair-nil (default '()))
-              (local-types::vector (default (make-vector 0)))
-
-              (nlabel::bint (default 0))
-              (label-names::pair-nil (default '()))
-              (label-types::vector (default (make-vector 10000)))
-
-              (refs (default (create-hashtable eqtest: eq?)))
-
-              (ndata::bint (default 0))
-              (data-table (default (create-hashtable eqtest: eq?)))
-
-              (nglobal::bint (default 0))
-              (global-table (default (create-hashtable eqtest: eq?)))
-              (global-types::vector (default (make-vector 1000000)))
-              (global-names::vector (default (make-vector 1000000)))
-
-
-              (nfunc::bint (default 0))
-              (func-table (default (create-hashtable eqtest: eq?)))
-              (func-types::vector (default (make-vector 1000000)))
-              (func-names::vector (default (make-vector 1000000)))
-
-              (ntag::bint (default 0))
-              (tag-table (default (create-hashtable eqtest: eq?)))
-              (tag-types::vector (default (make-vector 10000)))
-              (tag-names::vector (default (make-vector 10000)))
-
-              (nmem::bint (default 0))
-              (mem-table (default (create-hashtable eqtest: eq?)))
-              (mem-types::vector (default (make-vector 10000)))
-              (mem-names::vector (default (make-vector 10000)))
-
-              (return::pair-nil (default '()))
-              (last-type (default #f))
-              (error-list::pair-nil (default '()))
-              (parent::modulefield (default (instantiate::modulefield))))
-
-           (class local-var::object
+   (export (class local-var::object
               type
               init?::bool)
 

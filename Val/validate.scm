@@ -1,13 +1,15 @@
-(module validate
+(module val_validate
    (library srfi1 pthread)
    (include "read-table.sch")
-   (import (env_env "Env/env.scm"))
-   (import (type_type "Type/type.scm"))
-   (import (type_match "Type/match.scm"))
-   (import (misc_list "Misc/list.scm"))
-   (import (misc_parse "Misc/parse.scm"))
-   (import (ast_node "Ast/node.scm"))
-   (main main))
+   (import (env_env "Env/env.scm")
+           (type_type "Type/type.scm")
+           (type_match "Type/match.scm")
+           (misc_list "Misc/list.scm")
+           (misc_parse "Misc/parse.scm")
+           (ast_node "Ast/node.scm"))
+
+   (export (valid-file f::pair-nil nthreads::bint keep-going::obj
+                       silent::bool)))
 
 ;;; we force everywhere the number of type indices after sub final? to be one;
 ;;; even though forms with more than one type are syntactically correct, they
@@ -709,13 +711,6 @@
 (define (decorate::epair m::epair l::pair)
    (econs (car l) (cdr l) (cer m)))
 
-(define-struct function
-   type
-   formals
-   body
-   locs
-   pos)
-
 (define-struct global
    type
    body
@@ -745,7 +740,12 @@
          ((func . ?rst)
           (multiple-value-bind (args f tl) (valid-tu/get-tl env rst)
              (vector-set! *funcs* (-> env nfunc)
-                          (make-function f args tl '() (cer m)))
+                          (instantiate::func
+                           (type f)
+                           (formals args)
+                           (body tl)
+                           (locals '())
+                           (pos (cer m))))
              (func-add! env `(deftype -1 ((sub final (func ,@f))) ,0))))
 
          ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
@@ -834,20 +834,20 @@
         (set! (-> env nglobal) old-nglobal)
         (global-body-set! g e))))
 
-(define (valid-function env::env f::struct x::bint)
+(define (valid-function env::env f::func x::bint)
    (multiple-value-bind (n lts body)
-      (valid-names/local/get-tl env (function-body f))
-      (set! (-> env local-names) (append (function-formals f) n))
+      (valid-names/local/get-tl env (-> f body))
+      (set! (-> env local-names) (append (-> f formals) n))
       (set! (-> env local-types)
        (list->vector (append (map (lambda (vt) (instantiate::local-var
                                                 (init? #t) (type vt)))
-                                  (car (function-type f))) lts)))
-      (function-locs-set! f (map (lambda (l::local-var) (-> l type)) lts))
-      (set! (-> env return) (cadr (function-type f)))
-      (function-body-set! f
+                                  (car (-> f type))) lts)))
+      (set! (-> f locals) (map (lambda (l::local-var) (-> l type)) lts))
+      (set! (-> env return) (cadr (-> f type)))
+      (set! (-> f body)
        (replace-exception 'empty-stack 'no-return-value-stack
-          (check-block env body (cadr (function-type f))
-                       `(() ,(cadr (function-type f))))))))
+          (check-block env body (cadr (-> f type))
+                       `(() ,(cadr (-> f type))))))))
 
 (define (valid-functions env::env a::bint b::bint)
    (let ((x (-> env nfunc)))
@@ -856,10 +856,12 @@
          (let ((f (vector-ref *funcs* (+fx (*fx a i) b))))
             (when f
                (with-handler
-                  (lambda (e) (format-exn env `(at-pos ,(function-pos f) ,e)))
+                  (lambda (e)
+                     (format-exn env
+                                 `(at-pos ,(with-access::func f (pos) pos) ,e)))
                   (valid-function env f (+fx (*fx a i) b)))
                (unless (null? (-> env error-list))
-                  (format-exn env `(at-pos ,(function-pos f) ""))
+                  (format-exn env `(at-pos ,(with-access::func f (pos) pos) ""))
                   (for-each (lambda (e) (format-exn env e))
                             (-> env error-list))
                   (set! (-> env error-list) '())))))))
@@ -979,7 +981,11 @@
      (map thread-start-joinable! ts)
      (map thread-join! ts)))
 
-(define (valid-file f::pair-nil)
+(define (valid-file f::pair-nil nt::bint kg::obj s::bool)
+   (set! nthreads nt)
+   (set! keep-going kg)
+   (set! silent s)
+
    (let ((env::env (instantiate::env)))
       (define (mf-pass/handle-error f)
          (lambda (m)
@@ -1000,28 +1006,10 @@
                     (valid-globals env)
                     (valid-exports env)
                     (valid-functions env 1 0))
-                 (multijob env)))))))
-
-(define (main argv)
-   (define input-file #f)
-
-   (args-parse (cdr argv)
-      ((("--help" "-h") (help "Display this help message"))
-       (args-parse-usage #f))
-      ((("--keep-going" "-k") (help "Continue when encountering an error"))
-       (set! keep-going #t))
-      (("--stop-after" ?n (help "Stop after encountering N errors"))
-       (set! keep-going (string->number n)))
-      (("-s" (help "Display less verbose error messages"))
-       (set! silent #t))
-      (("-j" ?n (help "Use multiple threads"))
-       (set! nthreads (string->number n)))
-      (else
-       (set! input-file else)))
-
-   (if input-file
-       (call-with-input-file input-file
-          (lambda (ip)
-             (let ((f (valid-file (read ip #t))))
-                (if error-encountered?
-                    (exit 1)))))))
+                 (multijob env)))))
+      (if error-encountered?
+          #f
+          (instantiate::prog
+           (env env)
+           (funcs *funcs*)
+           (globals *globals*)))))

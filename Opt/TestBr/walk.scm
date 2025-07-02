@@ -1,5 +1,6 @@
 (module opt_testbr
-   (import (ast_node "Ast/node.scm"))
+   (import (env_env "Env/env.scm"))
+   (from (ast_node "Ast/node.scm"))
    (export (testbr! f::func)))
 
 (define (testbr! f::func)
