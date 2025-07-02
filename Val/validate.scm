@@ -34,16 +34,19 @@
 ;; section 3.4.13
 ;; only use on desuggared instructions
 (read-table *const-instrs* "Val/constant-instructions.sch")
-(define (non-constant-instr? env::env i::pair)
-   (if (or (hashtable-contains? *const-instrs* (car i))
-           (eq? (car i) 'error)
-           (and (eq? (car i) 'global.get)
-                (not (car (global-get-type env (cadr i))))))
+(define-generic (non-constant-instr? i::instruction)
+   (if (or (hashtable-contains? *const-instrs* (-> i opcode))
+           (eq? (-> i opcode) 'error))
        #f
        i))
 
-(define (non-constant-expr? env::env e::pair-nil)
-   (find (lambda (i) (non-constant-instr? env i)) e))
+(define-method (non-constant-instr? i::one-arg)
+   (if (eq? 'global.get (-> i opcode))
+       (with-access::globalidxp (-> i x) (mut?) (if mut? i #f))
+       (call-next-method)))
+
+(define (non-constant-expr? e::pair-nil)
+   (find (lambda (i) (non-constant-instr? i)) e))
 
 (define-macro (replace-exception e e' . body)
    `(with-handler
@@ -295,49 +298,56 @@
 
 (define (i32 env::env n)
    (let ((n (wnumber->number n)))
-      (cond ((not (integer? n)) (raise `(expected-int ,n)))
-            ((and (<= n 2147483647) (>= n -2147483648)) n)
-            ((and (> n 2147483647) (<= n 4294967295)) (- n (* 2 2147483648)))
-            (#t (raise `(out-bounds-i32 ,n))))))
+      (instantiate::nump
+       (num
+        (cond ((not (integer? n)) (raise `(expected-int ,n)))
+              ((and (<= n 2147483647) (>= n -2147483648)) n)
+              ((and (> n 2147483647) (<= n 4294967295)) (- n (* 2 2147483648)))
+              (#t (raise `(out-bounds-i32 ,n))))))))
 
 (define (i64 env::env n)
    (let ((n (wnumber->number n)))
-      (cond ((not (integer? n)) (raise `(expected-int ,n)))
-            ((and (<= n 9223372036854775807) (>= n -9223372036854775808)) n)
-            ((and (> n 9223372036854775807) (<= n 18446744073709551615))
-             (- n (* 2 9223372036854775808)))
-            (#t (raise `(out-bounds-i64 ,n))))))
+      (instantiate::nump
+       (num
+        (cond ((not (integer? n)) (raise `(expected-int ,n)))
+              ((and (<= n 9223372036854775807) (>= n -9223372036854775808)) n)
+              ((and (> n 9223372036854775807) (<= n 18446744073709551615))
+               (- n (* 2 9223372036854775808)))
+              (#t (raise `(out-bounds-i64 ,n))))))))
 
-(define (f32 env::env n)
-   (wnumber->number n))
+(define (f32::nump env::env n)
+   (instantiate::nump (num (wnumber->number n))))
 
-(define (f64 env::env n)
-   (wnumber->number n))
+(define (f64::nump env::env n)
+   (instantiate::nump (num (wnumber->number n))))
 
 (define (u32 env::env n)
    (let ((n (wnumber->number n)))
-      (cond ((not (integer? n)) (raise `(expected-int ,n)))
-            ((and (<= n 4294967295) (>= n 0)) n)
-            (#t (raise `(out-bounds-u32 ,n))))))
+      (instantiate::nump
+       (num
+        (cond ((not (integer? n)) (raise `(expected-int ,n)))
+              ((and (<= n 4294967295) (>= n 0)) n)
+              (#t (raise `(out-bounds-u32 ,n))))))))
 
-(define (ht env::env t)
-   (valid-ht env t))
+(define (ht::typep env::env t)
+   (instantiate::typep (type (valid-ht env t))))
 
-(define (rt::pair env::env t)
-   (valid-rt env t))
+(define (rt::typep env::env t)
+   (instantiate::typep (type (valid-rt env t))))
 
-(define (get-struct-fldts env::env x::bint)
-   (match-case (expand (type-get env x))
+(define (get-struct-fldts x::typeidxp)
+   (match-case (expand (-> x type))
       ((struct . ?fldts) fldts)
-      (?t (raise `(expected-struct ,x ,t)))))
+      (?t
+       (raise `(expected-struct ,x ,t)))))
 
-(define (get-array-ft env::env x::bint)
-   (match-case (expand (type-get env x))
+(define (get-array-ft x::typeidxp)
+   (match-case (expand (-> x type))
       ((array ?ft) ft)
       (?t (raise `(expected-array ,x ,t)))))
 
-(define (label-get-last-rest env::env l::bint)
-   (let ((t'* (label-get-type env l)))
+(define (label-get-last-rest l::labelidxp)
+   (let ((t'* (-> l type)))
       (when (null? t'*)
          (raise 'expected-non-empty-result))
       (multiple-value-bind (t* tl) (split-at t'* (- (length t'*) 1))
@@ -359,7 +369,7 @@
             (#t (raise `(non-matching-stack ,(car st) ,(car ts))))))
    (aux st (reverse ts)))
 
-(define (check-block::pair-nil env::env body::pair-nil t::pair-nil
+(define (check-block::sequence env::env body::pair-nil t::pair-nil
                                bt::pair #!optional (l #f))
    (let ((loc-init (-> env local-types)))
       (push-label! env l t)
@@ -369,7 +379,12 @@
                (raise `(value-left-stack ,st-rst))))
          (pop-label! env)
          (set! (-> env local-types) loc-init)
-         i)))
+         (instantiate::sequence
+          (intype (car bt))
+          (outtype (cadr bt))
+          (parent (-> env parent))
+          (opcode 'nop)
+          (body i)))))
 
 (define (valid-blockinstr env::env i::pair st::pair-nil)
    (match-case i
@@ -377,12 +392,8 @@
       ((block (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (values bt
-                  (instantiate::block
-                   (intype (car bt))
-                   (outtype (cadr bt))
-                   (parent (-> env parent))
-                   (opcode 'bloc)
-                   (body (check-block env tl (cadr bt) bt l)))
+                  (duplicate::block (check-block env tl (cadr bt) bt l)
+                                    (opcode 'block))
                   '())))
       ((block . ?rst)
        (valid-blockinstr env `(block ,(gensym "$unnamed-label") ,@rst) st))
@@ -390,7 +401,10 @@
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.184
       ((loop (and (? ident?) ?l) . ?body)
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
-          (values bt `(loop ,bt ,(check-block env tl (car bt) bt l)) '())))
+          (values bt
+                  (duplicate::loop (check-block env tl (car bt) bt l)
+                                   (opcode 'loop))
+                  '())))
       ((loop . ?rst)
        (valid-blockinstr env `(loop ,(gensym "$unnamed-label") ,@rst) st))
 
@@ -407,10 +421,18 @@
 
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (multiple-value-bind (tl then else) (get-tl/then/else tl)
-             (values `((,@(car bt) i32) ,(cadr bt))
-                     `(if ,bt ,(check-block env then (cadr bt) bt l)
-                              ,(check-block env else (cadr bt) bt l))
-                     tl))))
+             (let ((i::if-then (instantiate::if-then
+                                (intype `(,@(car bt) i32))
+                                (outtype (cadr bt))
+                                (parent (-> env parent))
+                                (opcode 'if)
+                                (then (check-block env then (cadr bt) bt l))))
+                   (else::sequence (check-block env else (cadr bt) bt l)))
+                (values `((,@(car bt) i32) ,(cadr bt))
+                        (if (null? (-> else body))
+                            i
+                            (duplicate::if-else i (else else)))
+                        tl)))))
       ((if . ?rst)
        (valid-blockinstr env `(if ,(gensym "$unnamed-label") ,@rst) st))
 
@@ -420,48 +442,57 @@
           (match-case l
              ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.187
              (((catch ?tag ?lab) . ?tl)
-              (let* ((x (tagidx env tag))
-                     (l (labelidx env lab))
-                     (t* (cadr (expand (tag-get-type env x))))
-                     (lt (label-get-type env l)))
+              (let* ((x::tagidxp (tagidx env tag))
+                     (l::labelidxp (labelidx env lab))
+                     (t* (cadr (expand (-> x type))))
+                     (lt (-> l type)))
                  (unless (<res= env t* lt)
                     (raise `(non-matching-catch ,x ,l ,t* ,lt)))
                  (multiple-value-bind (c tl) (valid-catch/get-body tl)
-                    (values (cons `(catch ,l ,x) c) tl))))
+                    (values (cons (instantiate::catch (label l) (tag x)) c)
+                            tl))))
 
              ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.188
              (((catch_ref ?tag ?lab) . ?tl)
-              (let* ((x (tagidx env tag))
-                     (l (labelidx env lab))
-                     (t* (cadr (expand (tag-get-type env x))))
-                     (lt (label-get-type env l)))
+              (let* ((x::tagidxp (tagidx env tag))
+                     (l::labelidxp (labelidx env lab))
+                     (t* (cadr (expand (-> x type))))
+                     (lt (-> l type)))
                  (unless (<res= env (append t* '((ref exn))) lt)
                     (raise `(non-matching-catch-ref ,x ,l ,t* ,lt)))
                  (multiple-value-bind (c tl) (valid-catch/get-body tl)
-                    (values (cons `(catch_ref ,l ,x) c) tl))))
+                    (values (cons (instantiate::catch_ref (label l) (tag x)) c)
+                            tl))))
 
              ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.189
              (((catch_all ?lab) . ?tl)
-              (let* ((l (labelidx env lab))
-                     (lt (label-get-type env l)))
+              (let* ((l::labelidxp (labelidx env lab))
+                     (lt (-> l type)))
                  (unless (null? lt)
                     (raise `(non-empty-label-catch-all ,l ,lt)))
                  (multiple-value-bind (c tl) (valid-catch/get-body tl)
-                    (values (cons `(catch_all ,l) c) tl))))
+                    (values (cons (instantiate::catch_all (label l)) c) tl))))
 
              ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.190
              (((catch_all_ref ?lab) . ?tl)
-              (let* ((l (labelidx env lab))
-                     (lt (label-get-type env l)))
+              (let* ((l::labelidxp (labelidx env lab))
+                     (lt (-> l type)))
                  (unless (<res= env '((ref exn)) lt)
                     (raise `(non-matching-catch-all-ref ,l ,lt)))
                  (multiple-value-bind (c tl) (valid-catch/get-body tl)
-                    (values (cons `(catch_all_ref ,l) c) tl))))
+                    (values (cons (instantiate::catch_all_ref (label l)) c)
+                            tl))))
+
              (?tl (values '() tl))))
+
        (multiple-value-bind (bt tl) (valid-blocktype/get-tl env body)
           (multiple-value-bind (c tl) (valid-catch/get-body tl)
-             (values bt `(try_table ,bt ,c
-                          ,(check-block env tl (cadr bt) bt l)) '()))))
+             (values bt
+                     (duplicate::try_table (check-block env tl (cadr bt) bt l)
+                      (parent (-> env parent))
+                      (opcode 'try_table)
+                      (catches c))
+                     '()))))
       ((try_table . ?rst)
        (valid-blockinstr env `(try_table ,(gensym "$unnamed-label") ,@rst) st))
 
@@ -481,9 +512,23 @@
           (when (< (length (cdr i)) k)
              (raise `(not-enough arguments ,i ,exp-args)))
           (multiple-value-bind (giv-args tl) (split-at (cdr i) k)
-             (let ((args (map (lambda (f x) (f env x)) exp-args giv-args)))
-                (values (if (procedure? t) (apply t env args) t)
-                         `(,(car i) ,@args) tl))))
+             (let* ((args (map (lambda (f x) (f env x)) exp-args giv-args))
+                    (t (if (procedure? t) (apply t env args) t))
+                    (i (instantiate::instruction
+                        (intype (car t))
+                        (outtype (cadr t))
+                        (parent (-> env parent))
+                        (opcode (car i)))))
+                (match-case args
+                   (()
+                    (values t i tl))
+                   ((?x)
+                    (values t (duplicate::one-arg i (x x)) tl))
+                   ((?x ?y)
+                    (values t (duplicate::two-args i (x x) (y y)) tl))
+                   ((?x ?y ?z)
+                    (values t (duplicate::three-args i (x x) (y y) (z z))
+                            tl))))))
        (valid-blockinstr env i st)))
 
 (define (adhoc-instr?::bool s)
@@ -498,8 +543,8 @@
       ; type against the stack, which will serve as a lower bound in absence of
       ; failure and if all the label's arity are the same
       ((br_table ?lab . ?rst)
-       (let* ((l (labelidx env lab))
-              (n (length (label-get-type env l))))
+       (let* ((l::labelidxp (labelidx env lab))
+              (n (length (-> l type))))
 
           (define (get-label/tl l::pair-nil)
              (match-case l
@@ -512,34 +557,54 @@
              (multiple-value-bind (i st) (valid-instrs env tl st)
                 (let* ((st (check-stack env st '(i32)))
                        (lower-bound (stack-take st n)))
-                   (define (valid-label l::bint)
-                      (let ((lt (label-get-type env l)))
+                   (define (valid-label l::labelidxp)
+                      (let ((lt (-> l type)))
                          (unless (<res= env lower-bound lt)
                             (raise `(non-matching ,lower-bound ,lt)))))
+
                    (for-each valid-label ls)
-                   (values (append i `((br_table ,ls))) '(poly)))))))
+                   (values (append i `(,(instantiate::br_table
+                                         (intype '())
+                                         (outtype '(poly))
+                                         (parent (-> env parent))
+                                         (opcode 'br_table)
+                                         (labels ls))))
+                           '(poly)))))))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.194
       ((br_on_null ?lab . ?tl)
-       (let* ((l (labelidx env lab))
-              (t* (label-get-type env l)))
+       (let* ((l::labelidxp (labelidx env lab))
+              (t* (-> l type)))
           (multiple-value-bind (i st) (valid-instrs env tl st)
              (multiple-value-bind (ht st) (stack-drop-reftype st)
-               (values (append i `((br_on_null ,l)))
+               (values (append i `(,(instantiate::one-arg
+                                     (intype `(,@(reverse t*) (ref null ,ht)))
+                                     (outtype `(,@(reverse t*) (ref ,ht)))
+                                     (parent (-> env parent))
+                                     (opcode 'br_on_null)
+                                     (x l))))
                        (append (cons `(ref ,ht) (reverse t*))
                                (check-stack env st t*)))))))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.99
       ((ref.is_null . ?tl)
        (multiple-value-bind (i st) (valid-instrs env tl st)
-          (multiple-value-bind (- st) (stack-drop-reftype st)
-             (values (append i '((ref.is_null))) (cons 'i32 st)))))
+          (multiple-value-bind (ht st) (stack-drop-reftype st)
+             (values (append i `(,(instantiate::instruction
+                                   (intype `((ref null ,ht)))
+                                   (outtype '(i32))
+                                   (parent (-> env parent))
+                                   (opcode 'ref.is_null)))) (cons 'i32 st)))))
 
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.100
       ((ref.as_non_null . ?tl)
        (multiple-value-bind (i st) (valid-instrs env tl st)
           (multiple-value-bind (ht st) (stack-drop-reftype st)
-             (values (append i '((ref.as_non_null)))
+             (values (append i `(,(instantiate::instruction
+                                   (intype `((ref null ,ht)))
+                                   (outtype `((ref ,ht)))
+                                   (parent (-> env parent))
+                                   (opcode 'ref.as_non_null))))
                      (cons `(ref ,ht) st)))))))
 
 ;; returns the desuggared instructions and the new stack state
@@ -747,6 +812,10 @@
          ((memory . ?mt)
           (mem-add! env (valid-mt env mt)))
 
+         ; section 6.6.11
+         ((elem declare func . ?funcs)
+          (for-each (lambda (x) (hashtable-put! (-> env refs) x #t)) funcs))
+
          (else (raise 'expected-modulefield)))))
 
 (define (valid-global env::env g::struct x::bint)
@@ -760,8 +829,8 @@
            (raise `(missing-value-stack ,(global-type g))))
         (unless (<vt= env (car t') (cadr (global-type g)))
            (raise `(non-matching-globaltype ,(car t') ,(global-type g))))
-        (when (non-constant-expr? env e)
-           (raise `(non-constant-global ,(non-constant-expr? env e))))
+        (when (non-constant-expr? e)
+           (raise `(non-constant-global ,(non-constant-expr? e))))
         (set! (-> env nglobal) old-nglobal)
         (global-body-set! g e))))
 
@@ -839,20 +908,21 @@
       ((undeclared-funcref ?x)
        (display "***ERROR: undeclared function reference -- "
                 (current-error-port))
-       (display (if (vector-ref (-> env func-names) x)
-                    (vector-ref (-> env func-names) x)
-                    x) (current-error-port))
+       (with-access::funcidxp x (idx)
+          (display (if (vector-ref (-> env func-names) idx)
+                       (vector-ref (-> env func-names) idx)
+                       idx) (current-error-port)))
        (newline (current-error-port)))
 
       ((got-packed ?x ?t)
        (fprintf (current-error-port)
                 "***ERROR: used array.get on type ~a while its elements have a packed type (~a)\n"
-                (type-get-name env x) t))
+                (typeidx-get-name env x) t))
 
       ((got-packed ?x ?y ?t)
        (fprintf (current-error-port)
                 "***ERROR: used struct.get on type ~a on field ~a while it has a packed type (~a)\n"
-                (type-get-name env x) (field-get-name env x y) t))
+                (typeidx-get-name env x) (fieldidx-get-name env x y) t))
 
       ((non-matching-stack ?t1 ?t2)
        (define (display-type t p)

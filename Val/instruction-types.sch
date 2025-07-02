@@ -135,13 +135,13 @@
   (f64.reinterpret_i64 () ((i64) (f64)))
 
   ;; section 3.4.2
-  (ref.null (,ht) ,(lambda (- ht) `(() ((ref null ,ht)))))
+  (ref.null (,ht) ,(lambda (- ht::typep) `(() ((ref null ,(-> ht type))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.98
-  (ref.func (,funcidx) ,(lambda (env::env x)
-                           (unless (valid-func-ref? env x)
+  (ref.func (,funcidx) ,(lambda (env::env x::funcidxp)
+                           (unless (valid-func-ref? env (-> x idx))
                               (raise `(undeclared-funcref ,x)))
-                           `(() ((ref ,(func-get-type env x))))))
+                           `(() ((ref ,(-> x type))))))
 
   ; ref.is_null is treated in an ad-hoc way
 
@@ -150,77 +150,78 @@
   ; argument to these functions
   (ref.eq () (((ref null eq) (ref null eq)) (i32)))
   ; by subsumption
-  (ref.test (,rt) ,(lambda (env rt) `((,(rt-upperbound env rt)) (i32))))
+  (ref.test (,rt) ,(lambda (env rt::typep)
+                      `((,(rt-upperbound env (-> rt type))) (i32))))
   ; by subsumption
-  (ref.cast (,rt) ,(lambda (env rt) `((,(rt-upperbound env rt)) (,rt))))
+  (ref.cast (,rt) ,(lambda (env rt::typep)
+                      `((,(rt-upperbound env (-> rt type))) (,(-> rt type)))))
 
   ;; section 3.4.3
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.104
   (struct.new
    (,typeidx)
-   ,(lambda (env::env x) `(,(map unpack-ft (get-struct-fldts env x)) ((ref ,x)))))
+   ,(lambda (env::env x::typeidxp)
+       `(,(map unpack-ft (get-struct-fldts x)) ((ref ,(-> x idx))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.105
   (struct.new_default
    (,typeidx)
-   ,(lambda (env::env x)
+   ,(lambda (env::env x::typeidxp)
        (for-each (lambda (t) (unless (defaultable? t)
                                (raise `(expected-defaultable ,t))))
-                 (map unpack-ft (get-struct-fldts env x)))
-       `(() ((ref ,x)))))
+                 (map unpack-ft (get-struct-fldts x)))
+       `(() ((ref ,(-> x idx))))))
 
   ;; in the following functions, fieldidx checks that x is a struct type
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.106
   (struct.get
    (,typeidx ,fieldidx)
-   ,(lambda (env x y)
-       (let ((t (cadr (list-ref (get-struct-fldts env x) y))))
-          (when (packedtype? t)
-             (raise `(got-packed ,x ,y ,t)))
-          `(((ref null ,x)) (,t)))))
+   ,(lambda (env x::typeidxp y::fieldidxp)
+       (when (packedtype? (-> y type))
+          (raise `(got-packed ,x ,y ,(-> y type))))
+       `(((ref null ,(-> x idx))) (,(-> y type)))))
   (struct.get_s
    (,typeidx ,fieldidx)
-   ,(lambda (env x y)
-       (let ((t (cadr (list-ref (get-struct-fldts env x) y))))
-          (unless (packedtype? t)
-             (raise `(expected-packed ,x ,y ,t)))
-          `(((ref null ,x)) (,(unpack t))))))
+   ,(lambda (env x::typeidxp y::fieldidxp)
+       (unless (packedtype? (-> y type))
+          (raise `(expected-packed ,x ,y ,(-> y type))))
+       `(((ref null ,(-> x idx))) (,(unpack (-> y type))))))
   (struct.get_u
    (,typeidx ,fieldidx)
-   ,(lambda (env x y)
-       (let ((t (cadr (list-ref (get-struct-fldts env x) y))))
-          (unless (packedtype? t)
-             (raise `(expected-packed ,x ,y ,t)))
-          `(((ref null ,x)) (,(unpack t))))))
+   ,(lambda (env x::typeidxp y::fieldidxp)
+       (unless (packedtype? (-> y type))
+          (raise `(expected-packed ,x ,y ,(-> y type))))
+       `(((ref null ,(-> x idx))) (,(unpack (-> y type))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.107
   (struct.set
    (,typeidx ,fieldidx)
-   ,(lambda (env x y)
-       (let ((ft (list-ref (get-struct-fldts env x) y)))
-          (unless (car ft)
+   ,(lambda (env x::typeidxp y::fieldidxp)
+          (unless (-> y mut?)
              (raise `(set-const ,x ,y)))
-          `(((ref null ,x) ,(unpack-ft ft)) ()))))
+          `(((ref null ,(-> x idx)) ,(unpack (-> y type))) ())))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.108
   (array.new
    (,typeidx)
-   ,(lambda (env x) `((,(unpack-ft (get-array-ft env x)) i32) ((ref ,x)))))
+   ,(lambda (env x::typeidxp) `((,(unpack-ft (get-array-ft x)) i32)
+                                ((ref ,(-> x idx))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.109
   (array.new_default
    (,typeidx)
-   ,(lambda (env x)
-       (let ((ft (get-array-ft env x)))
+   ,(lambda (env x::typeidxp)
+       (let ((ft (get-array-ft x)))
          (unless (defaultable? (unpack-ft ft))
               (raise `(expected-defaultable ,x ,(unpack-ft ft))))
-         `((i32) ((ref ,x))))))
+         `((i32) ((ref ,(-> x idx)))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.110
   (array.new_fixed
    (,typeidx ,u32)
-   ,(lambda (env x n)
-       `(,(make-list n (unpack-ft (get-array-ft env x))) ((ref ,x)))))
+   ,(lambda (env x::typeidxp n::nump)
+       `(,(make-list (-> n num) (unpack-ft (get-array-ft x)))
+         ((ref ,(-> x idx))))))
 
   ; we do not support array.new_elem yet
 
@@ -228,43 +229,43 @@
   ; the call to dataidx assures that the data segment exists
   (array.new_data
    (,typeidx ,dataidx)
-   ,(lambda (env x -)
-       (let ((t (unpack-ft (get-array-ft env x))))
+   ,(lambda (env x::typeidxp -)
+       (let ((t (unpack-ft (get-array-ft x))))
           (unless (or (vectype? t) (numtype? t))
              (raise `(expected-num-or-vec ,t)))
-          `((i32 i32) ((ref ,x))))))
+          `((i32 i32) ((ref ,(-> x idx)))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.113
   (array.get
    (,typeidx)
-   ,(lambda (env x)
-       (let ((t (cadr (get-array-ft env x))))
+   ,(lambda (env x::typeidxp)
+       (let ((t (cadr (get-array-ft x))))
           (when (packedtype? t)
              (raise `(got-packed ,x ,t)))
-          `(((ref null ,x) i32) (,t)))))
+          `(((ref null ,(-> x idx)) i32) (,t)))))
   (array.get_s
    (,typeidx)
-   ,(lambda (env x)
-       (let ((t (cadr (get-array-ft env x))))
+   ,(lambda (env x::typeidxp)
+       (let ((t (cadr (get-array-ft x))))
           (unless (packedtype? t)
              (raise `(expected-packed ,x ,t)))
-          `(((ref null ,x) i32) (,(unpack t))))))
+          `(((ref null ,(-> x idx)) i32) (,(unpack t))))))
   (array.get_u
    (,typeidx)
-   ,(lambda (env x)
-       (let ((t (cadr (get-array-ft env x))))
+   ,(lambda (env x::typeidxp)
+       (let ((t (cadr (get-array-ft x))))
           (unless (packedtype? t)
              (raise `(expected-packed ,x ,t)))
-          `(((ref null ,x) i32) (,(unpack t))))))
+          `(((ref null ,(-> x idx)) i32) (,(unpack t))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.114
   (array.set
    (,typeidx)
-   ,(lambda (env x)
-       (let ((ft (get-array-ft env x)))
+   ,(lambda (env x::typeidxp)
+       (let ((ft (get-array-ft x)))
           (unless (car ft)
              (raise `(set-const ,x)))
-          `(((ref null ,x) i32 ,(unpack-ft ft)) ()))))
+          `(((ref null ,(-> x idx)) i32 ,(unpack-ft ft)) ()))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.115
   (array.len () (((ref null array)) (i32)))
@@ -272,35 +273,35 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.116
   (array.fill
    (,typeidx)
-   ,(lambda (env x)
-       (let ((ft (get-array-ft env x)))
+   ,(lambda (env x::typeidxp)
+       (let ((ft (get-array-ft x)))
           (unless (car ft)
              (raise `(set-const ,x)))
-          `(((ref null ,x) i32 ,(unpack-ft ft) i32) ()))))
+          `(((ref null ,(-> x idx)) i32 ,(unpack-ft ft) i32) ()))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.117
   (array.copy
    (,typeidx ,typeidx)
-   ,(lambda (env x y)
-      (let ((ft1 (get-array-ft env x))
-            (ft2 (get-array-ft env y)))
+   ,(lambda (env x::typeidxp y::typeidxp)
+      (let ((ft1 (get-array-ft x))
+            (ft2 (get-array-ft y)))
          (unless (car ft1)
             (raise `(set-const ,x)))
          (unless (<st= env (cadr ft2) (cadr ft1))
             (raise `(non-matching ,ft2 ,ft1)))
-         `(((ref null ,x) i32 (ref null ,y) i32 i32) ()))))
+         `(((ref null ,(-> x idx)) i32 (ref null ,(-> y idx)) i32 i32) ()))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.118
   (array.init_data
     (,typeidx ,dataidx)
-    ,(lambda (env x y)
-        (let* ((ft (get-array-ft env x))
+    ,(lambda (env x::typeidxp -)
+        (let* ((ft (get-array-ft x))
                (t (unpack-ft ft)))
            (unless (car ft)
               (raise `(set-const ,x)))
            (unless (or (vectype? t) (numtype? t))
               (raise `(expected-num-or-vec ,t)))
-           `(((ref null ,x) i32 i32 i32) ()))))
+           `(((ref null ,(-> x idx)) i32 i32 i32) ()))))
 
   ; we do not support array.init_elem yet
 
@@ -325,35 +326,34 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.153
   (local.get
    (,localidx)
-   ,(lambda (env x)
-       (unless (local-init? env x)
+   ,(lambda (env x::localidxp)
+       (unless (-> x init?)
           (raise `(get-unset-local ,x)))
-       `(() (,(local-get-type env x)))))
+       `(() (,(-> x type)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.154
   (local.set
    (,localidx)
-   ,(lambda (env x) `((,(local-get-type env x)) () . (,x))))
+   ,(lambda (env x::localidxp) `((,(-> x type)) () . (,(-> x idx)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.155
   (local.tee
    (,localidx)
-   ,(lambda (env x) `((,(local-get-type env x))
-                      (,(local-get-type env x)) . (,x))))
+   ,(lambda (env x::localidxp) `((,(-> x type))
+                                 (,(-> x type)) . (,(-> x idx)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.156
   (global.get
    (,globalidx)
-   ,(lambda (env x) `(() (,(cadr (global-get-type env x))))))
+   ,(lambda (env x::globalidxp) `(() (,(-> x type)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.156
   (global.set
    (,globalidx)
-   ,(lambda (env x)
-       (let ((t (global-get-type env x)))
-         (unless (car t)
-            (raise `(set-const ,x)))
-         `((,(cadr t)) ()))))
+   ,(lambda (env x::globalidxp)
+       (unless (-> x mut?)
+          (raise `(set-const ,x)))
+       `((,(-> x type)) ())))
 
   ;; section 3.4.10 - we only support these partially, in particular, we do not
   ;; support offsets yet
@@ -369,13 +369,13 @@
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.191
   ; t_1 = epsilon by subsumption
-  (br (,labelidx) ,(lambda (env l) `(,(label-get-type env l) (poly))))
+  (br (,labelidx) ,(lambda (env l::labelidxp) `(,(-> l type) (poly))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.192
   (br_if
    (,labelidx)
-   ,(lambda (env l)
-       (let ((t (label-get-type env l)))
+   ,(lambda (env l::labelidxp)
+       (let ((t (-> l type)))
           `((,@t i32) ,t))))
 
   ; br_table is dealt with in an-hoc way
@@ -385,8 +385,8 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.195
   (br_on_non_null
    (,labelidx)
-   ,(lambda (env l)
-      (multiple-value-bind (t* tl) (label-get-last-rest env l)
+   ,(lambda (env l::labelidxp)
+      (multiple-value-bind (t* tl) (label-get-last-rest l)
          (unless (reftype? tl)
             (raise `(expected-reftype-label ,tl)))
          `((,@t* (ref null ,(reftype->heaptype tl))) ,t*))))
@@ -394,8 +394,8 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.196
   (br_on_cast
    (,labelidx ,rt ,rt)
-   ,(lambda (env l rt1 rt2)
-       (multiple-value-bind (t* rt') (label-get-last-rest env l)
+   ,(lambda (env l::labelidxp rt1 rt2)
+       (multiple-value-bind (t* rt') (label-get-last-rest l)
           (unless (reftype? rt')
              (raise `(expected-reftype-label ,rt')))
           (unless (<rt= env rt2 rt1)
@@ -407,8 +407,8 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.197
   (br_on_cast_fail
    (,labelidx ,rt ,rt)
-   ,(lambda (env l rt1 rt2)
-       (multiple-value-bind (t* rt') (label-get-last-rest env l)
+   ,(lambda (env l::labelidxp rt1 rt2)
+       (multiple-value-bind (t* rt') (label-get-last-rest l)
           (unless (reftype? rt')
              (raise `(expected-reftype-label ,rt')))
           (unless (<rt= env rt2 rt1)
@@ -427,14 +427,14 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.199
   ; if x is a funcidx, its defined type has to expand to a type of the form
   ; (func (t1*) (t2))
-  (call (,funcidx) ,(lambda (env x) (cdr (expand (func-get-type env x)))))
+  (call (,funcidx) ,(lambda (env x::funcidxp) (cdr (expand (-> x type)))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.200
   (call_ref
    (,typeidx)
-   ,(lambda (env::env x)
-       (match-case (expand (type-get env x))
-          ((func ?t1 ?t2) `((,@t1 (ref null ,x)) ,t2))
+   ,(lambda (env::env x::typeidxp)
+       (match-case (expand (-> x type))
+          ((func ?t1 ?t2) `((,@t1 (ref null ,(-> x idx))) ,t2))
           (?t (raise `(expected-function ,t))))))
 
   ; we do not support call_indirect yet
@@ -442,8 +442,8 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.202
   (return_call
    (,funcidx)
-   ,(lambda (env::env x)
-       (let ((t (expand (func-get-type env x))))
+   ,(lambda (env::env x::funcidxp)
+       (let ((t (expand (-> x type))))
           (unless (-> env return)
              (raise `cannot-return))
           (unless (<res= env (caddr t) (-> env return))
@@ -454,14 +454,14 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.203
   (return_call_ref
    (,typeidx)
-   ,(lambda (env::env x)
-       (match-case (expand (type-get env x))
+   ,(lambda (env::env x::typeidxp)
+       (match-case (expand (-> x type))
           ((func ?t1 ?t2)
            (unless (-> env return)
               (raise `cannot-return))
            (unless (<res= env t2 (-> env return))
               (raise `(non-matching t2 ,(-> env return))))
-           `((,@t1 (ref null ,x)) (poly)))
+           `((,@t1 (ref null ,(-> x idx))) (poly)))
           (?t (raise `(expected-function ,t))))))
 
   ; we do not support return_call_indirect yet
@@ -469,7 +469,7 @@
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.205
   (throw
    (,tagidx)
-   ,(lambda (env::env x) `(,(cadr (expand (tag-get-type env x))) (poly))))
+   ,(lambda (env::env x::tagidxp) `(,(cadr (expand (-> x type))) (poly))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.206
   (throw_ref () (((ref null exn)) (poly))) ; subsumption over and over

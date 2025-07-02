@@ -1,5 +1,7 @@
 (module env_env
-   (import (ast_node "Ast/node.scm"))
+   (from (ast_node "Ast/node.scm"))
+   (import (type_type "Type/type.scm"))
+   (import (misc_parse "Misc/parse.scm"))
            ;; section 3.1.6
    (export (class env::object
               (ntype::bint (default 0))
@@ -55,55 +57,53 @@
            (type-get-index::bint env::env x)
            (type-get env::env x)
            (type-get-name env::env x)
+           (typeidx-get-name env::env x::typeidxp)
            (add-type! env::env nm t)
            (set-type! env::env id t)
-           (typeidx::bint env::env x)
+           (typeidx::typeidxp env::env x)
 
            (func-get-index::bint env::env x)
            (func-get-type env::env x::bint)
            (func-add! env::env t)
            (func-add-name! env::env id::symbol)
-           (funcidx::bint env::env x)
+           (funcidx::funcidxp env::env x)
 
            (global-get-index::bint env::env x)
            (global-get-type env::env x::bint)
            (global-add! env::env t)
            (global-add-name! env::env id::symbol)
-           (globalidx::bint env::env x)
+           (globalidx::globalidxp env::env x)
 
            (tag-get-index::bint env::env x)
            (tag-get-type env::env x::bint)
            (tag-add! env::env t)
            (tag-add-name! env::env id::symbol)
-           (tagidx::bint env::env x)
+           (tagidx::tagidxp env::env x)
 
            (mem-get-index::bint env::env x)
            (mem-get-type env::env x::bint)
            (mem-add! env::env t)
            (mem-add-name! env::env id::symbol)
-           (memidx::bint env::env x)
+           (memidx::memidxp env::env x)
 
            (data-get-index::bint env::env x)
-           (dataidx::bint env::env x)
+           (dataidx::dataidxp env::env x)
 
            (field-get-index::bint env::env t::bint f)
-           (field-get-name env::env x::bint y::bint)
-           (fieldidx::bint env::env x)
+           (fieldidx-get-name env::env x::typeidxp y::fieldidxp)
+           (fieldidx::fieldidxp env::env x)
 
            (local-get-index env::env l)
            (local-init! env::env l::bint)
            (local-init?::bool env::env l)
            (local-get-type env::env l)
-           (localidx::bint env::env x)
+           (localidx::localidxp env::env x)
 
            (label-get-index::bint env::env x)
            (label-get-type env::env x::bint)
            (push-label! env::env nm t::pair-nil)
            (pop-label! env::env)
-           (labelidx::bint env::env x)))
-
-(define (ident? x)
-   (and (symbol? x) (equal? #\$ (string-ref (symbol->string x) 0))))
+           (labelidx::labelidxp env::env x)))
 
 (define (get-index::bint table range::bint x ex-oor ex-unkwn ex-exp)
    (cond ((number? x)
@@ -132,6 +132,9 @@
    (let ((nm (vector-ref (-> env type-names) (type-get-index env x))))
       (if nm nm x)))
 
+(define (typeidx-get-name env::env x::typeidxp)
+   (type-get-name env (-> x idx)))
+
 (define (add-type! env::env nm t)
    (let ((x (-> env ntype)))
       (set! (-> env ntype) (+fx 1 x))
@@ -142,10 +145,6 @@
 
 (define (set-type! env::env id t)
    (vector-set! (-> env types) (type-get-index env id) t))
-
-(define (typeidx::bint env::env i)
-   (set! (-> env last-type) (type-get-index env i))
-   (-> env last-type))
 
 (define-macro (table-boilerplate x)
    `(begin
@@ -168,10 +167,7 @@
           (hashtable-put! (-> env ,(symbol-append x '-table)) id
                           (-> env ,(symbol-append 'n x)))
           (vector-set! (-> env ,(symbol-append x '-names))
-                       (-> env ,(symbol-append 'n x)) id))
-
-       (define (,(symbol-append x 'idx::bint) env::env x)
-          (,(symbol-append x '-get-index) env x))))
+                       (-> env ,(symbol-append 'n x)) id))))
 
 (table-boilerplate func)
 (table-boilerplate global)
@@ -181,9 +177,6 @@
 (define (data-get-index::bint env::env x)
    (get-index (-> env data-table) (-> env ndata) x '(idx-out-range data)
               '(unknown data) '(expected-idx data)))
-
-(define (dataidx::bint env::env x)
-   (data-get-index env x))
 
 (define (field-get-index::bint env::env t::bint f)
    (let ((v (vector-ref (-> env field-names) t)))
@@ -196,8 +189,8 @@
      (index v f 0 'unknown-field))
     (#t (raise `(expected-fieldidx ,t))))))
 
-(define (field-get-name env::env x::bint y::bint)
-   (list-ref (vector-ref (-> env field-names) x) y))
+(define (fieldidx-get-name env::env x::typeidxp y::fieldidxp)
+   (list-ref (vector-ref (-> env field-names) (-> x idx)) (-> y idx)))
 
 (define (local-get-index env::env l)
    (cond
@@ -248,15 +241,50 @@
    (set! (-> env nlabel) (-fx (-> env nlabel) 1))
    (set! (-> env label-names) (cdr (-> env label-names))))
 
+;;;;;;;; REPLACE LAST TYPE WITH A TYPEIDX
+(define (get-struct-fldts env::env x::bint)
+   (match-case (expand (type-get env x))
+      ((struct . ?fldts) fldts)
+      (?t (raise `(expected-struct ,x ,t)))))
+
 ;; to work, needs to be called after typeidx
-(define (fieldidx::bint env::env x)
+(define (fieldidx::fieldidxp env::env x)
    (unless (vector-ref (-> env field-names) (-> env last-type))
       (raise `(expected-struct ,(-> env last-type)
                ,(expand (type-get env (-> env last-type))))))
-   (field-get-index env (-> env last-type) x))
+   (let* ((idx (field-get-index env (-> env last-type) x))
+          (t (list-ref (get-struct-fldts env (-> env last-type)) idx)))
+      (instantiate::fieldidxp (idx idx) (mut? (car t)) (type (cadr t)))))
 
-(define (localidx::bint env::env x)
-   (local-get-index env x))
+(define (typeidx::typeidxp env::env x)
+   (let ((idx (type-get-index env x)))
+      (set! (-> env last-type) idx)
+      (instantiate::typeidxp (idx idx) (type (type-get env idx)))))
 
-(define (labelidx::bint env::env x)
-   (label-get-index env x))
+(define (localidx::localidxp env::env x)
+   (let ((idx (local-get-index env x)))
+      (with-access::local-var (vector-ref (-> env local-types) idx) (type init?)
+         (instantiate::localidxp (idx idx) (init? init?) (type type)))))
+
+(define (labelidx::labelidxp env::env x)
+   (let ((idx (label-get-index env x)))
+      (instantiate::labelidxp (idx idx) (type (label-get-type env idx)))))
+
+(define (funcidx::funcidxp env::env x)
+   (let ((idx (func-get-index env x)))
+      (instantiate::funcidxp (idx idx) (type (func-get-type env idx)))))
+
+(define (memidx::memidxp env::env x)
+   (instantiate::memidxp (idx (mem-get-index env x))))
+
+(define (tagidx::tagidxp env::env x)
+   (let ((idx (tag-get-index env x)))
+      (instantiate::tagidxp (idx idx) (type (tag-get-type env idx)))))
+
+(define (globalidx::globalidxp env::env x)
+   (let* ((idx (global-get-index env x))
+          (t (global-get-type env idx)))
+      (instantiate::globalidxp (idx idx) (mut? (car t)) (type (cadr t)))))
+
+(define (dataidx::dataidxp env::env x)
+   (instantiate::dataidxp (idx (data-get-index env x))))

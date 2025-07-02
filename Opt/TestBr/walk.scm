@@ -10,12 +10,12 @@
 
 (define-method (replace-var! i::one-arg x::bint y::bint t)
    (if (and (eq? 'local.get (-> i opcode)))
-       (with-access::variable (-> i x) (idx)
+       (with-access::localidxp (-> i x) (idx)
           (when (=fx idx x)
              (set! (-> i outtype) t)
              (set! idx y)))
        (if (eq? 'local.set (-> i opcode))
-           (with-access::variable (-> i x) (idx)
+           (with-access::localidxp (-> i x) (idx)
               (=fx x idx))
            #f)))
 
@@ -42,7 +42,7 @@
 
 (define-generic (incr-labels-param! p::parameter) #f)
 
-(define-method (incr-labels-param! p::label)
+(define-method (incr-labels-param! p::labelidxp)
    (set! (-> p idx) (+fx 1 (-> p idx))))
 
 (define-method (incr-labels! i::one-arg)
@@ -73,6 +73,9 @@
    (for-each incr-labels-catch! (-> i catches))
    (call-next-method))
 
+(define-method (incr-labels! i::br_table)
+   (for-each incr-labels-param! (-> i labels)))
+
 (define-generic (if-test->br! i::instruction)
    i)
 
@@ -89,7 +92,7 @@
 (define (isa-local.get? i::instruction)
    (eq? (-> i opcode) 'local.get))
 
-(define (local-add! f::func t::type)
+(define (local-add! f::func t::typep)
    (define (append-length l::pair-nil i::bint)
       (if (null? l)
           (values (list t) i)
@@ -100,30 +103,30 @@
       (set! (-> f locals) l)
       n))
 
-
-(define (block-gen-else! lget::one-arg var::variable rt-src::type
-                         rt-dst::type i::if-else)
+(define (block-gen-else! lget::one-arg var::localidxp rt-src::typep
+                         rt-dst::typep i::if-else)
    (let ((y (local-add! (-> i parent) rt-dst)))
       (replace-var! (-> i then) (-> var idx) y rt-dst)
       (incr-labels! (-> i else))
-      (with-access::block (-> i then) ((body body))
+      (with-access::sequence (-> i then) (body (ot outtype) (it intype))
          (set! body
                `(,(instantiate::block
-                   (intype '())
-                   (outtype (list rt-dst))
+                   (intype it)
+                   (outtype ot)
                    (parent (-> i parent))
                    (opcode 'block)
                    (body
                     `(,lget
                       ,(instantiate::three-args
-                        (intype (list rt-src))
-                        (outtype '())
+                        (intype '())
+                        (outtype (list rt-dst))
                         (parent (-> i parent))
                         (opcode 'br_on_cast)
-                        (x (instantiate::label (idx 0)))
-                        (y (instantiate::type (type rt-src)))
-                        (z (instantiate::type (type rt-dst))))
-                      ,@(with-access::block (-> i else) ((body body)) body)
+                        (x (instantiate::labelidxp (idx 0)
+                                                   (type (list rt-dst))))
+                        (y (instantiate::typep (type rt-src)))
+                        (z (instantiate::typep (type rt-dst))))
+                      ,@(with-access::sequence (-> i else) (body) body)
                       ; the type here is kind of a hack, we can't really do
                       ; better without maintaining the stack state
                       ,(instantiate::one-arg
@@ -131,20 +134,21 @@
                         (outtype (list rt-dst 'poly))
                         (parent (-> i parent))
                         (opcode 'br)
-                        (x (instantiate::label (idx 1)))))))
+                        (x (instantiate::labelidxp (idx 1) (type ot)))))))
                  ,(instantiate::one-arg
                    (intype (list rt-dst))
                    (outtype '())
                    (parent (-> i parent))
                    (opcode 'local.set)
-                   (x (instantiate::variable (idx y))))
+                   (x (instantiate::localidxp (idx y) (init? #f)
+                                              (type rt-dst))))
                  ,@body)))))
 
-(define (block-gen-no-else! lget::one-arg var::variable rt-src::type
-                            rt-dst::type i::if-then)
+(define (block-gen-no-else! lget::one-arg var::localidxp rt-src::typep
+                            rt-dst::typep i::if-then)
    (let ((y (local-add! (-> i parent) rt-dst)))
       (replace-var! (-> i then) (-> var idx) y rt-dst)
-      (with-access::block (-> i then) ((body body))
+      (with-access::block (-> i then) (body)
          (set! body
                `(,lget
                  ,(instantiate::three-args
@@ -152,15 +156,16 @@
                    (outtype (list rt-dst))
                    (parent (-> i parent))
                    (opcode 'br_on_cast_fail)
-                   (x (instantiate::label (idx 0)))
-                   (y (instantiate::type (type rt-src)))
-                   (z (instantiate::type (type rt-dst))))
+                   (x (instantiate::labelidxp (idx 0) (type '())))
+                   (y (instantiate::typep (type rt-src)))
+                   (z (instantiate::typep (type rt-dst))))
                  ,(instantiate::one-arg
                    (intype (list rt-dst))
                    (outtype '())
                    (parent (-> i parent))
                    (opcode 'local.set)
-                   (x (instantiate::variable (idx y))))
+                   (x (instantiate::localidxp (idx y) (init? #f)
+                                              (type rt-dst))))
                  ,@body))))
    (-> i then))
 

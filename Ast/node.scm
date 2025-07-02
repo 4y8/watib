@@ -9,18 +9,50 @@
            (class instruction::object
               intype::pair-nil
               outtype::pair-nil
-              parent::func
+              parent::modulefield
               opcode::symbol)
 
            (abstract-class parameter)
 
-           (class label::parameter
+           (class labelidxp::parameter
+              idx::bint
+              type::pair-nil)
+
+           (class funcidxp::parameter
+              idx::bint
+              type::pair)
+
+           (class localidxp::parameter
+              init?::bool
+              type
               idx::bint)
 
-           (class variable::parameter
-              idx::bint)
+           (class typeidxp::parameter
+              idx::bint
+              type)
 
-           (class type::parameter
+           (class tagidxp::parameter
+              idx::bint
+              type::pair)
+
+           (class globalidxp::parameter
+              idx::bint
+              mut?::bool
+              type)
+
+           (class fieldidxp::parameter
+              idx::bint
+              mut?::bool
+              type)
+
+           (class memidxp::parameter
+              idx::bint)
+           (class dataidxp::parameter
+              idx::bint)
+           (class nump::parameter
+              num)
+
+           (class typep::parameter
               type)
 
            (class one-arg::instruction
@@ -36,8 +68,7 @@
               z::parameter)
 
            (class br_table::instruction
-              default::bint
-              labels::pair-nil)
+              labels::pair)
 
            (class sequence::instruction
               body::pair-nil)
@@ -53,13 +84,13 @@
            (class loop::sequence)
 
            (class catch-branch::object
-              label::bint)
+              label::labelidxp)
 
            (class catch::catch-branch
-              tagidx::bint)
+              tag::tagidxp)
 
            (class catch_ref::catch-branch
-              tagidx::bint)
+              tag::tagidxp)
 
            (class catch_all::catch-branch)
 

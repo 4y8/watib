@@ -1,4 +1,5 @@
 (module type_match
+   (library srfi1)
    (import (env_env "Env/env.scm"))
    (import (type_type "Type/type.scm"))
    (import (misc_parse "Misc/parse.scm"))
