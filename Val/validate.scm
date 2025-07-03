@@ -236,12 +236,13 @@
              (cons n m)))))
 
 ;; section 3.2.16 and 6.4.13
-(define (valid-mt env::env t)
+(define (valid-mt::memory env::env t)
    (with-default-value env '(error (0)) '()
       (match-case t
          (((and ?at (? addrtype?)) . ?l)
-          (list at
-                (valid-lim l (bit-lshllong #l1 (-llong (type-size at) #l16)))))
+          (instantiate::memory
+           (at at)
+           (lim (valid-lim l (bit-lshllong #l1 (-llong (type-size at) #l16))))))
          ; section 6.4.10
          (else (valid-mt env `(i32 ,@t))))))
 
@@ -654,42 +655,52 @@
       (else (values '() '() l))))
 
 ;; section 6.6.3 and 3.5.12
-(define (valid-importdesc env::env d)
+(define (valid-importdesc env::env d imp::import)
    (match-case d
       ((func (and (? ident?) ?id) . ?rst)
        (func-add-name! env id)
-       (valid-importdesc env `(func ,@rst)))
+       (valid-importdesc env `(func ,@rst) imp))
       ((memory (and (? ident?) ?id) . ?rst)
-       (mem-add-name! env id))
+       (mem-add-name! env id)
+       (valid-importdesc env `(memory ,@rst) imp))
       ((global (and (? ident?) ?id) . ?rst)
        (global-add-name! env id)
-       (valid-importdesc env `(global ,@rst)))
+       (valid-importdesc env `(global ,@rst) imp))
       ((tag (and (? ident?) ?id) . ?rst)
        (tag-add-name! env id)
-       (valid-importdesc env `(tag ,@rst)))
+       (valid-importdesc env `(tag ,@rst) imp))
 
       ((func . ?ft)
        (multiple-value-bind (p r) (valid-param/result env ft)
           (vector-set! *funcs* (-> env nfunc) #f)
-          (func-add! env `(deftype -1 ((sub final (func ,p ,r))) ,0))))
+          (let ((t `(deftype -1 ((sub final (func ,p ,r))) ,0)))
+             (func-add! env t)
+             (duplicate::import-func imp (deftype t)))))
       ((global ?gt)
        (vector-set! *globals* (-> env nglobal) #f)
-       (global-add! env (valid-gt env gt)))
+       (let ((gt (valid-gt env gt)))
+          (global-add! env gt)
+          (duplicate::import-global imp (globaltype gt))))
       ((memory . ?mt)
-       (mem-add! env (valid-mt env mt)))
+       (let ((mt::memory (valid-mt env mt)))
+          (mem-add! env mt)
+          (duplicate::import-mem imp (memtype mt))))
       ((tag . ?tt)
        (multiple-value-bind (p r) (valid-param/result env tt)
-          (tag-add! env `(deftype -1 ((sub final (func ,p ,r))) ,0))))
+          (let ((t `(deftype -1 ((sub final (func ,p ,r))) ,0)))
+             (tag-add! env t)
+             (duplicate::import-tag imp (tagtype t)))))
       (else (raise `(expected-importdesc ,d)))))
 
 ; section 6.6.9 and
 (define (valid-exportdesc env::env d)
-   (match-case d
-      ((func ?id) (funcidx env id))
-      ((memory ?id) (memidx env id))
-      ((global ?id) (globalidx env id))
-      ((tag ?id) (tagidx env id))
-      (else (raise `(expected-exportdesc ,d)))))
+   (cons (car d)
+         (match-case (cdr d)
+            ((func ?id) (funcidx env id))
+            ((memory ?id) (memidx env id))
+            ((global ?id) (globalidx env id))
+            ((tag ?id) (tagidx env id))
+            (else (raise `(expected-exportdesc ,d))))))
 
 (define (type-pass-mf env::env m)
    (with-handler
@@ -711,18 +722,12 @@
 (define (decorate::epair m::epair l::pair)
    (econs (car l) (cdr l) (cer m)))
 
-(define-struct global
-   type
-   body
-   pos)
-
-(define-struct data
-   body)
-
 (define *funcs* (make-vector 1000000))
 (define *globals* (make-vector 1000000))
 (define *data* (make-vector 1000000))
 (define *exports* '())
+(define *imports* '())
+(define *declared-funcrefs* '())
 
 (define (env-pass-mf env::env m)
    (with-default-value env #f `(in-module ,m ,e)
@@ -759,7 +764,8 @@
                                    (raise `(expected-string ,s)))) rst)
           ; section 3.5.9 - passive data segments are always valid, we currently
           ; only support those
-          (vector-set! *data* (-> env ndata) (make-data rst))
+          (vector-set! *data* (-> env ndata)
+                       (instantiate::data (data (apply string-append rst))))
           (set! (-> env ndata) (+ 1 (-> env ndata))))
 
           ; section 6.6.7
@@ -778,17 +784,23 @@
                         (for-each add-func-refs! l)))))
 
           (let ((t (valid-gt env gt)))
-             (vector-set! *globals* (-> env nglobal) (make-global t e (cer m)))
+             (vector-set! *globals* (-> env nglobal)
+                          (instantiate::global (type t) (body e) (pos (cer m))))
              (global-add! env t)
              (add-func-refs! e)))
 
          ; section 6.6.3
-         ((import (and (? string?) ?mod) (and (? string?) ?nm) ?d)
-          (valid-importdesc env d))
+         ((import (and (? string?) ?mod) (and (? string?) ?name) ?d)
+          (set! *imports*
+                (cons
+                 (valid-importdesc env d (instantiate::import
+                                          (mod mod) (name name)))
+                 *imports*)))
 
          ; we don't have all the indices yet, so we can't validate an
          ; exportdesc's
-         ((export (? string?) ?d) (set! *exports* (cons d *exports*)))
+         ((export (and ?nm (? string?)) ?d)
+          (set! *exports* (cons (cons nm d) *exports*)))
 
          ; section 6.6.8 and 3.5.7
          ((tag (and (? ident?) ?id) . ?rst)
@@ -814,25 +826,26 @@
 
          ; section 6.6.11
          ((elem declare func . ?funcs)
+          (set! *declared-funcrefs* (append funcs *declared-funcrefs*))
           (for-each (lambda (x) (hashtable-put! (-> env refs) x #t)) funcs))
 
          (else (raise 'expected-modulefield)))))
 
-(define (valid-global env::env g::struct x::bint)
+(define (valid-global env::env g::global x::bint)
    (let ((old-nglobal (-> env nglobal)))
       ; global can only refer to the previous ones
      (set! (-> env nglobal) x)
-     (multiple-value-bind (e t') (valid-expr env (global-body g))
+     (multiple-value-bind (e t') (valid-expr env (-> g body))
         (when (and (length>=? t' 2) (not (eq? 'poly (cadr t'))))
            (raise `(too-much-value-stack ,t')))
         (when (or (null? t') (eq? 'poly (car t')))
-           (raise `(missing-value-stack ,(global-type g))))
-        (unless (<vt= env (car t') (cadr (global-type g)))
-           (raise `(non-matching-globaltype ,(car t') ,(global-type g))))
+           (raise `(missing-value-stack ,(-> g type))))
+        (unless (<vt= env (car t') (cadr (-> g type)))
+           (raise `(non-matching-globaltype ,(car t') ,(-> g type))))
         (when (non-constant-expr? e)
            (raise `(non-constant-global ,(non-constant-expr? e))))
         (set! (-> env nglobal) old-nglobal)
-        (global-body-set! g e))))
+        (set! (-> g body) e))))
 
 (define (valid-function env::env f::func x::bint)
    (multiple-value-bind (n lts body)
@@ -873,16 +886,19 @@
          (let ((g (vector-ref *globals* i)))
            (when g
                (with-handler
-                  (lambda (e) (format-exn env `(at-pos ,(global-pos g) ,e)))
+                  (lambda (e)
+                    (format-exn env `(at-pos
+                                      ,(with-access::global g (pos) pos) ,e)))
                   (valid-global env g i))
                (unless (null? (-> env error-list))
-                  (format-exn env `(at-pos ,(global-pos g) ""))
+                  (format-exn env `(at-pos ,(with-access::global g (pos) pos)
+                                    ""))
                   (for-each (lambda (e) (format-exn env e))
                             (-> env error-list))
                   (set! (-> env error-list) '())))))))
 
 (define (valid-exports env::env)
-   (for-each (lambda (d) (valid-exportdesc env d)) *exports*))
+   (map! (lambda (d) (valid-exportdesc env d)) *exports*))
 
 (define (format-exn env::env e)
    (if (isa? e &error)
@@ -969,6 +985,8 @@
                 (body
                  (lambda ()
                    (valid-exports (dupenv))
+                   (map! (lambda (x) (func-get-index env x))
+                         *declared-funcrefs*)
                    (valid-functions (dupenv) nthreads 1))))
                (list-tabulate
                 (-fx nthreads 2)
@@ -1003,6 +1021,9 @@
              (for-each (mf-pass/handle-error env-pass-mf) type-mfs)
              (if (= nthreads 1)
                  (begin
+                    ; todo add position for funcref checking
+                    (map! (lambda (x) (func-get-index env x))
+                          *declared-funcrefs*)
                     (valid-globals env)
                     (valid-exports env)
                     (valid-functions env 1 0))
@@ -1010,6 +1031,10 @@
       (if error-encountered?
           #f
           (instantiate::prog
+           (exports *exports*)
            (env env)
+           (data *data*)
            (funcs *funcs*)
+           (funcrefs *declared-funcrefs*)
+           (imports *imports*)
            (globals *globals*)))))

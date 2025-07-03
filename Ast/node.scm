@@ -10,10 +10,46 @@
               locals::pair-nil
               pos::pair)
 
+           (class export::modulefield
+              name::bstring
+              idx::idxp)
+
+           (class data::modulefield
+              data::bstring)
+
+           (class global::modulefield
+              type::pair
+              body::pair-nil
+              pos::pair)
+
+           (class memory::modulefield
+              at::symbol
+              lim::pair)
+
+           (class import::modulefield
+              mod::bstring
+              name::bstring)
+
+           (class import-func::import
+              deftype::pair)
+
+           (class import-mem::import
+              memtype::memory)
+
+           (class import-global::import
+              globaltype::pair)
+
+           (class import-tag::import
+              tagtype::pair)
+
            (class prog::object
-               env::env
-               funcs::pair-nil
-               globals::pair-nil)
+              env::env
+              funcs::pair-nil
+              data::pair-nil
+              globals::pair-nil
+              exports::pair-nil
+              funcrefs::pair-nil
+              imports::pair-nil)
 
            (class instruction::object
               intype::pair-nil
