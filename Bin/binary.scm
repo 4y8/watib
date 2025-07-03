@@ -111,7 +111,7 @@
        (leb128-write-unsigned x op)
        (write-comptype ct op))
       ((?ct)
-       (write-byte #x4F op)
+       (write-byte #x50 op)
        (write-byte #x00 op)
        (write-comptype ct op))))
 
@@ -403,7 +403,8 @@
    (with-access::env (-> pr env)
                      (nfunc nmem ndata ntag ntype types mem-types tag-types
                       nglobal)
-      (for-each (lambda (i) (write-import i (-> pr env))) (-> pr imports))
+      (for-each (lambda (i) (write-import i (-> pr env)))
+                (reverse (-> pr imports)))
 
       (do ((i 0 (+fx i 1)))
           ((>=fx i nfunc))
