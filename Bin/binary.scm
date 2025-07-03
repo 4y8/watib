@@ -1,7 +1,13 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Translation from the internal representation of wasm to the binary format
+;; (section 5 of WebAssembly's spec)
+
 (module bin_binary
    (from (ast_node "Ast/node.scm"))
    (include "read-table.sch")
    (import leb128
+           (misc_letif "Misc/let-if.scm")
            (type_type "Type/type.scm")
            (env_env "Env/env.scm"))
    (export (bin-file! p::prog file::bstring)))
@@ -45,7 +51,7 @@
 (define *nmem* 0)
 (define *mem-op* (open-output-string))
 (define *import-op* (open-output-string))
-(define *nimport* (open-output-string))
+(define *nimport* 0)
 (define *elem-op* (open-output-string))
 (define *nelem* 0)
 
@@ -80,8 +86,8 @@
    (match-case t
       ((func ?p ?r)
        (write-byte #x60 op)
-       (write-vec write-type p op)
-       (write-vec write-type r op))
+       (write-vec p write-type op)
+       (write-vec r write-type op))
       ((array ?ft)
        (write-byte #x5E op)
        (write-fieldtype ft op))
@@ -265,10 +271,10 @@
 
 (define (write-func f::func env::env)
    (let ((x (-> env ntype)))
-      (add-type! env #f (-> f type))
+      (add-type! env #f `(deftype -1 ((sub final (func ,@(-> f type)))) 0))
       (leb128-write-unsigned x *func-op*))
    (set! *ncode* (+fx 1 *ncode*))
-   (let ((func (with-output-to-string
+   (let ((func (call-with-output-string
                  (lambda (p)
                    (write-vec (-> f locals) (lambda (vt op)
                                                (write-byte #x01 op)
@@ -277,6 +283,7 @@
      (write-string func *code-op*)))
 
 (define (write-deftype t::pair)
+   (print t)
    (when (= 0 (cadddr t))
       (set! *nrec* (+fx 1 *nrec*))
       (write-rectype (caddr t) *type-op*)))
@@ -372,7 +379,7 @@
 
 (define (write-sec N::bint len::bint ip::output-port op::output-port)
    (unless (=fx 0 len)
-      (let* ((slen (with-output-to-string
+      (let* ((slen (call-with-output-string
                      (lambda (p) (leb128-write-unsigned len p))))
              (cont (close-output-port ip))
              (size (+ (string-length slen) (string-length cont))))
@@ -383,26 +390,27 @@
 
 (define (bin-file! pr::prog file::bstring)
    (with-access::env (-> pr env)
-                     (nfunc nmem ndata ntag ntype types mem-table tag-table nglobal)
-      (for-each (lambda (i) (write-import i env)) (-> pr imports))
+                     (nfunc nmem ndata ntag ntype types mem-types tag-types
+                      nglobal)
+      (for-each (lambda (i) (write-import i (-> pr env))) (-> pr imports))
 
       (do ((i 0 (+fx i 1)))
           ((>=fx i nfunc))
-         (let ((f (vector-ref (-> pr funcs) i)))
-            (if f (write-func f env))))
+         (let-if (f (vector-ref (-> pr funcs) i))
+            (write-func f (-> pr env))))
 
       (do ((i 0 (+fx i 1)))
           ((>=fx i nmem))
-         (write-mem (vector-ref mem-table i)))
+         (write-mem (vector-ref mem-types i)))
 
       (do ((i 0 (+fx i 1)))
           ((>=fx i ntag))
-         (write-tag (vector-ref tag-table i) env))
+         (write-tag (vector-ref tag-types i) (-> pr env)))
 
       (do ((i 0 (+fx i 1)))
           ((>=fx i nglobal))
-         (let ((g (vector-ref (-> pr globals) i)))
-            (if g (write-global g env))))
+         (let-if (g (vector-ref (-> pr globals) i))
+            (write-global g (-> pr env))))
 
       (for-each write-export (-> pr exports))
 
@@ -416,7 +424,7 @@
           ((>=fx i ntype))
          (write-deftype (vector-ref types i)))
 
-      (with-output-to-file file
+      (call-with-output-file file
          (lambda (p)
             (display "\x00asm\x01\x00\x00\x00" p) ; magic preamble
             (write-sec 1 *nrec* *type-op* p)

@@ -1,3 +1,7 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Definitions of the data structures representing wasm code.
+
 (module ast_node
    (export
            (class modulefield::object)
@@ -44,9 +48,9 @@
 
            (class prog::object
               env::env
-              funcs::pair-nil
-              data::pair-nil
-              globals::pair-nil
+              funcs::vector
+              data::vector
+              globals::vector
               exports::pair-nil
               funcrefs::pair-nil
               imports::pair-nil)
@@ -171,7 +175,6 @@
               (global-table (default (create-hashtable eqtest: eq?)))
               (global-types::vector (default (make-vector 1000000)))
               (global-names::vector (default (make-vector 1000000)))
-
 
               (nfunc::bint (default 0))
               (func-table (default (create-hashtable eqtest: eq?)))

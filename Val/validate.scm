@@ -1,3 +1,8 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Validates wasm in text format and translates it to an internal
+;; representation.
+
 (module val_validate
    (library srfi1 pthread)
    (include "read-table.sch")

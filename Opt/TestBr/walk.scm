@@ -1,3 +1,7 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Replacement of (if (ref.test ...) ...) patterns with conditional branching.
+
 (module opt_testbr
    (import (env_env "Env/env.scm"))
    (from (ast_node "Ast/node.scm"))

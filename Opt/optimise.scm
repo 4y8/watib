@@ -1,9 +1,23 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Gluing of all the optimisation phases from internal representation to
+;; internal representation.
+
 (module opt_optimise
    (from (ast_node "Ast/node.scm"))
-   (import (opt_testbr "Opt/TestBr/walk.scm"))
-   (import (opt_uncast "Opt/UnCast/walk.scm"))
+   (import (opt_testbr "Opt/TestBr/walk.scm")
+           (opt_uncast "Opt/UnCast/walk.scm"))
+   (import (misc_letif "Misc/let-if.scm"))
    (export (opt-file! p::prog nthreads::bint)))
 
 (define (opt-file! p::prog nthreads::bint)
-   (for-each testbr! (-> p funcs))
-   (for-each (lambda (f) (uncast! (-> p env) f)) (-> p funcs)))
+   (with-access::env (-> p env) (nfunc)
+      (do ((i 0 (+fx i 1)))
+          ((>=fx i nfunc))
+         (let-if (f (vector-ref (-> p funcs) i))
+            (testbr! f)))
+
+      (do ((i 0 (+fx i 1)))
+          ((>=fx i nfunc))
+         (let-if (f (vector-ref (-> p funcs) i))
+            (uncast! (-> p env) f)))))
