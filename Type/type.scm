@@ -96,7 +96,7 @@
       (i64 #l64)))
 
 ;; deftypes type x = (rec subtypes*).i are represented as (deftype x subtypes*
-;; i)); (rec i) are represented as (rec i)
+;; i)); x = (rec i) are represented as (rec i x)
 (define (deftype?::bool t)
    (and (pair? t) (eq? 'deftype (car t))))
 

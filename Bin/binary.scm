@@ -75,6 +75,7 @@
        (write-byte #x64 op)
        (write-type t op))
       ((? deftype?) (leb128-write-signed (cadr t) op))
+      ((? rectype?) (leb128-write-signed (caddr t) op))
       ((ref null ?t)
        (write-byte #x63 op)
        (write-type t op))))
@@ -280,7 +281,8 @@
                    (write-vec (-> f locals) (lambda (vt op)
                                                (write-byte #x01 op)
                                                (write-type vt op)) p)
-                   (write-instruction (-> f body) env p)))))
+                   (write-instruction (-> f body) env p)
+                   (write-byte #x0B p)))))
      (write-string func *code-op*)))
 
 (define (write-deftype t::pair)
@@ -313,6 +315,7 @@
    (write-exportdesc (-> e idx)))
 
 (define (write-data d::data)
+   (leb128-write-unsigned 1 *data-op*)
    (write-string (-> d data) *data-op*))
 
 (define (write-globaltype t::pair op::output-port)
@@ -354,7 +357,7 @@
 
 (define-method (write-import i::import-global env::env)
    (call-next-method)
-   (write-byte #x03)
+   (write-byte #x03 *import-op*)
    (write-globaltype (-> i globaltype) *import-op*))
 
 (define-method (write-import i::import-tag env::env)
@@ -369,7 +372,7 @@
    (write-byte #x00 *tag-op*)
    (let ((x (-> env ntype)))
       (add-type! env #f dt)
-      (leb128-write-unsigned x *import-op*)))
+      (leb128-write-unsigned x *tag-op*)))
 
 (define (write-elems elems::pair-nil)
    (unless (null? elems)

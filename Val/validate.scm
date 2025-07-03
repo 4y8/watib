@@ -265,9 +265,11 @@
    (let ((sts (map-seq
                  (match-lambda
                     ((type (and (? ident?) ?id) ?st)
-                     (add-type! env id `(rec ,(-fx (-> env ntype) x))) st)
+                     (add-type! env id `(rec ,(-fx (-> env ntype) x)
+                                         ,(-> env ntype))) st)
                     ((type ?st)
-                     (add-type! env #f `(rec ,(-fx (-> env ntype) x))) st)
+                     (add-type! env #f `(rec ,(-fx (-> env ntype) x)
+                                         ,(-> env ntype))) st)
                     ((type ?x ?-)
                      (raise `((expected ident) ,x)))
                     (?x (raise `(expected-typedef ,x)))) l)))
