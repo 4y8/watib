@@ -238,7 +238,7 @@
 
 (define-method (write-instruction i::if-else env::env op::output-port)
    (write-byte #x04 op)
-   (write-bt i env op)
+   (write-bt (-> i then) env op)
    (write-instruction (-> i then) env op)
    (write-byte #x05 op)
    (write-instruction (-> i else) env op)
