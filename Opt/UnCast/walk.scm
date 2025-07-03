@@ -10,7 +10,7 @@
    (export (uncast! env::env f::func)))
 
 (define (uncast! env::env f::func)
-   #f)
+   (remove-casts! (-> f body) env))
 
 (define-generic (remove-casts! i::instruction env::env)
    #f)

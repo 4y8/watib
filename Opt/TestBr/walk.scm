@@ -25,14 +25,14 @@
            #f)))
 
 (define-method (replace-var! i::sequence x::bint y::bint t)
-   (define (walk-list!::bool l::pair-nil)
+   (define (walk-list!?::bool l::pair-nil)
       (match-case l
          (() #f)
          ((?i . ?tl)
           (if (replace-var! i x y t)
               #t
-              (walk-list! tl)))))
-   (walk-list! (-> i body)))
+              (walk-list!? tl)))))
+   (walk-list!? (-> i body)))
 
 (define-method (replace-var! i::if-then x::bint y::bint t)
    (replace-var! (-> i then) x y t))

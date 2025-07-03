@@ -6,7 +6,8 @@
 (module opt_optimise
    (from (ast_node "Ast/node.scm"))
    (import (opt_testbr "Opt/TestBr/walk.scm")
-           (opt_uncast "Opt/UnCast/walk.scm"))
+           (opt_uncast "Opt/UnCast/walk.scm")
+           (opt_unreachable "Opt/Unreachable/walk.scm"))
    (import (misc_letif "Misc/let-if.scm"))
    (export (opt-file! p::prog nthreads::bint)))
 
@@ -15,9 +16,6 @@
       (do ((i 0 (+fx i 1)))
           ((>=fx i nfunc))
          (let-if (f (vector-ref (-> p funcs) i))
-            (testbr! f)))
-
-      (do ((i 0 (+fx i 1)))
-          ((>=fx i nfunc))
-         (let-if (f (vector-ref (-> p funcs) i))
-            (uncast! (-> p env) f)))))
+            (testbr! f)
+            (uncast! (-> p env) f)
+            (unreachable! f)))))
