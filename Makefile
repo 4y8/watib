@@ -1,4 +1,6 @@
-SRCS = leb128.scm watib.scm Misc/let-if.scm Opt/optimise.scm Val/validate.scm Bin/binary.scm Opt/TestBr/walk.scm Opt/UnCast/walk.scm Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm Misc/parse.scm
+# Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+SRCS = leb128.scm watib.scm Misc/let-if.scm Opt/optimise.scm Val/validate.scm Bin/binary.scm Opt/TestBr/walk.scm Opt/UnCast/walk.scm Opt/Unreachable/walk.scm Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm Misc/parse.scm
 
 OBJS = $(SRCS:.scm=.o)
 

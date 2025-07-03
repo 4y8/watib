@@ -1,6 +1,6 @@
 ;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
 
-;; Validates wasm in text format and translates it to an internal
+;; Validation of wasm in text format and translation to an internal
 ;; representation.
 
 (module val_validate

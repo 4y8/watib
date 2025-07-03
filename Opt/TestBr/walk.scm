@@ -110,6 +110,8 @@
 
 (define (block-gen-else! lget::one-arg var::localidxp rt-src::typep
                          rt-dst::typep i::if-else)
+   (if-test->br! (-> i then))
+   (if-test->br! (-> i else))
    (let ((y (local-add! (-> i parent) rt-dst)))
       (replace-var! (-> i then) (-> var idx) y rt-dst)
       (incr-labels! (-> i else))
@@ -151,6 +153,7 @@
 
 (define (block-gen-no-else! lget::one-arg var::localidxp rt-src::typep
                             rt-dst::typep i::if-then)
+   (if-test->br! (-> i then))
    (let ((y (local-add! (-> i parent) rt-dst)))
       (replace-var! (-> i then) (-> var idx) y rt-dst)
       (with-access::block (-> i then) (body)
@@ -176,16 +179,17 @@
 
 (define-method (if-test->br! i::sequence)
    (define (walk-list! l::pair-nil)
-      (if (and (not (null? l)) (not (null? (cdr l))) (not (null? (cddr l)))
-               (isa-local.get? (car l)) (isa-ref.test? (cadr l))
-               (isa? if-then (caddr l)))
-          (with-access::one-arg (car l) ((var x) (ot outtype))
-             (with-access::one-arg (cadr l) ((rt x))
-                (if (isa? if-else (caddr l))
-                    (block-gen-else! (car l) var (car ot) rt (caddr l))
-                    (block-gen-no-else! (car l) var (car ot) rt (caddr l)))
-                (set-car! l (with-access::if-then (caddr l) (then) then))
-                (set-cdr! l (cdddr l))))
-          (if (not (null? l))
-              (walk-list! (cdr l)))))
+      (match-case l
+        (((and (? isa-local.get?) ?lget)
+          (and (? isa-ref.test?) ?test)
+          (and (? (lambda (i) (isa? if-then i))) ?if-then::if-then). ?tl)
+          (with-access::one-arg lget ((var x) (ot outtype))
+             (with-access::one-arg test ((rt x))
+                (if (isa? if-else if-then)
+                    (block-gen-else! lget var (car ot) rt if-then)
+                    (block-gen-no-else! lget var (car ot) rt if-then))
+                (set-car! l (-> if-then then))
+                (walk-list! tl)
+                (set-cdr! l tl))))
+        ((?- . ?tl) (walk-list! tl))))
    (walk-list! (-> i body)))
