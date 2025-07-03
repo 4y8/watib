@@ -268,7 +268,9 @@
                      (add-type! env id `(rec ,(-fx (-> env ntype) x))) st)
                     ((type ?st)
                      (add-type! env #f `(rec ,(-fx (-> env ntype) x))) st)
-                    (else (raise `(expected-typedef ,l)))) l)))
+                    ((type ?x ?-)
+                     (raise `((expected ident) ,x)))
+                    (?x (raise `(expected-typedef ,x)))) l)))
       (define (valid-st st x)
          (with-default-value env '(sub final (error)) `(at-subtype ,st)
                (match-case st

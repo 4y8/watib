@@ -64,24 +64,25 @@
    (display n out-port))
 
 (define (write-type t op::output-port)
-      (match-case t
-         ((? valtype-symbol?)
-          (write-byte (hashtable-get *valtype-symbols* t) op))
-         ((? type-abbreviation?)
-          (write-type (hashtable-get *type-abbreviations* t) op))
-         ((? number?)
-          (leb128-write-signed t op))
-         ((ref ?t)
-          (write-byte #x64 op)
-          (write-type t op))
-         ((ref null ?t)
-          (write-byte #x63 op)
-          (write-type t op))))
+   (match-case t
+      ((? valtype-symbol?)
+       (write-byte (hashtable-get *valtype-symbols* t) op))
+      ((? type-abbreviation?)
+       (write-type (hashtable-get *type-abbreviations* t) op))
+      ((? number?)
+       (leb128-write-signed t op))
+      ((ref ?t)
+       (write-byte #x64 op)
+       (write-type t op))
+      ((? deftype?) (leb128-write-signed (cadr t) op))
+      ((ref null ?t)
+       (write-byte #x63 op)
+       (write-type t op))))
 
 (define (write-comptype t op::output-port)
    (define (write-fieldtype t op::output-port)
-      (write-byte (bool->number (car t)) op)
-      (write-type (cadr t) op))
+      (write-type (cadr t) op)
+      (write-byte (bool->number (car t)) op))
 
    (match-case t
       ((func ?p ?r)
@@ -315,8 +316,8 @@
    (write-string (-> d data) *data-op*))
 
 (define (write-globaltype t::pair op::output-port)
-   (write-byte (bool->number (car t)) op)
-   (write-type (cadr t) op))
+   (write-type (cadr t) op)
+   (write-byte (bool->number (car t)) op))
 
 (define (write-global g::global env::env)
    (set! *nglobal* (+ 1 *nglobal*))
