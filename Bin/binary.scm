@@ -283,7 +283,6 @@
      (write-string func *code-op*)))
 
 (define (write-deftype t::pair)
-   (print t)
    (when (= 0 (cadddr t))
       (set! *nrec* (+fx 1 *nrec*))
       (write-rectype (caddr t) *type-op*)))
@@ -388,6 +387,14 @@
          (display slen op)
          (display cont op))))
 
+(define (write-datacount n::bint op::output-port)
+   (unless (=fx n 0)
+      (let ((sn (call-with-output-string
+                     (lambda (p) (leb128-write-unsigned n p)))))
+         (write-byte 12 op)
+         (leb128-write-unsigned (string-length sn) op)
+         (display sn op))))
+
 (define (bin-file! pr::prog file::bstring)
    (with-access::env (-> pr env)
                      (nfunc nmem ndata ntag ntype types mem-types tag-types
@@ -435,8 +442,6 @@
             (write-sec 6 *nglobal* *global-op* p)
             (write-sec 7 *nexport* *export-op* p)
             (write-sec 9 *nelem* *elem-op* p)
-            ; datacount
-            (write-byte 12 p)
-            (leb128-write-unsigned ndata p)
+            (write-datacount ndata p)
             (write-sec 10 *ncode* *code-op* p)
             (write-sec 11 ndata *data-op* p)))))
