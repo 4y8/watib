@@ -1,4 +1,7 @@
-;; section 3.4.13
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Constant instructions table. (section 3.4.13 of the spectification)
+
 '((i32.const . #t)
   (i64.const . #t)
   (f32.const . #t)

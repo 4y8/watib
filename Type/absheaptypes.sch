@@ -1,3 +1,7 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Abstract heap types table. (section 2.3.3 of the specification)
+
 '((func . #f)
   (nofunc . #f)
   (extern . #f)

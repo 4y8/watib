@@ -1,9 +1,13 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Type manipulation.
+
 (module type_type
    (import (misc_list "Misc/list.scm")
            (misc_parse "Misc/parse.scm")
            (env_env "Env/env.scm"))
 
-   (include "read-table.sch")
+   (include "Misc/read-table.sch")
 
    (export (numtype?::bool t)
            (vectype?::bool t)
@@ -35,19 +39,19 @@
            (roll* env::env rect::pair x::bint)
            (expand t)))
 
-(read-table *numtypes* "Val/numtypes.sch")
+(read-table *numtypes* "Type/numtypes.sch")
 (define (numtype?::bool t)
    (hashtable-contains? *numtypes* t))
-(read-table *vectypes* "Val/vectypes.sch")
+(read-table *vectypes* "Type/vectypes.sch")
 (define (vectype?::bool t)
    (hashtable-contains? *vectypes* t))
-(read-table *packedtypes* "Val/packedtypes.sch")
+(read-table *packedtypes* "Type/packedtypes.sch")
 (define (packedtype?::bool t)
    (hashtable-contains? *packedtypes* t))
-(read-table *absheaptype* "Val/absheaptypes.sch")
+(read-table *absheaptype* "Type/absheaptypes.sch")
 (define (absheaptype?::bool t)
    (hashtable-contains? *absheaptype* t))
-(read-table *reftypes-abbreviations* "type-abbreviations.sch")
+(read-table *reftypes-abbreviations* "Type/type-abbreviations.sch")
 (define (reftype-abv?::bool t)
    (hashtable-contains? *reftypes-abbreviations* t))
 (define (reftype?::bool t)

@@ -1,40 +1,29 @@
 ;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
 
-;; Translation from the internal representation of wasm to the binary format
-;; (section 5 of WebAssembly's spec)
+;; Translation from the internal representation of wasm to the binary format.
+;; (section 5 of the specification)
 
 (module bin_binary
    (from (ast_node "Ast/node.scm"))
-   (include "read-table.sch")
-   (import leb128
+   (include "Misc/read-table.sch")
+   (import (leb128 "Bin/leb128.scm")
            (misc_letif "Misc/let-if.scm")
            (type_type "Type/type.scm")
            (env_env "Env/env.scm"))
    (export (bin-file! p::prog file::bstring)))
 
-(define-macro (read-opcodes name f)
-   (call-with-input-file f
-      (lambda (p)
-         `(define ,name
-             (let ((h (make-hashtable)))
-                (for-each
-                 (match-lambda
-                   ((?sym . ?cont) (hashtable-put! h sym cont)))
-                 ',(map (lambda (x) (cons (car x) (cddr x))) (cadr (read p))))
-                h)))))
-
 (define (bool->number::bint b::bool)
    (if b 1 0))
 
-(read-table *valtype-symbols* "valtype-symbols.sch")
-(read-table *type-abbreviations* "type-abbreviations.sch")
+(read-table *valtype-symbols* "Bin/valtype-symbols.sch")
+(read-table *type-abbreviations* "Type/type-abbreviations.sch")
 (define (valtype-symbol? s)
    (and (symbol? s) (hashtable-contains? *valtype-symbols* s)))
 
 (define (type-abbreviation? s)
    (and (symbol? s) (hashtable-contains? *type-abbreviations* s)))
 
-(read-opcodes *opcodes* "opcodes.sch")
+(read-table *opcodes* "Bin/opcodes.sch")
 
 (define *code-op* (open-output-string))
 (define *ncode* 0)
@@ -167,25 +156,14 @@
           (write-byte #xFB op)
           (leb128-write-unsigned (if (nullable? type) 23 22) op)
           (write-type (reftype->heaptype type) op)))
-      (array.get
-       (write-byte #xFB op)
-       (leb128-write-unsigned 11 op)
-       (write-param (-> i x) op))
       (else
        (call-next-method)
        (write-param (-> i x) op))))
 
 (define-method (write-instruction i::two-args env::env op::output-port)
-   (match-case (-> i opcode)
-      (struct.get
-       (write-byte #xFB op)
-       (leb128-write-unsigned 2 op)
-       (write-param (-> i x) op)
-       (write-param (-> i y) op))
-      (else
-       (call-next-method)
-       (write-param (-> i x) op)
-       (write-param (-> i y) op))))
+   (call-next-method)
+   (write-param (-> i x) op)
+   (write-param (-> i y) op))
 
 (define-method (write-instruction i::three-args env::env op::output-port)
    (match-case (-> i opcode)

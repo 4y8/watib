@@ -1,3 +1,14 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Validation rules for most instruction (section 3.4 of the specification).
+;;
+;; Instructions are described in the format (opcode (params) type), type should
+;; be a pair of the form ((in*) (out*)) or a procedure. If it is a procedure,
+;; when applied to the environement and the parameters, it should return a pair
+;; of the previous shape. The parameters are described by functions validating
+;; and translating to a member of the parameter class the parameters. Functions
+;; are already provided for most parameters.x
+
 `(
   ;; section 3.4.1
   (i32.const (,i32) (() (i32)))

@@ -1,3 +1,7 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Some complements to srfi-1.
+
 (module misc_list
    (export (every' f . lists)
            (map-seq f . lists)

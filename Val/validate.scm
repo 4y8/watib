@@ -5,7 +5,7 @@
 
 (module val_validate
    (library srfi1 pthread)
-   (include "read-table.sch")
+   (include "Misc/read-table.sch")
    (import (env_env "Env/env.scm")
            (type_type "Type/type.scm")
            (type_match "Type/match.scm")

@@ -1,3 +1,7 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Command line interface gluing all the phases together.
+
 (module watib
    (main main)
    (library pthread srfi1)

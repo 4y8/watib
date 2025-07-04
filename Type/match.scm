@@ -1,3 +1,7 @@
+;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
+
+;; Type matching (section 3.3 of the specification).
+
 (module type_match
    (library srfi1)
    (import (env_env "Env/env.scm")
