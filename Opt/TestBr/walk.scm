@@ -106,7 +106,8 @@
 
    (multiple-value-bind (l n) (append-length (-> f locals) 0)
       (set! (-> f locals) l)
-      n))
+      ; todo - avoid calculating the length each time
+      (+ n (length (-> f formals)))))
 
 (define-generic (block-gen! i::if-then lget::one-arg var::localidxp rt-src
                             rt-dst)
