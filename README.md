@@ -20,6 +20,7 @@ optimise and convert it to binary format. It supports several options:
 + `-k` or `--keep-going` to continue validation after an error has been
   encoutered (won't produce an output file),
 + `-v` or `--validate-only` to stop after validation,
++ `-O0` to disable the optimisations,
 + `-j <n>` to use more than one job.
 ## Overview
 The source code consists of the following directories:
@@ -35,7 +36,7 @@ The source code consists of the following directories:
 + The `Misc` directory contains various routines used by the previous
   directories.
 
-The functions in the first for directories are more or less straightforward
+The functions in the first four directories are more or less straightforward
 transcriptions of the spec. The code is annotated with the positions in the spec
 it implements (the precision of the annotations depends on the subtlety of what
 is being implemented).

@@ -29,6 +29,7 @@
    (define keep-going #f)
    (define output-file "a.out.wasm")
    (define silent #f)
+   (define opt? #t)
    (define validate-only #f)
 
    (define (parse-args args)
@@ -45,6 +46,10 @@
       (set! nthreads (string->number n)))
      ((("--validate-only" "-v") (help "Validate only"))
       (set! validate-only #t))
+     (("-O0" (help "Disable optimisations"))
+      (set! opt? #f))
+     (("-O2" (help "Toggle optimisations (default)"))
+      (set! opt? #t))
      (("-o" ?file (help "Output binary format to FILE"))
       (set! output-file file))
      (else
@@ -63,7 +68,8 @@
         (validate-only
          (exit 0))
         (else
-         (opt-file! p nthreads)
+         (when opt?
+            (opt-file! p nthreads))
          (bin-file! p output-file)))))
 
    (parse-args (cdr argv))

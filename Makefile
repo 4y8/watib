@@ -20,6 +20,6 @@ report.pdf: report/report.tex
 
 clean:
 	latexmk -C report/report.tex
-	rm -f report-blx.bib
+	rm -f report-blx.bib report.bbl
 	rm -f $(OBJS) *.o *.wasm
 	rm -f watib
