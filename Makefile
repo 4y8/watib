@@ -13,7 +13,7 @@ watib: $(OBJS)
 	bigloo $(FLAGS) $(OBJS) -o watib
 
 %.o : %.scm
-	bigloo -c $(FLAGS) $< -o $@
+	bigloo -srfi multijob -c $(FLAGS) $< -o $@
 
 report.pdf: report/report.tex
 	latexmk -pdf report/report.tex
