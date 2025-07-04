@@ -7,7 +7,7 @@
    (library pthread srfi1)
    (import (val_validate "Val/validate.scm")
            (opt_optimise "Opt/optimise.scm")
-           (bin_binary   "Bin/binary.scm")))
+           (asm_binary   "Asm/binary.scm")))
 
 (define (main argv)
    (define input-file #f)

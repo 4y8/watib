@@ -25,7 +25,7 @@ optimise and convert it to binary format. It supports several options:
 + The `Type` directory contains functions to manipulate and compare types.
 + The `Ast` directory contains the internal representation of wasm code
   outputted by the validation and used by the two following directories.
-+ The `Bin` directory contains the translation to the binary format logic.
++ The `Asm` directory contains the translation to the binary format logic.
 + The `Opt` directory contains the optimisation logic. Each subdirectory is an
   optimisation pass and everything is glued together by the `optimise.scm` file.
 + The `Misc` directory contains various routines used by the previous

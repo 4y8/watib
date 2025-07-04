@@ -3,10 +3,10 @@
 ;; Translation from the internal representation of wasm to the binary format.
 ;; (section 5 of the specification)
 
-(module bin_binary
+(module asm_binary
    (from (ast_node "Ast/node.scm"))
    (include "Misc/read-table.sch")
-   (import (leb128 "Bin/leb128.scm")
+   (import (leb128 "Asm/leb128.scm")
            (misc_letif "Misc/let-if.scm")
            (type_type "Type/type.scm")
            (env_env "Env/env.scm"))
@@ -15,7 +15,7 @@
 (define (bool->number::bint b::bool)
    (if b 1 0))
 
-(read-table *valtype-symbols* "Bin/valtype-symbols.sch")
+(read-table *valtype-symbols* "Asm/valtype-symbols.sch")
 (read-table *type-abbreviations* "Type/type-abbreviations.sch")
 (define (valtype-symbol? s)
    (and (symbol? s) (hashtable-contains? *valtype-symbols* s)))
@@ -23,7 +23,7 @@
 (define (type-abbreviation? s)
    (and (symbol? s) (hashtable-contains? *type-abbreviations* s)))
 
-(read-table *opcodes* "Bin/opcodes.sch")
+(read-table *opcodes* "Asm/opcodes.sch")
 
 (define *code-op* (open-output-string))
 (define *ncode* 0)
