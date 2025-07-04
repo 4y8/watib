@@ -17,8 +17,10 @@ optimise and convert it to binary format. It supports several options:
 + `-o <file>` to specify an output file,
 + `-k` or `--keep-going` to continue validation after an error has been
   encoutered (won't produce an output file),
++ `-v` or `--validate-only` to stop after validation,
 + `-j <n>` to use more than one job.
-* Overview
+## Overview
+The source code consists of the following directories:
 + The `Val` directory contains the validation logic. In particular, the
   `instruction-types.sch` file contains the descritption of the type of most
   instructions. It also handles the desuggaring of the text format.
@@ -42,7 +44,9 @@ Watib doesn't support the following features yet (the list may be incomplete):
 + Active data declarations,
 + Elem declarations other than `(elem declare func ...)`,
 + Start declarations,
-+ Type indices in type-uses (i.e. functions have to be declared with `(func (param ...)* (result ...)*...)`,
-+ Offset and alignment in `load8_sx` and `store8`.
++ Omission of the module keyword,
++ Type indices in type-uses (i.e. functions have to be declared with `(param ...)` and `(result ...)`,
++ Offset and alignment in `load8_sx` and `store8`,
++ NaN of the form `nan:...` (only nan is supported).
 If you want to use watib and need one of these, feel free to raise an issue or
 send an email at [aghilas.boussaa@normalesup.org](mailto:aghilas.boussaa@normalesup.org).

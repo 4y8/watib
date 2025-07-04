@@ -918,10 +918,10 @@
    (define (rep msg obj)
      (with-handler error-notify
         (when (epair? obj)
-           (error/location "val" msg "" (cadr (cer obj)) (caddr (cer obj))))))
+           (error/location "watib" msg "" (cadr (cer obj)) (caddr (cer obj))))))
    (define (rep/pos msg pos)
      (with-handler error-notify
-        (error/location "val" msg "" (cadr pos) (caddr pos))))
+        (error/location "watib" msg "" (cadr pos) (caddr pos))))
 
    (match-case e
       ((in-module ?m ?e)
