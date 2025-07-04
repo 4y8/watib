@@ -4,6 +4,7 @@
 
 (module opt_testbr
    (from (ast_node "Ast/node.scm"))
+   (import (type_type "Type/type.scm"))
    (export (testbr! f::func)))
 
 (define (testbr! f::func)
@@ -16,7 +17,7 @@
    (if (and (eq? 'local.get (-> i opcode)))
        (with-access::localidxp (-> i x) (idx)
           (when (=fx idx x)
-             (set! (-> i outtype) t)
+             (set! (-> i outtype) (list t))
              (set! idx y)))
        (if (eq? 'local.set (-> i opcode))
            (with-access::localidxp (-> i x) (idx)
@@ -96,7 +97,7 @@
 (define (isa-local.get? i::instruction)
    (eq? (-> i opcode) 'local.get))
 
-(define (local-add! f::func t::typep)
+(define (local-add! f::func t)
    (define (append-length l::pair-nil i::bint)
       (if (null? l)
           (values (list t) i)
@@ -107,8 +108,8 @@
       (set! (-> f locals) l)
       n))
 
-(define-generic (block-gen! i::if-then lget::one-arg var::localidxp
-                            rt-src::typep rt-dst::typep )
+(define-generic (block-gen! i::if-then lget::one-arg var::localidxp rt-src
+                            rt-dst)
    (if-test->br! (-> i then))
    (let ((y (local-add! (-> i parent) rt-dst)))
       (replace-var! (-> i then) (-> var idx) y rt-dst)
@@ -132,25 +133,25 @@
                                               (type rt-dst))))
                  ,@body)))))
 
-(define-method (block-gen! i::if-else lget::one-arg var::localidxp
-                           rt-src::typep rt-dst::typep )
+(define-method (block-gen! i::if-else lget::one-arg var::localidxp rt-src
+                           rt-dst)
    (if-test->br! (-> i then))
    (if-test->br! (-> i else))
    (let ((y (local-add! (-> i parent) rt-dst)))
       (replace-var! (-> i then) (-> var idx) y rt-dst)
       (incr-labels! (-> i else))
-      (with-access::sequence (-> i then) (body (ot outtype) (it intype))
+      (with-access::sequence (-> i then) (body (ot outtype))
          (set! body
                `(,(instantiate::block
-                   (intype it)
-                   (outtype ot)
+                   (intype '())
+                   (outtype (list rt-dst))
                    (parent (-> i parent))
                    (opcode 'block)
                    (body
                     `(,lget
                       ,(instantiate::three-args
-                        (intype '())
-                        (outtype (list rt-dst))
+                        (intype (list rt-src))
+                        (outtype (list (rt-diff rt-src rt-dst)))
                         (parent (-> i parent))
                         (opcode 'br_on_cast)
                         (x (instantiate::labelidxp (idx 0)
@@ -180,13 +181,16 @@
       (match-case l
         (((and (? isa-local.get?) ?lget)
           (and (? isa-ref.test?) ?test)
-          (and (? (lambda (i) (isa? if-then i))) ?if-then::if-then). ?tl)
-          (with-access::one-arg lget ((var x) (ot outtype))
-             (with-access::one-arg test ((rt x))
-                (block-gen! if-then lget var (car ot) rt)
-                (set-car! l (-> if-then then))
-                (walk-list! tl)
-                (set-cdr! l tl))))
-        ((?- . ?tl) (walk-list! tl))))
+          (and (? (lambda (i) (isa? i if-then))) ?i::if-then). ?tl)
+         (with-access::one-arg lget ((var x) (ot outtype))
+            (with-access::one-arg test ((rt x))
+               (block-gen! i lget var (car ot)
+                           (with-access::typep rt (type) type))
+               (set-car! l (duplicate::block (-> i then)))
+               (walk-list! tl)
+               (set-cdr! l tl))))
+        ((?hd . ?tl)
+         (if-test->br! hd)
+         (walk-list! tl))))
 
    (walk-list! (-> i body)))

@@ -54,7 +54,8 @@
       (let ((p (with-handler
           (lambda (e)
              (when (isa? e &watlib-validate-error)
-               (exit 1)))
+                (exit 1))
+             (raise e))
           (valid-file m nthreads keep-going silent))))
      (cond
         ((not p)

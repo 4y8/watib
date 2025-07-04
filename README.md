@@ -4,6 +4,8 @@ aims at being user friendly and fast. We currently support a big part of the
 current draft of the version 3 of the standard. See [here](#missing) for more
 details on what is currently missing.
 
+It is used by the Bigloo scheme compiler for its wasm backend.
+
 ## Building
 To build watib, a working [bigloo](https://www-sop.inria.fr/indes/fp/Bigloo/)
 distribution is required. You can, then, build it with:
@@ -32,6 +34,7 @@ The source code consists of the following directories:
   optimisation pass and everything is glued together by the `optimise.scm` file.
 + The `Misc` directory contains various routines used by the previous
   directories.
+
 The functions in the first for directories are more or less straightforward
 transcriptions of the spec. The code is annotated with the positions in the spec
 it implements (the precision of the annotations depends on the subtlety of what
@@ -48,5 +51,10 @@ Watib doesn't support the following features yet (the list may be incomplete):
 + Type indices in type-uses (i.e. functions have to be declared with `(param ...)` and `(result ...)`,
 + Offset and alignment in `load8_sx` and `store8`,
 + NaN of the form `nan:...` (only nan is supported).
+
 If you want to use watib and need one of these, feel free to raise an issue or
 send an email at [aghilas.boussaa@normalesup.org](mailto:aghilas.boussaa@normalesup.org).
+
+## Acknowledgment
+Thanks to Manuel Serrano who wrote the Bigloo compiler, became the first user
+and provided help, feedbacks and the internship which led to watib.
