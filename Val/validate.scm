@@ -16,7 +16,7 @@
            (ast_node "Ast/node.scm"))
 
    (export (class &watlib-validate-error::&error)
-	   (valid-file f::pair-nil nthreads::bint keep-going::obj silent::bool)))
+       (valid-file f::pair-nil nthreads::bint keep-going::obj silent::bool)))
 
 ;;; we force everywhere the number of type indices after sub final? to be one;
 ;;; even though forms with more than one type are syntactically correct, they
@@ -353,12 +353,12 @@
    (match-case (expand (-> x type))
       ((struct . ?fldts) fldts)
       (?t
-       (raise `(expected-struct ,x ,t)))))
+       (raise `((expected struct) ,x ,t)))))
 
 (define (get-array-ft x::typeidxp)
    (match-case (expand (-> x type))
       ((array ?ft) ft)
-      (?t (raise `(expected-array ,x ,t)))))
+      (?t (raise `((expected array) ,x ,t)))))
 
 (define (label-get-last-rest l::labelidxp)
    (let ((t'* (-> l type)))
@@ -624,7 +624,12 @@
 ;; returns the desuggared instructions and the new stack state
 (define (valid-instrs env::env l::pair-nil st::pair-nil)
    (define (valid-instr i::pair st::pair-nil)
-      (with-default-value env (values '((error)) '(poly)) `(at-instruction ,i)
+      (with-default-value env (values (list (instantiate::instruction
+                                             (opcode 'error)
+                                             (intype '())
+                                             (outtype '(poly))
+                                             (parent (-> env parent))))
+                                      '(poly)) `(at-instruction ,i)
             (if (adhoc-instr? (car i))
                 (adhoc-instr env i st)
                 (multiple-value-bind (t i tl) (typeof-instr/instr/tl env i st)
@@ -885,7 +890,7 @@
                                  `(at-pos ,(with-access::func f (pos) pos) ,e)))
                   (valid-function env f (+fx (*fx a i) b)))
                (unless (null? (-> env error-list))
-                  (format-exn env `(at-pos ,(with-access::func f (pos) pos) ""))
+                  ;(format-exn env `(at-pos ,(with-access::func f (pos) pos) ""))
                   (for-each (lambda (e) (format-exn env e))
                             (-> env error-list))
                   (set! (-> env error-list) '())))))))
@@ -902,14 +907,55 @@
                                       ,(with-access::global g (pos) pos) ,e)))
                   (valid-global env g i))
                (unless (null? (-> env error-list))
-                  (format-exn env `(at-pos ,(with-access::global g (pos) pos)
-                                    ""))
+                  ;(format-exn env `(at-pos ,(with-access::global g (pos) pos)
+                  ;                  ""))
                   (for-each (lambda (e) (format-exn env e))
                             (-> env error-list))
                   (set! (-> env error-list) '())))))))
 
 (define (valid-exports env::env)
    (map! (lambda (d) (valid-exportdesc env d)) *exports*))
+
+(define (sprintf s . args)
+   (call-with-output-string
+      (lambda (p) (apply fprintf p s args))))
+
+(define (sdisplay o)
+   (call-with-output-string
+      (lambda (p) (display o p))))
+
+(define (error->string env::env e)
+   (define (type->string::bstring t)
+      (cond ((deftype? t) (sdisplay (type-get-name env (cadr t))))
+            ((number? t) (sdisplay (type-get-name env t)))
+            ((reftype? t)
+             (string-append "ref " (if (nullable? t) "null " "")
+                            (type->string (reftype->heaptype t))))
+            (else (sdisplay t))))
+
+   (match-case e
+      ((undeclared-funcref ?x)
+       (sprintf "undeclared function reference: ~a" (idx-get-name x env)))
+
+      ((got-packed ?x ?y ?t)
+       (sprintf "used struct.get on type ~a on field ~a while it has a packed type (~a)"
+                (idx-get-name x env) (fieldidx-get-name env x y) t))
+
+      ((got-packed ?x ?t)
+       (sprintf "used array.get on type ~a while its elements have a packed type (~a)"
+                (idx-get-name x env) t))
+
+      ((non-matching-stack ?t1 ?t2)
+       (sprintf "non matching types on stack: expected ~a got ~a"
+                (type->string t2) (type->string t1)))
+
+      ((no-return-value-stack ?t)
+       (sprintf "function expected ~a on stack but got nothing" (type->string (car t))))
+
+      ((empty-stack ?t)
+       (sprintf "expected ~a on stack but got nothing" (type->string (car t))))
+
+      (else (sdisplay e))))
 
 (define (format-exn env::env e)
    (if (isa? e &error)
@@ -918,57 +964,27 @@
    (define (rep msg obj)
      (with-handler error-notify
         (when (epair? obj)
-           (error/location "watib" msg "" (cadr (cer obj)) (caddr (cer obj))))))
+           (error/location "watib" "" msg (cadr (cer obj)) (caddr (cer obj))))))
    (define (rep/pos msg pos)
      (with-handler error-notify
-        (error/location "watib" msg "" (cadr pos) (caddr pos))))
+        (error/location "watib" "" msg (cadr pos) (caddr pos))))
 
    (match-case e
       ((in-module ?m ?e)
        (unless silent (rep "in module" m))
        (format-exn env e))
+      ((at-pos ?i (at-instruction . ?-))
+       (format-exn env (caddr e)))
       ((at-pos ?p ?e)
-       (unless silent (rep/pos "at position" p))
-       (format-exn env e))
+       (if silent
+           (fprint (current-error-port) (error->string env e))
+           (rep/pos (error->string env e) p)))
+      ((at-instruction ?i (at-instruction . ?-))
+       (format-exn env (caddr e)))
       ((at-instruction ?i ?e)
-       (unless silent (rep "at instruction" i))
-       (format-exn env e))
-      ("" #f)
-      ((undeclared-funcref ?x)
-       (display "***ERROR: undeclared function reference -- "
-                (current-error-port))
-       (with-access::funcidxp x (idx)
-          (display (if (vector-ref (-> env func-names) idx)
-                       (vector-ref (-> env func-names) idx)
-                       idx) (current-error-port)))
-       (newline (current-error-port)))
-
-      ((got-packed ?x ?t)
-       (fprintf (current-error-port)
-                "***ERROR: used array.get on type ~a while its elements have a packed type (~a)\n"
-                (typeidx-get-name env x) t))
-
-      ((got-packed ?x ?y ?t)
-       (fprintf (current-error-port)
-                "***ERROR: used struct.get on type ~a on field ~a while it has a packed type (~a)\n"
-                (typeidx-get-name env x) (fieldidx-get-name env x y) t))
-
-      ((non-matching-stack ?t1 ?t2)
-       (define (display-type t p)
-          (cond ((deftype? t) (display (type-get-name env (cadr t)) p))
-                ((number? t) (display (type-get-name env t) p))
-                ((reftype? t)
-                 (display "ref " p)
-                 (when (nullable? t)
-                    (display "null " p))
-                 (display-type (reftype->heaptype t) p))
-                (else (display t p))))
-       (display "***ERROR: non matching types on stack -- expected "
-                (current-error-port))
-       (display-type t2 (current-error-port))
-       (display " got " (current-error-port))
-       (display-type t1 (current-error-port))
-       (newline (current-error-port)))
+       (if silent
+           (fprint (current-error-port) (error->string env e))
+           (rep (error->string env e) i)))
 
       (else
        (when (number? keep-going)
@@ -980,14 +996,14 @@
        (newline (current-error-port))))
    (unless keep-going
       (raise
-	 (instantiate::&watlib-validate-error
-	    (proc "watlib-validate")
-	    (msg "validation error")
-	    (obj e)))))
+     (instantiate::&watlib-validate-error
+        (proc "watlib-validate")
+        (msg "validation error")
+        (obj e)))))
 
 (cond-expand
    ((and multijob (library pthread))
-;;;    
+;;;
 (define (multijob env::env)
    (define (dupenv)
       (duplicate::env env (label-types (make-vector 10000))))
@@ -1045,19 +1061,19 @@
          ((or (module (? ident?) . ?mfs) (module . ?mfs))
           (let* ((type-mfs (map (mf-pass/handle-error type-pass-mf) mfs)))
              (for-each (mf-pass/handle-error env-pass-mf) type-mfs)
-	     (cond-expand
-		((and multijob (library pthread))
-		 (if (= nthreads 1)
-		     (singlejob env)
-		     (multijob env)))
-		(else
-		 (singlejob env))))))
+         (cond-expand
+        ((and multijob (library pthread))
+         (if (= nthreads 1)
+             (singlejob env)
+             (multijob env)))
+        (else
+         (singlejob env))))))
       (unless error-encountered?
-	 (instantiate::prog
-	    (exports *exports*)
-	    (env env)
-	    (data *data*)
-	    (funcs *funcs*)
-	    (funcrefs *declared-funcrefs*)
-	    (imports *imports*)
-	    (globals *globals*)))))
+     (instantiate::prog
+        (exports *exports*)
+        (env env)
+        (data *data*)
+        (funcs *funcs*)
+        (funcrefs *declared-funcrefs*)
+        (imports *imports*)
+        (globals *globals*)))))

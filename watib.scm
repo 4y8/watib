@@ -10,6 +10,8 @@
            (opt_optimise "Opt/optimise.scm")
            (asm_binary   "Asm/binary.scm")))
 
+;; the following is a hack as indices taken as number are not replaced with
+;; their new index
 (define (merge-files l)
    (define (get-mfs f)
       (call-with-input-file f
@@ -19,7 +21,7 @@
                (?m (error/location "watib" "expected module" m
                                    (cadr (cer m)) (caddr (cer m))))))))
 
-   (apply append (map get-mfs l)))
+   (append-map get-mfs l))
 
 (define (main argv)
    (define input-files '())
@@ -52,7 +54,7 @@
       (let ((p (with-handler
           (lambda (e)
              (when (isa? e &watlib-validate-error)
-            (exit 1)))
+               (exit 1)))
           (valid-file m nthreads keep-going silent))))
      (cond
         ((not p)

@@ -8,14 +8,14 @@
 
            (type-get-index::bint env::env x)
            (type-get env::env x)
-           (type-get-name env::env x)
-           (typeidx-get-name env::env x::typeidxp)
+           (type-get-name env::env x::bint)
            (add-type! env::env nm t)
            (set-type! env::env id t)
            (typeidx::typeidxp env::env x)
 
            (func-get-index::bint env::env x)
            (func-get-type env::env x::bint)
+           (func-get-name env::env x::bint)
            (func-add! env::env t)
            (func-add-name! env::env id::symbol)
            (funcidx::funcidxp env::env x)
@@ -55,7 +55,9 @@
            (label-get-type env::env x::bint)
            (push-label! env::env nm t::pair-nil)
            (pop-label! env::env)
-           (labelidx::labelidxp env::env x)))
+           (labelidx::labelidxp env::env x)
+
+           (generic idx-get-name x::idxp env::env)))
 
 (define (get-index::bint table range::bint x ex-oor ex-unkwn ex-exp)
    (cond ((number? x)
@@ -80,12 +82,18 @@
 (define (type-get env::env x)
    (vector-ref (-> env types) (type-get-index env x)))
 
-(define (type-get-name env::env x)
-   (let ((nm (vector-ref (-> env type-names) (type-get-index env x))))
+(define (type-get-name env::env x::bint)
+   (let ((nm (vector-ref (-> env type-names) x)))
       (if nm nm x)))
 
-(define (typeidx-get-name env::env x::typeidxp)
+(define-generic (idx-get-name x::idxp env::env)
+   "")
+
+(define-method (idx-get-name x::typeidxp env::env)
    (type-get-name env (-> x idx)))
+
+(define-method (idx-get-name x::funcidxp env::env)
+   (func-get-name env (-> x idx)))
 
 (define (add-type! env::env nm t)
    (let ((x (-> env ntype)))
@@ -119,7 +127,11 @@
           (hashtable-put! (-> env ,(symbol-append x '-table)) id
                           (-> env ,(symbol-append 'n x)))
           (vector-set! (-> env ,(symbol-append x '-names))
-                       (-> env ,(symbol-append 'n x)) id))))
+                       (-> env ,(symbol-append 'n x)) id))
+
+       (define (,(symbol-append x '-get-name) env::env x::bint)
+          (let ((nm (vector-ref (-> env ,(symbol-append x '-names)) x)))
+             (if nm nm x)))))
 
 (table-boilerplate func)
 (table-boilerplate global)
