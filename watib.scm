@@ -15,29 +15,44 @@
    (define keep-going #f)
    (define output-file "a.out.wasm")
    (define silent #f)
+   (define validate-only #f)
 
-   (args-parse (cdr argv)
-      ((("--help" "-h") (help "Display this help message"))
-       (args-parse-usage #f))
-      ((("--keep-going" "-k") (help "Continue when encountering an error"))
-       (set! keep-going #t))
-      (("--stop-after" ?n (help "Stop after encountering N errors"))
-       (set! keep-going (string->number n)))
-      (("-s" (help "Display less verbose error messages"))
-       (set! silent #t))
-      (("-j" ?n (help "Use multiple threads"))
-       (set! nthreads (string->number n)))
-      (("-o" ?file (help "Output binary format to FILE"))
-       (set! output-file file))
-      (else
-       (set! input-file else)))
+   (define (parse-args args)
+      (args-parse (cdr argv)
+	 ((("--help" "-h") (help "Display this help message"))
+	  (args-parse-usage #f))
+	 ((("--keep-going" "-k") (help "Continue when encountering an error"))
+	  (set! keep-going #t))
+	 (("--stop-after" ?n (help "Stop after encountering N errors"))
+	  (set! keep-going (string->number n)))
+	 (("-s" (help "Display less verbose error messages"))
+	  (set! silent #t))
+	 (("-j" ?n (help "Use multiple threads"))
+	  (set! nthreads (string->number n)))
+	 ((("--validate-only" "-v") (help "Validate only"))
+	  (set! validate-only #t))
+	 (("-o" ?file (help "Output binary format to FILE"))
+	  (set! output-file file))
+	 (else
+	  (set! input-file else))))
+   
+   (define (watib ip)
+      (let ((p (with-handler
+		  (lambda (e)
+		     (when (isa? e &watlib-validate-error)
+			(exit 1)))
+		  (valid-file (read ip #t) nthreads keep-going silent))))
+	 (cond
+	    ((not p)
+	     (exit 1))
+	    (validate-only
+	     (exit 0))
+	    (else
+	     (opt-file! p nthreads)
+	     (bin-file! p output-file)))))
+
+   (parse-args (cdr argv))
 
    (if input-file
-       (call-with-input-file input-file
-          (lambda (ip)
-             (let ((p (valid-file (read ip #t) nthreads keep-going silent)))
-                (if p
-                    (begin
-                       (opt-file! p nthreads)
-                       (bin-file! p output-file))
-                    (exit 1)))))))
+       (call-with-input-file input-file watib)
+       (watib (current-input-port))))

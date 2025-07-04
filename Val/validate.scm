@@ -4,7 +4,9 @@
 ;; representation.
 
 (module val_validate
-   (library srfi1 pthread)
+   (library srfi1)
+   (cond-expand
+      ((and multijob (library pthread)) (library pthread)))
    (include "Misc/read-table.sch")
    (import (env_env "Env/env.scm")
            (type_type "Type/type.scm")
@@ -13,8 +15,8 @@
            (misc_parse "Misc/parse.scm")
            (ast_node "Ast/node.scm"))
 
-   (export (valid-file f::pair-nil nthreads::bint keep-going::obj
-                       silent::bool)))
+   (export (class &watlib-validate-error::&error)
+	   (valid-file f::pair-nil nthreads::bint keep-going::obj silent::bool)))
 
 ;;; we force everywhere the number of type indices after sub final? to be one;
 ;;; even though forms with more than one type are syntactically correct, they
@@ -977,8 +979,15 @@
        (display e (current-error-port))
        (newline (current-error-port))))
    (unless keep-going
-        (exit 1)))
+      (raise
+	 (instantiate::&watlib-validate-error
+	    (proc "watlib-validate")
+	    (msg "validation error")
+	    (obj e)))))
 
+(cond-expand
+   ((and multijob (library pthread))
+;;;    
 (define (multijob env::env)
    (define (dupenv)
       (duplicate::env env (label-types (make-vector 10000))))
@@ -1006,7 +1015,15 @@
                       (valid-exports (dupenv))
                       (valid-functions (dupenv) nthreads (+fx 2 i)))))))))))
      (map thread-start-joinable! ts)
-     (map thread-join! ts)))
+     (map thread-join! ts)))))
+
+(define (singlejob env::env)
+   ; todo add position for funcref checking
+   (map! (lambda (x) (func-get-index env x))
+      *declared-funcrefs*)
+   (valid-globals env)
+   (valid-exports env)
+   (valid-functions env 1 0))
 
 (define (valid-file f::pair-nil nt::bint kg::obj s::bool)
    (set! nthreads nt)
@@ -1028,22 +1045,19 @@
          ((or (module (? ident?) . ?mfs) (module . ?mfs))
           (let* ((type-mfs (map (mf-pass/handle-error type-pass-mf) mfs)))
              (for-each (mf-pass/handle-error env-pass-mf) type-mfs)
-             (if (= nthreads 1)
-                 (begin
-                    ; todo add position for funcref checking
-                    (map! (lambda (x) (func-get-index env x))
-                          *declared-funcrefs*)
-                    (valid-globals env)
-                    (valid-exports env)
-                    (valid-functions env 1 0))
-                 (multijob env)))))
-      (if error-encountered?
-          #f
-          (instantiate::prog
-           (exports *exports*)
-           (env env)
-           (data *data*)
-           (funcs *funcs*)
-           (funcrefs *declared-funcrefs*)
-           (imports *imports*)
-           (globals *globals*)))))
+	     (cond-expand
+		((and multijob (library pthread))
+		 (if (= nthreads 1)
+		     (singlejob env)
+		     (multijob env)))
+		(else
+		 (singlejob env))))))
+      (unless error-encountered?
+	 (instantiate::prog
+	    (exports *exports*)
+	    (env env)
+	    (data *data*)
+	    (funcs *funcs*)
+	    (funcrefs *declared-funcrefs*)
+	    (imports *imports*)
+	    (globals *globals*)))))
