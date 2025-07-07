@@ -54,10 +54,20 @@
               funcrefs::pair-nil
               imports::pair-nil)
 
+           (abstract-class source
+              position::bint)
+
+           (class from-stack::source)
+
+           (class from-instr::source
+              i::instruction)
+
            (class instruction::object
               intype::pair-nil
               outtype::pair-nil
               parent::modulefield
+              ; default will have to be removed
+              (sources::pair-nil (default '()))
               opcode::symbol)
 
            (abstract-class parameter)

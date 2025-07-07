@@ -1,7 +1,7 @@
-\documentclass[10pt]{article}
+\documentclass[11pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage{minted}
+\usepackage{bigfoot}
 \usepackage[english]{babel}
 \usepackage[a4paper, left=1.2in, right=1.2in]{geometry}
 
@@ -68,24 +68,28 @@ Bigloo~\cite{Bigloo}).
 \caption{Examples of WebAssembly in textual format}
 \end{figure}
 
-We present the characteristics of WebAssembly that influenced the design of
-watib.
+We review some of the characteristics of WebAssembly that influenced the design
+of watib.
 
-\subsubsection{Strong statical typing}
+\begin{description}
+\item[Strong statical typing]
 WebAssembly is strongly and statically typed. Watib thus performs a phase of
 type-checking (called validation in WebAssembly language). Typing information
 appears in the binary format (on blocks for instance). Watib preserves it during
-all of its phases. In particular, all optimisations are type preserving and the
-code the introduce is well typed.
-\subsubsection{Structured control flow}
+all of its phases. In particular, all optimisations are type preserving and they
+code the introduce is well-typed and annotated.
+
+\item[Structured control flow]
 All control flow in WebAssembly is structured: the language forbids arbitrary
 jumps. Branching can only go to a parent block (at the beginning or at the end
 depending on the block's nature, see figure~\ref{cf-ex}).
-\subsubsection{Typed labels}
+
+\item[Typed labels]
 Combining the two previous points implie that all labels are typed. Blocks take
 values on the stack as input and leave values on the stack as outputs. The types
 of the branching instructions ensure that blocks get the expected values on the
 stack.
+\end{description}
 \begin{figure}[h]
 \centering
 \begin{tabular}{c c c}
@@ -125,7 +129,32 @@ stack.
 \end{tabular}
 \caption{Examples of WebAssembly control flow}\label{cf-ex}
 \end{figure}
+\subsection{Watib}
+Watib handles type checking, optimisation and assembly of Wasm programs given in
+textual format\footnote{binary format support as input is planned}. We review
+some differences between watib and already existing toolchains (apart from its
+lack of features and overall maturity).
+\begin{description}
+\item[Fault tolerance] For the sake of user-friendliness, watib can recover from
+  most validation errors (and some syntax errors). It avoids having to correct
+  errors one by one which can be tedious for big files.
+\item[Linear IR] The other toolchain aiming at providing sophisticated
+  optimisations, binaryen, has a tree like IR, in part, for historical
+  reasons~\cite{BinaryenIR}. When the development of binaryen started, Wasm
+  wasn't stack based and features such as multiple return values or block
+  parameters weren't adopted. They remain second class citizens in
+  binaryen\footnote{for instance, the following piece of code is assembled to a
+  code using local variables to avoid having a block parameter:
+\begin{verbatim}(i32.const 0)
+(block (param i32)
+  (i32.const 0) (i32.add) (drop))
+\end{verbatim}
+}. Watib's IR is closer to modern Wasm. See~\ref{ir} for more details. We hope
+  that will enable different optimisations.
+\end{description}
 \section{Validation}
 \section{Optimisation}
+\subsection{The Intermediate Representation}\label{ir}
+\subsection{Optimisations}
 \printbibliography
 \end{document}
