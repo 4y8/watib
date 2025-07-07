@@ -34,7 +34,7 @@
 
    (define (parse-args args)
       (args-parse (cdr argv)
-     ((("--help" "-h") (help "Display this help message"))
+     ((("--help" "-h") (help "Display this help message and quit"))
       (args-parse-usage #f))
      ((("--keep-going" "-k") (help "Continue when encountering an error"))
       (set! keep-going #t))
@@ -48,7 +48,7 @@
       (set! validate-only #t))
      (("-O0" (help "Disable optimisations"))
       (set! opt? #f))
-     (("-O2" (help "Toggle optimisations (default)"))
+     (("-O1" (help "Toggle optimisations (default)"))
       (set! opt? #t))
      (("-o" ?file (help "Output binary format to FILE"))
       (set! output-file file))

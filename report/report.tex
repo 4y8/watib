@@ -1,6 +1,7 @@
-\documentclass[11pt]{article}
+\documentclass[10pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{minted}
 \usepackage[english]{babel}
 \usepackage[a4paper, left=1.2in, right=1.2in]{geometry}
 
@@ -12,12 +13,48 @@
 \begin{document}
 \maketitle
 \begin{abstract}
+  We describe watib: a WebAssembly Toolchain written In Bigloo. It has
+  been integrated in the Bigloo Scheme compiler and is available as a standalone
+  tool. It currently handles, parsing, validation (type checking), optimisation
+  and assembly of files in WebAssembly Text format.
 \end{abstract}
 
 \section{WebAssembly}
-WebAssembly~\cite{haas2017bringing}.
+WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
+stack-based virtual machine. Its standard~\cite{WebAssemblyCoreSpecification3}
+typing rules (validation), semantics, an abstract syntax and two concrete
+syntaxes (formats) for the language. The binary format represents WebAssembly
+modules as a sequence of bytes. It is taken as input by Wasm virtual machines
+such as V8~\cite{V8} or SpiderMonkey~\cite{SpiderMonkey} and manipulated by
+toolchains such as binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools}. The
+textual format represents WebAssembly modules as S-expressions. It is taken as
+input by toolchains or written by humans (and compilers such as Bigloo~\cite{Bigloo}).
+\begin{figure}[h]
+\centering
+\begin{tabular}{c c c}
+\begin{minipage}{2in}
+\begin{verbatim}
+(func $add
+  (param $x i32)
+  (param $y i32)
+  (result i32)
+  (i32.add (local.get $x) (local.get $y)))
+\end{verbatim}
+\end{minipage}&
+\begin{minipage}{2in}
+\begin{verbatim}
+  (func $a)
+\end{verbatim}
+\end{minipage}
+&\begin{minipage}{2in}
+\begin{verbatim}
+  (func $a)
+\end{verbatim}
+\end{minipage}
+\end{tabular}
+\caption{Examples of WebAssembly in textual format}
+\end{figure}
 \section{Validation}
 \section{Optimisation}
-\section{References}
 \printbibliography
 \end{document}

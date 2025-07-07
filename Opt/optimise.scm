@@ -8,7 +8,8 @@
    (import (opt_testbr "Opt/TestBr/walk.scm")
            (opt_uncast "Opt/UnCast/walk.scm")
            (opt_unreachable "Opt/Unreachable/walk.scm")
-           (opt_const "Opt/Const/walk.scm"))
+           (opt_const "Opt/Const/walk.scm")
+           (opt_puredrop "Opt/PureDrop/walk.scm"))
    (import (misc_letif "Misc/let-if.scm"))
    (export (opt-file! p::prog nthreads::bint)))
 
@@ -20,4 +21,5 @@
             (testbr! f)
             (uncast! (-> p env) f)
             (unreachable! f)
-            (const! f)))))
+            (const! f)
+            (puredrop! f)))))

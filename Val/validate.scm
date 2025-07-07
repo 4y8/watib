@@ -264,7 +264,7 @@
 ;; section 6.4.9
 (define (clean-mod-rectype! env::env l x::bint)
    ; the `(rec ...) in the environment assures rolling
-   (let ((sts (map-seq
+   (let ((sts (map-in-order
                  (match-lambda
                     ((type (and (? ident?) ?id) ?st)
                      (add-type! env id `(rec ,(-fx (-> env ntype) x)
