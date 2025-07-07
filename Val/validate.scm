@@ -1037,7 +1037,6 @@
                   (instantiate::pthread
                    (body
                     (lambda ()
-                      (valid-exports (dupenv))
                       (valid-functions (dupenv) nthreads (+fx 2 i)))))))))))
      (map thread-start-joinable! ts)
      (map thread-join! ts)))))
