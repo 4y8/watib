@@ -5,6 +5,11 @@
 ;; The detection of side effects is coarse. For instance, jumps are considered
 ;; to be side effects. However in a block of label $l, jumping to $l should not
 ;; cause the block to be marked as having a side-effect.
+;;
+;; This optimisation is kind of hacky because the code is in linear structure,
+;; having it in a tree like shape would simplify it
+
+
 
 (module opt_puredrop
    (library srfi1)
@@ -54,16 +59,18 @@
        ((=fx 0 n) l)
        ((null? l) (drops n))
        (else
-        (with-access::instruction (car l) (outtype)
+        (with-access::instruction (car l) (outtype intype)
            (let ((b (side-effect!? (car l))))
               (set! side-effect? (or b side-effect?))
-              (if (length>=? outtype (+fx n 1))
-                  (append (drops n) l)
-                  (let ((m (length outtype)))
-                     (if (=fx 0 m)
-                         (append (car l) (remove-pures (cdr l) n))
-                         (append (if b (append (drops m) (list (car l))) '())
-                                 (remove-pures (cdr l) (-fx n m)))))))))))
+              (let ((on (length outtype))
+                    (in (length intype)))
+                 (cond
+                  ((=fx in 0)
+                   (append (if b (append (drops on) (list (car l))) '())
+                           (remove-pures (cdr l) (-fx n on))))
+                  ((and (=fx in 1) (not b))
+                   (remove-pures (cdr l) (-fx (+fx n 1) on)))
+                  (else (append (drops n) l)))))))))
 
    (define (walk-zipper::pair-nil left::pair-nil right::pair-nil)
       (if (null? right)

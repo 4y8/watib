@@ -19,7 +19,8 @@
   and assembly of files in WebAssembly Text format.
 \end{abstract}
 
-\section{WebAssembly}
+\section{Introduction}
+\subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. Its standard~\cite{WebAssemblyCoreSpecification3}
 typing rules (validation), semantics, an abstract syntax and two concrete
@@ -28,31 +29,101 @@ modules as a sequence of bytes. It is taken as input by Wasm virtual machines
 such as V8~\cite{V8} or SpiderMonkey~\cite{SpiderMonkey} and manipulated by
 toolchains such as binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools}. The
 textual format represents WebAssembly modules as S-expressions. It is taken as
-input by toolchains or written by humans (and compilers such as Bigloo~\cite{Bigloo}).
+input by toolchains or written by humans (and compilers such as
+Bigloo~\cite{Bigloo}).
 \begin{figure}[h]
 \centering
 \begin{tabular}{c c c}
-\begin{minipage}{2in}
+\begin{minipage}{1.8in}
 \begin{verbatim}
 (func $add
   (param $x i32)
   (param $y i32)
   (result i32)
-  (i32.add (local.get $x) (local.get $y)))
+  (i32.add (local.get $x)
+           (local.get $y)))
 \end{verbatim}
 \end{minipage}&
-\begin{minipage}{2in}
+\begin{minipage}{1.6in}
 \begin{verbatim}
-  (func $a)
+(type $pair
+  (struct
+    (field $car
+      (mut (ref eq)))
+    (field $cdr
+      (mut (ref eq)))))
 \end{verbatim}
 \end{minipage}
-&\begin{minipage}{2in}
+&\begin{minipage}{1.8in}
 \begin{verbatim}
-  (func $a)
+(func $get-car
+  (param $x (ref eq))
+  (result (ref eq))
+  (struct.get $pair $car
+    (ref.cast (ref $pair)
+      (local.get $x))))
 \end{verbatim}
 \end{minipage}
 \end{tabular}
 \caption{Examples of WebAssembly in textual format}
+\end{figure}
+
+We present the characteristics of WebAssembly that influenced the design of
+watib.
+
+\subsubsection{Strong statical typing}
+WebAssembly is strongly and statically typed. Watib thus performs a phase of
+type-checking (called validation in WebAssembly language). Typing information
+appears in the binary format (on blocks for instance). Watib preserves it during
+all of its phases. In particular, all optimisations are type preserving and the
+code the introduce is well typed.
+\subsubsection{Structured control flow}
+All control flow in WebAssembly is structured: the language forbids arbitrary
+jumps. Branching can only go to a parent block (at the beginning or at the end
+depending on the block's nature, see figure~\ref{cf-ex}).
+\subsubsection{Typed labels}
+Combining the two previous points implie that all labels are typed. Blocks take
+values on the stack as input and leave values on the stack as outputs. The types
+of the branching instructions ensure that blocks get the expected values on the
+stack.
+\begin{figure}[h]
+\centering
+\begin{tabular}{c c c}
+\begin{minipage}{1.8in}
+\begin{verbatim}
+(block $l
+  (result i32)
+  (if (i32.const 1)
+    (then
+      (i32.const 42)
+      (br $l)))
+  (i32.const 67))
+\end{verbatim}
+\end{minipage}&
+\begin{minipage}{1.8in}
+\begin{verbatim}
+(i32.const 1)
+(loop $l
+  (param $i32)
+  (if
+    (then
+      (br $l
+        (call $cnt)))))
+\end{verbatim}
+\end{minipage}
+&\begin{minipage}{1.8in}
+\begin{verbatim}
+(block $l
+  (result (ref $pair))
+  (br_on_cast $l
+    (ref eq)
+    (ref $pair)
+    (local.get $x))
+  (unreachable))
+\end{verbatim}
+\end{minipage}
+\end{tabular}
+\caption{Examples of WebAssembly control flow}\label{cf-ex}
 \end{figure}
 \section{Validation}
 \section{Optimisation}

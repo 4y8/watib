@@ -3,8 +3,7 @@
 ;; Definitions of the data structures representing wasm code.
 
 (module ast_node
-   (export
-           (class modulefield::object)
+   (export (class modulefield::object)
 
            ;; remove information using shrinking/widening ?
            (class func::modulefield
