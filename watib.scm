@@ -6,6 +6,7 @@
    (main main)
    (library pthread srfi1)
    (import (misc_parse   "Misc/parse.scm")
+           (misc_list    "Misc/list.scm")
            (val_validate "Val/validate.scm")
            (opt_optimise "Opt/optimise.scm")
            (asm_binary   "Asm/binary.scm")))
@@ -21,7 +22,7 @@
                (?m (error/location "watib" "expected module" m
                                    (cadr (cer m)) (caddr (cer m))))))))
 
-   (append-map get-mfs l))
+   (econcat (map get-mfs l)))
 
 (define (main argv)
    (define input-files '())

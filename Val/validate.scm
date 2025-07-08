@@ -722,6 +722,11 @@
             ((tag ?id) (tagidx env id))
             (else (raise `(expected-exportdesc ,d))))))
 
+(define (map-pos f::procedure l)
+   (if (null? l)
+       '()
+       (cons (cons (f (car l)) (cer l)) (map-pos f (cdr l)))))
+
 (define (type-pass-mf env::env m)
    (with-handler
       (match-lambda
@@ -739,8 +744,8 @@
              #f))
          (else m))))
 
-(define (decorate::epair m::epair l::pair)
-   (econs (car l) (cdr l) (cer m)))
+(define (decorate p::pair l::pair)
+   (cons l p))
 
 (define *funcs* (make-vector 1000000))
 (define *globals* (make-vector 1000000))
@@ -750,18 +755,18 @@
 (define *declared-funcrefs* '())
 
 (define (env-pass-mf env::env m)
-   (with-default-value env #f `(in-module ,m ,e)
-      (match-case m
+   (with-default-value env #f `(at-pos ,(cdr m))
+      (match-case (car m)
          (#f #f)
          ; section 6.6.4 (abbreviations)
          ((func (export (? string?)) . ?rst)
-          (env-pass-mf env (decorate m `(func ,@rst))))
+          (env-pass-mf env (decorate (cdr m) `(func ,@rst))))
          ((func (import (and (? string?) ?nm1) (and (? string?) ?nm2)) . ?rst)
-          (env-pass-mf env (decorate m `(import ,nm1 ,nm2 (func ,@rst)))))
+          (env-pass-mf env (decorate (cdr m) `(import ,nm1 ,nm2 (func ,@rst)))))
          ; section 6.6.4
          ((func (and (? ident?) ?id) . ?rst)
           (func-add-name! env id)
-          (env-pass-mf env (decorate m `(func ,@rst))))
+          (env-pass-mf env (decorate (cdr m) `(func ,@rst))))
          ((func . ?rst)
           (multiple-value-bind (args f tl) (valid-tu/get-tl env rst)
              (vector-set! *funcs* (-> env nfunc)
@@ -770,7 +775,7 @@
                            (formals args)
                            (body tl)
                            (locals '())
-                           (pos (cer m))))
+                           (pos (cdr m))))
              (func-add! env `(deftype -1 ((sub final (func ,@f))) 0))))
 
          ((data (and (? ident?) ?id) (memory ?memidx) (offset . ?expr) . ?-)
@@ -778,7 +783,7 @@
           ; section 6.6.12
          ((data (and (? ident?) ?id) . ?rst)
           (hashtable-put! (-> env data-table) id (-> env ndata))
-          (env-pass-mf env (decorate m `(data ,@rst))))
+          (env-pass-mf env (decorate (cdr m) `(data ,@rst))))
          ((data . ?rst)
           (for-each (lambda (s) (unless (string? s)
                                    (raise `(expected-string ,s)))) rst)
@@ -791,11 +796,11 @@
           ; section 6.6.7
          ((global (and (? ident?) ?id) . ?rst)
           (global-add-name! env id)
-          (env-pass-mf env (decorate m `(global ,@rst))))
+          (env-pass-mf env (decorate (cdr m) `(global ,@rst))))
          ((global (export (? string?)) . ?rst)
-          (env-pass-mf env (decorate m `(global ,@rst))))
+          (env-pass-mf env (decorate (cdr m) `(global ,@rst))))
          ((global (import (and (? string?) ?nm1) (and (? string?) ?nm2)) . ?rst)
-          (env-pass-mf env (decorate m `(import ,nm1 ,nm2 (global ,@rst)))))
+          (env-pass-mf env (decorate (cdr m) `(import ,nm1 ,nm2 (global ,@rst)))))
          ((global ?gt . ?e)
           (define (add-func-refs! l)
              (cond ((pair? l)
@@ -805,7 +810,7 @@
 
           (let ((t (valid-gt env gt)))
              (vector-set! *globals* (-> env nglobal)
-                          (instantiate::global (type t) (body e) (pos (cer m))))
+                          (instantiate::global (type t) (body e) (pos (cdr m))))
              (global-add! env t)
              (add-func-refs! e)))
 
@@ -825,7 +830,7 @@
          ; section 6.6.8 and 3.5.7
          ((tag (and (? ident?) ?id) . ?rst)
           (tag-add-name! env id)
-          (env-pass-mf env (decorate m `(tag ,@rst))))
+          (env-pass-mf env (decorate (cdr m) `(tag ,@rst))))
          ((tag . ?tu)
           (multiple-value-bind (p r) (valid-param/result env tu)
              (unless (null? r)
@@ -836,11 +841,11 @@
          ; section 6.6.6
          ((memory (and (? ident?) ?id) . ?rst)
           (mem-add-name! env id)
-          (env-pass-mf env (decorate m `(memory ,@rst))))
+          (env-pass-mf env (decorate (cdr m) `(memory ,@rst))))
          ((memory (export (? string?)) . ?rst)
-          (env-pass-mf env (decorate m `(memory ,@rst))))
+          (env-pass-mf env (decorate (cdr m) `(memory ,@rst))))
          ((memory (import (and (? string?) ?nm1) (and (? string?) ?nm2)) . ?rst)
-          (env-pass-mf env (decorate m `(import ,nm1 ,nm2 (memory ,@rst)))))
+          (env-pass-mf env (decorate (cdr m) `(import ,nm1 ,nm2 (memory ,@rst)))))
          ((memory . ?mt)
           (mem-add! env (valid-mt env mt)))
 
@@ -849,7 +854,8 @@
           (set! *declared-funcrefs* (append funcs *declared-funcrefs*))
           (for-each (lambda (x) (hashtable-put! (-> env refs) x #t)) funcs))
 
-         (else (raise 'expected-modulefield)))))
+         (else
+          (raise 'expected-modulefield)))))
 
 (define (valid-global env::env g::global x::bint)
    (let ((old-nglobal (-> env nglobal)))
@@ -1067,7 +1073,7 @@
 
       (match-case f
          ((or (module (? ident?) . ?mfs) (module . ?mfs))
-          (let* ((type-mfs (map (mf-pass/handle-error type-pass-mf) mfs)))
+          (let* ((type-mfs (map-pos (mf-pass/handle-error type-pass-mf) mfs)))
              (for-each (mf-pass/handle-error env-pass-mf) type-mfs)
          (cond-expand
         ((and multijob (library pthread))

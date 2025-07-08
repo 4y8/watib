@@ -1,4 +1,4 @@
-\documentclass[11pt]{article}
+\documentclass[10pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{bigfoot}
@@ -131,7 +131,10 @@ stack.
 \end{figure}
 \subsection{Watib}
 Watib handles type checking, optimisation and assembly of Wasm programs given in
-textual format\footnote{binary format support as input is planned}. We review
+textual format\footnote{binary format support as input is planned}. Function
+validation and optimisation is parallelisable. We added the option to run them
+in an arbitrary number of threads. This feature, and thus the dependency on
+pthreads is optional which is requiered for integration with Bigloo. We review
 some differences between watib and already existing toolchains (apart from its
 lack of features and overall maturity).
 \begin{description}
@@ -139,18 +142,19 @@ lack of features and overall maturity).
   most validation errors (and some syntax errors). It avoids having to correct
   errors one by one which can be tedious for big files.
 \item[Linear IR] The other toolchain aiming at providing sophisticated
-  optimisations, binaryen, has a tree like IR, in part, for historical
+  optimisations, binaryen, has a tree like IR, in part for historical
   reasons~\cite{BinaryenIR}. When the development of binaryen started, Wasm
   wasn't stack based and features such as multiple return values or block
-  parameters weren't adopted. They remain second class citizens in
+  parameters weren't adopted. These features remain second class citizens in
   binaryen\footnote{for instance, the following piece of code is assembled to a
-  code using local variables to avoid having a block parameter:
+  program using local variables to avoid having a block parameter:
 \begin{verbatim}(i32.const 0)
 (block (param i32)
   (i32.const 0) (i32.add) (drop))
 \end{verbatim}
 }. Watib's IR is closer to modern Wasm. See~\ref{ir} for more details. We hope
-  that will enable different optimisations.
+  that will enable different optimisations and a better treatment of code
+  written using WebAssembly's new features.
 \end{description}
 \section{Validation}
 \section{Optimisation}
