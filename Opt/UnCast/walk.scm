@@ -50,8 +50,9 @@
 (define-method (remove-casts! i::sequence env::env)
    (define (walk-list! l::pair-nil)
       (match-case l
-         (((?i::instruction)
-           (and (? isa-ref.cast?) ?cast::one-arg). ?tl)
+         ((?i::instruction
+           (and (? isa-ref.cast?) ?cast::one-arg) . ?tl)
+          (remove-casts! i env)
           (with-access::typep (-> cast x) ((rt type))
              (if (and (not (null? (-> i outtype)))
                       (<vt= env (last (-> i outtype)) rt))
@@ -60,8 +61,9 @@
                     (walk-list! l))
                  (walk-list! (cdr l)))))
 
-         (((?i::instruction)
+         ((?i::instruction
            (and (? isa-ref.test?) ?test::one-arg). ?tl)
+          (remove-casts! i env)
           (with-access::typep (-> test x) ((rt type))
              (if (and (not (null? (-> i outtype)))
                       (<vt= env (last (-> i actouttype)) rt))
@@ -70,8 +72,9 @@
                     (walk-list! l))
                  (walk-list! (cdr l)))))
 
-         (((?i::instruction)
+         ((?i::instruction
            (and (? isa-ref.is_null?) ?test::instruction). ?tl)
+          (remove-casts! i env)
           (if (and (not (null? (-> i outtype)))
                    (not (nullable? (last (-> i actouttype)))))
               (begin
@@ -79,8 +82,9 @@
                  (walk-list! l))
               (walk-list! (cdr l))))
 
-         (((?i::instruction)
+         ((?i::instruction
            (and (? isa-ref.as_non_null?) ?cast::instruction). ?tl)
+          (remove-casts! i env)
           (if (and (not (null? (-> i outtype)))
                    (not (nullable? (last (-> i outtype)))))
               (begin
@@ -88,5 +92,7 @@
                  (walk-list! l))
               (walk-list! (cdr l))))
 
-         ((?- . ?tl) (walk-list! tl))))
+         ((?hd . ?tl)
+          (remove-casts! hd env)
+          (walk-list! tl))))
    (walk-list! (-> i body)))

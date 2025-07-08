@@ -17,10 +17,11 @@
 
 (define-method (replace-var! i::one-arg x::bint y::bint t)
    (if (and (eq? 'local.get (-> i opcode)))
-       (with-access::localidxp (-> i x) (idx)
+       (with-access::localidxp (-> i x) (idx type)
           (when (=fx idx x)
              (set! (-> i outtype) (list t))
-             (set! idx y)))
+             (set! idx y)
+             (set! type t)))
        (if (or (eq? 'local.set (-> i opcode)) (eq? 'local.tee (-> i opcode)))
            (with-access::localidxp (-> i x) (idx)
               (=fx x idx))

@@ -9,7 +9,8 @@
            (opt_uncast "Opt/UnCast/walk.scm")
            (opt_unreachable "Opt/Unreachable/walk.scm")
            (opt_const "Opt/Const/walk.scm")
-           (opt_puredrop "Opt/PureDrop/walk.scm"))
+           (opt_puredrop "Opt/PureDrop/walk.scm")
+           (opt_copyprop "Opt/CopyProp/walk.scm"))
    (import (misc_letif "Misc/let-if.scm"))
    (export (opt-file! p::prog nthreads::bint)))
 
@@ -19,8 +20,9 @@
           ((>=fx i nfunc))
          (let-if (f (vector-ref (-> p funcs) i))
             (testbr! f)
+            (copyprop! f)
             (uncast! (-> p env) f)
             (unreachable! f)
             (const! f)
-            (puredrop! f) ; - needs to be fixed
+            (puredrop! f)
             ))))
