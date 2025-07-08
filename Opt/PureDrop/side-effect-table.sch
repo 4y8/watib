@@ -1,6 +1,6 @@
 ;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
 
-;; Table of instrcutions' side effects.
+;; Table of instructions' side effects.
 ;;
 ;; Instructions not in the table are considered to have side effects to avoid
 ;; soundess issues due to oversights

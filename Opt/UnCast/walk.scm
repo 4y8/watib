@@ -64,7 +64,7 @@
            (and (? isa-ref.test?) ?test::one-arg). ?tl)
           (with-access::typep (-> test x) ((rt type))
              (if (and (not (null? (-> i outtype)))
-                      (<vt= env (last (-> i outtype)) rt))
+                      (<vt= env (last (-> i actouttype)) rt))
                  (begin
                     (replace-top-with-const! i l tl 1)
                     (walk-list! l))
@@ -73,7 +73,7 @@
          (((?i::instruction)
            (and (? isa-ref.is_null?) ?test::instruction). ?tl)
           (if (and (not (null? (-> i outtype)))
-                   (not (nullable? (last (-> i outtype)))))
+                   (not (nullable? (last (-> i actouttype)))))
               (begin
                  (replace-top-with-const! i l tl 0)
                  (walk-list! l))

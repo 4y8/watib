@@ -652,7 +652,7 @@
      (multiple-value-bind (is st) (valid-instr (list (car l)) st)
         (multiple-value-bind (tl st) (valid-instrs env (cdr l) st)
            (values (append is tl) st))))
-    (else (raise `(expected-instruction ,(car l))))))
+    (else (raise `(at-pos ,(cer l) expected-instruction ,(car l))))))
 
 (define (valid-expr env::env l::pair-nil)
    (valid-instrs env l '()))

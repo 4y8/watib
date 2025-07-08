@@ -10,6 +10,8 @@
 (define (testbr! f::func)
    (if-test->br! (-> f body)))
 
+;; see later if copy propagation doesn't make replace-var useless (it should)
+
 (define-generic (replace-var! i::instruction x::bint y::bint t)
    #f)
 
@@ -19,7 +21,7 @@
           (when (=fx idx x)
              (set! (-> i outtype) (list t))
              (set! idx y)))
-       (if (eq? 'local.set (-> i opcode))
+       (if (or (eq? 'local.set (-> i opcode)) (eq? 'local.tee (-> i opcode)))
            (with-access::localidxp (-> i x) (idx)
               (=fx x idx))
            #f)))

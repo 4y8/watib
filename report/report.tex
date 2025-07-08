@@ -1,7 +1,6 @@
 \documentclass[10pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage{bigfoot}
 \usepackage[english]{babel}
 \usepackage[a4paper, left=1.2in, right=1.2in]{geometry}
 
@@ -72,17 +71,21 @@ We review some of the characteristics of WebAssembly that influenced the design
 of watib.
 
 \begin{description}
-\item[Strong statical typing]
-WebAssembly is strongly and statically typed. Watib thus performs a phase of
-type-checking (called validation in WebAssembly language). Typing information
-appears in the binary format (on blocks for instance). Watib preserves it during
-all of its phases. In particular, all optimisations are type preserving and they
-code the introduce is well-typed and annotated.
+\item[Strong statical typing] WebAssembly is strongly and statically typed.
+  Watib thus performs a phase of type-checking (called validation in WebAssembly
+  language). Typing information appears in the binary format (on blocks for
+  instance). Watib preserves it during all of its phases. In particular, all
+  optimisations are type preserving and they code the introduce is well-typed
+  and annotated. This typing discipline also implies that all down casts are
+  explicit. The optimisation phase tries to remove all the useless ones and
+  restructures the control flow to eliminate some redundant tests and casts.
+  This is made possible by the fact that WebAssembly branching can depend on
+  type information. This optimisation is described in~\ref{broncast}.
 
-\item[Structured control flow]
-All control flow in WebAssembly is structured: the language forbids arbitrary
-jumps. Branching can only go to a parent block (at the beginning or at the end
-depending on the block's nature, see figure~\ref{cf-ex}).
+%% \item[Structured control flow] All control flow in WebAssembly is structured:
+%%   the language forbids arbitrary jumps. Branching can only go to a parent block
+%%   (at the beginning or at the end depending on the block's nature, see
+%%   figure~\ref{cf-ex}).
 
 \item[Typed labels]
 Combining the two previous points implie that all labels are typed. Blocks take
@@ -146,19 +149,76 @@ lack of features and overall maturity).
   reasons~\cite{BinaryenIR}. When the development of binaryen started, Wasm
   wasn't stack based and features such as multiple return values or block
   parameters weren't adopted. These features remain second class citizens in
-  binaryen\footnote{for instance, the following piece of code is assembled to a
-  program using local variables to avoid having a block parameter:
-\begin{verbatim}(i32.const 0)
-(block (param i32)
-  (i32.const 0) (i32.add) (drop))
-\end{verbatim}
-}. Watib's IR is closer to modern Wasm. See~\ref{ir} for more details. We hope
-  that will enable different optimisations and a better treatment of code
-  written using WebAssembly's new features.
+  binaryen\footnote{for instance, code using block parameters is assembled to
+  code using local variables instead by binaryen's \textsf{wasm-as}}. Watib's IR
+  is closer to modern Wasm. See~\ref{ir} for more details. We hope that will
+  enable different optimisations and a better treatment of code written using
+  WebAssembly's new features.
 \end{description}
 \section{Validation}
 \section{Optimisation}
 \subsection{The Intermediate Representation}\label{ir}
 \subsection{Optimisations}
+Watib performs several optimisation passes. We start by reviewing optimisations
+which benefit the others, by giving more precise information or removing
+generated useless code.
+\begin{description}
+  \item[Copy Propagation] When a variable $x$ is assigned the value of another
+    variable $y$, we replace references to $x$ with references to $y$, until the
+    next assignement to $x$ or $y$.
+  \item[Pure Drops Elimination] We eliminate \textsf{drop} instructions and
+    their argument when it has no side effect. We try to remove as extra
+    computation as possible by inserting as much \textsf{drop} as needed.
+  \item[Constant Folding] We evaluate some expressions whose value is known at
+    compile time. We also also remove conditional branching when the condition
+    is constant.
+  \item[Unreachable Code Elimination] We eliminate some instructions that are
+    known to never execute (after a \textsf{return} for instance). However, some
+    unreachable code may be needed for validation, even though it can't be
+    executed, see~\ref{unreachable} for an example. When well-typedness without
+    the unreachable instructions can't easily be guaranteed, an
+    \textsf{unreachable} instruction is inserted instead.
+  \item[Peephole optimisation] We recognise small patterns in Wasm code and
+    replace them with equivalent code that should be smaller or faster.
+\begin{figure}[h]
+\centering
+\begin{tabular}{c c}
+\begin{minipage}{2.8in}
+\begin{verbatim}
+(func $f
+  (result i32)
+  (if (i32.const 1)
+    (then (return (i32.const 0)))
+    (else (return (i32.const 1)))))
+\end{verbatim}
+\end{minipage}
+&\begin{minipage}{2.8in}
+\begin{verbatim}
+(func $f
+  (result i32)
+  (if (i32.const 1)
+    (then (return (i32.const 0)))
+    (else (return (i32.const 1))))
+  (unreachable))
+\end{verbatim}
+\end{minipage}
+\end{tabular}
+\caption{The function on the left is ill-typed while the function on the right
+  is well-typed}\label{unreachable}
+\end{figure}
+  \item[Type propagation] This one is not an optimisation \emph{per se}. It only
+    refines type annotations of variables in the IR. When a variable is assigned
+    a value, the type of this value (which may be a strict subtype of the
+    variable's declared type) is set as the actual output type of each variable
+    access, until it is modified.
+\end{description}
+
+We, now, review more Wasm-specific optimisations and detail in which way they
+use the previous ones.
+\subsubsection{Cast Elimination}
+We eliminate redundant casts and replace type tests by constants if their result
+can be determined.
+
+\subsubsection{\textsf{br\_on\_cast} Introduction}\label{broncast}
 \printbibliography
 \end{document}

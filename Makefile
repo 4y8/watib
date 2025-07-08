@@ -3,6 +3,7 @@
 SRCS = watib.scm Misc/let-if.scm Opt/optimise.scm Val/validate.scm \
        Asm/binary.scm Opt/TestBr/walk.scm Opt/UnCast/walk.scm \
        Opt/Unreachable/walk.scm Opt/Const/walk.scm Opt/PureDrop/walk.scm \
+       Opt/CopyProp/walk.scm Opt/Peephole/walk.scm Opt/PropType/walk.scm \
        Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm \
        Misc/parse.scm  Asm/leb128.scm
 

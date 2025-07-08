@@ -65,6 +65,12 @@
            (class instruction::object
               intype::pair-nil
               outtype::pair-nil
+              (__actouttype::pair-nil (default '()))
+              (actouttype (get (lambda p::instruction
+                                  (if (null? (-> p __actouttype))
+                                      (-> p outtype)
+                                      (-> p __actouttype))))
+                          read-only)
               parent::modulefield
               ; default will have to be removed
               (sources::pair-nil (default '()))
@@ -127,6 +133,7 @@
               z::parameter)
 
            (class br_table::instruction
+              ;; non-empty list of labelidxp
               labels::pair)
 
            (class sequence::instruction
