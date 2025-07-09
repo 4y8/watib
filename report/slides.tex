@@ -1,0 +1,143 @@
+\documentclass{beamer}
+\author{Aghilas Y. Boussaa \texttt{<aghilas.boussaa@ens.fr>}}
+\title{watib: Design and implementation of an optimising WebAssembly toolchain}
+\subtitle{\url{https://github.com/4y8/watib}}
+\institute{École normale supérieure}
+\usepackage{calc}
+\begin{document}
+\frame{\titlepage}
+\date{INRIA Sophia-Antiplois, July 10, 2025}
+\begin{frame}
+\frametitle{Table of Contents}
+\tableofcontents
+\end{frame}
+\AtBeginSection[]
+{
+  \begin{frame}
+    \frametitle{Table of Contents}
+    \tableofcontents[currentsection]
+  \end{frame}
+}
+
+\section{Introduction}
+\subsection{WebAssembly}
+\begin{frame}
+  \frametitle{Why?}
+\end{frame}
+\section{Validation}
+\section{Optimisation}
+\begin{frame}[fragile]{Copy Propagation}{}
+  \begin{center}
+  \begin{tabular}{c c c}
+    \begin{minipage}{\widthof{\texttt{(local.get \$x)}}}
+\begin{verbatim}
+(local.get $x)
+(local.set $y)
+(local.get $y)
+\end{verbatim}
+\end{minipage}
+    &
+    $\rightarrow$
+    &
+\begin{minipage}{\widthof{\texttt{(local.get \$x)}}}
+\begin{verbatim}
+(local.get $x)
+(local.set $y)
+(local.get $x)
+\end{verbatim}
+\end{minipage}
+  \end{tabular}
+  \end{center}
+  \vfill
+\begin{itemize}
+\item We gather copy information and merge it at the end of blocks
+\item Loops and trys are treated in a coarse way
+\item Better typing information
+\item Elimination of useless assignments
+\end{itemize}
+\end{frame}
+\begin{frame}[fragile]{Pure Drops Elimination}{}
+  \begin{center}
+  \begin{tabular}{c c c}
+    \begin{minipage}{\widthof{\texttt{(i32.const 42)}}}
+\begin{verbatim}
+(i32.const 42)
+(i32.clz)
+(drop)
+\end{verbatim}
+\end{minipage}
+    &
+    $\rightarrow$
+    &
+\begin{minipage}{\widthof{\texttt{(i32.const 42)}}}
+\begin{verbatim}
+
+\end{verbatim}
+\end{minipage}
+  \end{tabular}
+  \end{center}
+  \vfill
+\begin{itemize}
+\item We coarsly determine if an instruction has side effects
+\item Currently do not treat well instructions taking and returning multiple
+  values (binaryen cannot do it as well)
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Constant Folding}{}
+  \begin{center}
+  \begin{tabular}{c c c}
+    \begin{minipage}{\widthof{\texttt{(i32.const 42)}}}
+\begin{verbatim}
+(i32.const 42)
+(if
+  (then B1)
+  (else B2))
+\end{verbatim}
+\end{minipage}
+    &
+    $\rightarrow$
+    &
+\begin{minipage}{\widthof{\texttt{(i32.const 42)}}}
+\begin{verbatim}
+(block
+  B1)
+\end{verbatim}
+\end{minipage}
+  \end{tabular}
+  \end{center}
+  \vfill
+\begin{itemize}
+\item Some tests can be evaluated by previous passes
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Constant Folding}{}
+  \begin{center}
+  \begin{tabular}{c c c}
+    \begin{minipage}{\widthof{\texttt{(i32.const 42)}}}
+\begin{verbatim}
+(i32.const 42)
+(if
+  (then B1)
+  (else B2))
+\end{verbatim}
+\end{minipage}
+    &
+    $\rightarrow$
+    &
+\begin{minipage}{\widthof{\texttt{(i32.const 42)}}}
+\begin{verbatim}
+(block
+  B1)
+\end{verbatim}
+\end{minipage}
+  \end{tabular}
+  \end{center}
+  \vfill
+\begin{itemize}
+\item Some tests can be evaluated by previous passes
+\end{itemize}
+\end{frame}
+\section{Conclusion}
+\end{document}

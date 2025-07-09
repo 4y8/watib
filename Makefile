@@ -23,6 +23,9 @@ watib: $(OBJS)
 report.pdf: report/report.tex report/report.bib
 	latexmk -pdf report/report.tex
 
+slides.pdf: report/slides.tex
+	latexmk -pdf report/slides.tex
+
 clean:
 	latexmk -C report/report.tex
 	rm -f report-blx.bib report.bbl

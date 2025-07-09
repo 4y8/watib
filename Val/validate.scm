@@ -712,7 +712,7 @@
              (duplicate::import-tag imp (tagtype t)))))
       (else (raise `(expected-importdesc ,d)))))
 
-; section 6.6.9 and
+; section 6.6.9
 (define (valid-exportdesc env::env d)
    (instantiate::export
     (name (car d))

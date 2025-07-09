@@ -144,6 +144,14 @@ lack of features and overall maturity).
 \item[Fault tolerance] For the sake of user-friendliness, watib can recover from
   most validation errors (and some syntax errors). It avoids having to correct
   errors one by one which can be tedious for big files.
+\item[{Zealous\protect\footnotemark} respect of the spec] Binaryen's assembler accepts files
+  that do not conform to the specification and outputs file that are more or
+  less semantically equivalent~\cite{WasmAsExtension}. For the sake of
+  portability, watib follows the specification by default. A compatibility mode
+  with \textsf{wasm-as} is planned.
+  \footnotetext{in fact, the proofreading induced by the cautious study
+  of the spec resulted in a dozen (minor) pull requests and issues on the
+  specification's draft}
 \item[Linear IR] The other toolchain aiming at providing sophisticated
   optimisations, binaryen, has a tree like IR, in part for historical
   reasons~\cite{BinaryenIR}. When the development of binaryen started, Wasm
@@ -172,12 +180,12 @@ generated useless code.
   \item[Constant Folding] We evaluate some expressions whose value is known at
     compile time. We also also remove conditional branching when the condition
     is constant.
-  \item[Unreachable Code Elimination] We eliminate some instructions that are
+  \item[Dead Code Elimination] We eliminate some instructions that are
     known to never execute (after a \textsf{return} for instance). However, some
-    unreachable code may be needed for validation, even though it can't be
+    dead code may be needed for validation, even though it can't be
     executed, see~\ref{unreachable} for an example. When well-typedness without
-    the unreachable instructions can't easily be guaranteed, an
-    \textsf{unreachable} instruction is inserted instead.
+    the dead instructions can't easily be guaranteed, an
+    \textsf{unreachable} instruction is inserted instead of the dead code.
   \item[Peephole optimisation] We recognise small patterns in Wasm code and
     replace them with equivalent code that should be smaller or faster.
 \begin{figure}[h]
