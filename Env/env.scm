@@ -45,7 +45,7 @@
            (fieldidx-get-name env::env x::typeidxp y::fieldidxp)
            (fieldidx::fieldidxp env::env x)
 
-           (local-get-index env::env l)
+           (local-get-index::bint env::env l)
            (local-init! env::env l::bint)
            (local-init?::bool env::env l)
            (local-get-type env::env l)
@@ -150,21 +150,21 @@
          t
          (raise `((idx-out-of-range field) ,t (length v) ,f))))
     ((ident? f)
-     (index v f 0 'unknown-field))
+     (index v f 0 '(unknown field)))
     (#t (raise `(expected-fieldidx ,t))))))
 
 (define (fieldidx-get-name env::env x::typeidxp y::fieldidxp)
    (list-ref (vector-ref (-> env field-names) (-> x idx)) (-> y idx)))
 
-(define (local-get-index env::env l)
+(define (local-get-index::bint env::env l)
    (cond
     ((number? l)
      (if (< l (vector-length (-> env local-types)))
          l
-         (raise `(localidx-out-of-range ,l))))
+         (raise `((idx-out-of range) ,l))))
     ((ident? l)
-     (index (-> env local-names) l 0 'unknown-local))
-    (#t `(expected-local ,l))))
+     (index (-> env local-names) l 0 '(unknown local)))
+    (else (raise `((expected local) ,l)))))
 
 (define (local-init! env::env l::bint)
    (with-access::local-var (vector-ref (-> env local-types) l) ((init? init?))

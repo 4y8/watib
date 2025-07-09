@@ -30,7 +30,8 @@ interface.
 The rest of this section gives a high-level overview of WebAssembly and watib.
 Section~\ref{val} details watib's typechecker. Section~\ref{opt} describes the
 design of the different optimisation passes and the overall design of the
-optimiser.
+optimiser. We omit the assembly phase as, once we have an intermediate
+representation, it is a straightforward stranscription of the specification.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
@@ -82,13 +83,13 @@ toolchains or written by humans (and compilers such as Bigloo).
 
 The third version of the standard the standard adds features facilitating
 compiling from functional languages. For instance, Wasm has now a garbage
-collector, instructions for tail-calls (the language doesn't support goto) and
-exceptions. This version is still in draft, the mentionned features are stable
-and already implemented by the major Wasm engines. Bigloo's Wasm backend relies
-on these features.
+collector, instructions for tail-calls (they are needed because the language
+doesn't support goto) and exceptions. This version is still in draft, but the
+mentionned features are stable and already implemented by the major Wasm
+engines. Bigloo's Wasm backend relies on these features.
 
-We review some of the characteristics of WebAssembly that influenced the design
-of watib.
+We now review some of the characteristics of WebAssembly that influenced the
+design of watib.
 
 \begin{description}
 \item[Strong statical typing] WebAssembly is strongly and statically typed.

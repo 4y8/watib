@@ -946,6 +946,8 @@
       (lambda (p) (display o p))))
 
 (define (error->string env::env e)
+   (if (isa? e &error)
+       (raise e))
    (define (type->string::bstring t)
       (cond ((deftype? t) (sdisplay (type-get-name env (cadr t))))
             ((number? t) (sdisplay (type-get-name env t)))
@@ -977,8 +979,15 @@
       (((unknown ?x) ?s)
        (sprintf "unknown ~a: ~a" x s))
 
+      (((expected ?x) ?s)
+       (sprintf "expected ~a, got ~a" x s))
+
       ((empty-stack ?t)
        (sprintf "expected ~a on stack but got nothing" (type->string (car t))))
+
+      ((supertype-final ?t1 ?t2)
+       (sprintf "~a can't be a supertype of ~a because the first is marked as final"
+                (type->string t2) (type->string t1)))
 
       (else (sdisplay e))))
 
@@ -996,8 +1005,9 @@
 
    (match-case e
       ((in-module ?m ?e)
-       (unless silent (rep "in module" m))
-       (format-exn env e))
+       (if silent
+           (fprint (current-error-port) (error->string env e))
+           (rep/pos (error->string env e) (cer m))))
       ((at-pos ?i (at-instruction . ?-))
        (format-exn env (caddr e)))
       ((at-pos ?p ?e)

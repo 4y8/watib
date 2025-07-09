@@ -23,11 +23,18 @@
 \begin{frame}{WebAssembly}
   \begin{itemize}
     \item Fast, safe and portable language
-    \item Portable and efficient representation\pause
+    \item Portable and efficient representation
+    \item Stack based and static typing\pause
     \item Now with a GC, tail calls, exceptions, etc.\pause
     \item Wasm textual backend for Bigloo with external tools (last year)\pause
     \item Wasm backend fully integrated in Bigloo (this internship)
   \end{itemize}
+\end{frame}
+\begin{frame}[fragile]{Examples}
+\begin{verbatim}
+(type $pair-nil (struct))
+(type $pair (sub $pair-nil (struct (field ($car (ref (eq)))))))
+\end{verbatim}
 \end{frame}
 \begin{frame}
   \frametitle{Watib}
