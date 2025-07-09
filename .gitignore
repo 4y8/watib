@@ -16,3 +16,4 @@ watib
 *.nav
 *.fdb_latexmk
 *.snm
+tools/wati-test

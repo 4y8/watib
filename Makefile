@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
 
-SRCS = watib.scm Misc/let-if.scm Opt/optimise.scm Val/validate.scm \
+SRCS = Misc/let-if.scm Opt/optimise.scm Val/validate.scm \
        Asm/binary.scm Opt/TestBr/walk.scm Opt/UnCast/walk.scm \
        Opt/Unreachable/walk.scm Opt/Const/walk.scm Opt/PureDrop/walk.scm \
        Opt/CopyProp/walk.scm Opt/Peephole/walk.scm Opt/PropType/walk.scm \
@@ -14,8 +14,13 @@ FLAGS = -O2 -g
 
 all: watib
 
-watib: $(OBJS)
-	bigloo $(FLAGS) $(OBJS) -o watib
+tools: wati-test
+
+wati-test: tools/wati-test.o $(OBJS)
+	bigloo $(FLAGS) tools/wati-test.o $(OBJS) -o tools/wati-test
+
+watib: watib.o $(OBJS)
+	bigloo $(FLAGS) watib.o $(OBJS) -o watib
 
 %.o : %.scm
 	bigloo -srfi multijob -c $(FLAGS) $< -o $@
