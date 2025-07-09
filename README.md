@@ -7,7 +7,7 @@ details on what is currently missing.
 It is used by the Bigloo scheme compiler for its wasm backend.
 
 ## Building
-To build watib, a working [bigloo](https://www-sop.inria.fr/indes/fp/Bigloo/)
+To build watib, a working [Bigloo](https://www-sop.inria.fr/indes/fp/Bigloo/)
 distribution is required. You can, then, build it with:
 
 ```sh
@@ -58,4 +58,6 @@ send an email at [aghilas.boussaa@normalesup.org](mailto:aghilas.boussaa@normale
 
 ## Acknowledgment
 Thanks to Manuel Serrano who wrote the Bigloo compiler, became the first user
-and provided help, feedbacks and the internship which led to watib.
+and provided help, feedbacks and the internship which led to watib. Thanks to
+Andreas Rossberg for his reactivity and valuable knowledge concerning doubts on
+the specification and Wasm more generally.

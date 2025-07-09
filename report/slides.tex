@@ -20,9 +20,37 @@
 }
 
 \section{Introduction}
-\subsection{WebAssembly}
+\begin{frame}{WebAssembly}
+  \begin{itemize}
+    \item Fast, safe and portable language
+    \item Portable and efficient representation\pause
+    \item Now with a GC, tail calls, exceptions, etc.\pause
+    \item Wasm textual backend for Bigloo with external tools (last year)\pause
+    \item Wasm backend fully integrated in Bigloo (this internship)
+  \end{itemize}
+\end{frame}
 \begin{frame}
-  \frametitle{Why?}
+  \frametitle{Watib}
+  \begin{itemize}
+    \item Bigloo integration\pause
+    \item User-friendliness
+      \begin{itemize}
+        \item Fault tolerance
+        \item Detailed error messages (WIP)
+      \end{itemize}\pause
+    \item Zealous respect of the spec
+      \begin{itemize}
+        \item Wasm-as implements a superset of Wasm
+        \item Can make debugging harder
+        \item Watib follows the spec
+      \end{itemize}\pause
+    \item Linear IR
+      \begin{itemize}
+        \item Some code can't be produced by wasm-as
+        \item Closer to modern Wasm
+        \item New optimisation opportunities
+      \end{itemize}
+  \end{itemize}
 \end{frame}
 \section{Validation}
 \section{Optimisation}
@@ -112,31 +140,40 @@
 \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]{Constant Folding}{}
+\begin{frame}[fragile]{Unreachable Code Elimination}{}
   \begin{center}
   \begin{tabular}{c c c}
-    \begin{minipage}{\widthof{\texttt{(i32.const 42)}}}
+    \begin{minipage}{\widthof{\texttt{....(return)))}}}
 \begin{verbatim}
-(i32.const 42)
 (if
-  (then B1)
-  (else B2))
+  (then ...
+    (return)
+    ...)
+  (else ...
+    (return)))
+...
 \end{verbatim}
 \end{minipage}
     &
     $\rightarrow$
     &
-\begin{minipage}{\widthof{\texttt{(i32.const 42)}}}
+\begin{minipage}{\widthof{\texttt{....(return)))}}}
 \begin{verbatim}
-(block
-  B1)
+(if
+  (then ...
+    (return))
+  (else ...
+    (return)))
+(unreachable)
+
 \end{verbatim}
 \end{minipage}
   \end{tabular}
   \end{center}
   \vfill
 \begin{itemize}
-\item Some tests can be evaluated by previous passes
+\item Walk through instructions and
+\item Be careful not to break well-typedness
 \end{itemize}
 \end{frame}
 \section{Conclusion}

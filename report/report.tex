@@ -2,34 +2,47 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}
-\usepackage[a4paper, left=1.2in, right=1.2in]{geometry}
+\usepackage[a4paper, left=1in, right=1in]{geometry}
 
-\usepackage[backend=bibtex]{biblatex}
+\usepackage[backend=bibtex,style=alphabetic]{biblatex}
 \addbibresource{report/report.bib}
 \author{Aghilas Y. Boussaa \texttt{<aghilas.boussaa@ens.fr>}}
 
-\title{\textsf{watib}: Design and implementation of an optimising WebAssembly toolchain}
+\title{\textsf{watib}: Design and implementation of an optimising WebAssembly
+  toolchain}
 \begin{document}
 \maketitle
 \begin{abstract}
-  We describe watib: a WebAssembly Toolchain written In Bigloo. It has
-  been integrated in the Bigloo Scheme compiler and is available as a standalone
-  tool. It currently handles, parsing, validation (type checking), optimisation
-  and assembly of files in WebAssembly Text format.
+  Watib is a WebAssembly Toolchain written In Bigloo. It has been integrated in
+  the Bigloo Scheme compiler and is available as a standalone tool. It currently
+  handles, parsing, validation (type checking), optimisation and assembly of
+  files in the WebAssembly Text format. We review watib's architecture and the
+  motivate the choices made. We also compare our toolchain to the existing ones.
 \end{abstract}
 
 \section{Introduction}
+The Bigloo~\cite{Bigloo} scheme compiler Wasm backend generated textual Wasm and
+relied on an external tool for the assembly. Watib was developped as a
+replacement for this tool and has been directly integrated in the Bigloo
+compiler. It is also available as a standalone tool with a command-line
+interface.
+
+The rest of this section gives a high-level overview of WebAssembly and watib.
+Section~\ref{val} details watib's typechecker. Section~\ref{opt} describes the
+design of the different optimisation passes and the overall design of the
+optimiser.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
-stack-based virtual machine. Its standard~\cite{WebAssemblyCoreSpecification3}
-typing rules (validation), semantics, an abstract syntax and two concrete
-syntaxes (formats) for the language. The binary format represents WebAssembly
-modules as a sequence of bytes. It is taken as input by Wasm virtual machines
-such as V8~\cite{V8} or SpiderMonkey~\cite{SpiderMonkey} and manipulated by
-toolchains such as binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools}. The
-textual format represents WebAssembly modules as S-expressions. It is taken as
-input by toolchains or written by humans (and compilers such as
-Bigloo~\cite{Bigloo}).
+stack-based virtual machine. It aims at providing a fast, safe and portable
+language endowed with a portable and efficient representation. Its
+standard~\cite{WebAssemblyCoreSpecification3} specifies typing rules
+(validation), semantics, an abstract syntax and two concrete syntaxes (formats)
+for the language. The binary format represents WebAssembly modules as a sequence
+of bytes. It is taken as input by Wasm virtual machines such as V8~\cite{V8} or
+SpiderMonkey~\cite{SpiderMonkey} and manipulated by toolchains such as
+binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools}. The textual format
+represents WebAssembly modules as S-expressions. It is taken as input by
+toolchains or written by humans (and compilers such as Bigloo).
 \begin{figure}[h]
 \centering
 \begin{tabular}{c c c}
@@ -67,6 +80,13 @@ Bigloo~\cite{Bigloo}).
 \caption{Examples of WebAssembly in textual format}
 \end{figure}
 
+The third version of the standard the standard adds features facilitating
+compiling from functional languages. For instance, Wasm has now a garbage
+collector, instructions for tail-calls (the language doesn't support goto) and
+exceptions. This version is still in draft, the mentionned features are stable
+and already implemented by the major Wasm engines. Bigloo's Wasm backend relies
+on these features.
+
 We review some of the characteristics of WebAssembly that influenced the design
 of watib.
 
@@ -74,13 +94,14 @@ of watib.
 \item[Strong statical typing] WebAssembly is strongly and statically typed.
   Watib thus performs a phase of type-checking (called validation in WebAssembly
   language). Typing information appears in the binary format (on blocks for
-  instance). Watib preserves it during all of its phases. In particular, all
-  optimisations are type preserving and they code the introduce is well-typed
-  and annotated. This typing discipline also implies that all down casts are
-  explicit. The optimisation phase tries to remove all the useless ones and
-  restructures the control flow to eliminate some redundant tests and casts.
-  This is made possible by the fact that WebAssembly branching can depend on
-  type information. This optimisation is described in~\ref{broncast}.
+  instance) and Wasm engines validate the files given to them before executing
+  them. Thus, watib preserves well-typedness during all of its phases. In
+  particular, all optimisations are type preserving and they code the introduce
+  is well-typed and annotated. This typing discipline also implies that all down
+  casts are explicit. The optimisation phase tries to remove all the useless
+  ones and restructures the control flow to eliminate some redundant tests and
+  casts. This is made possible by the fact that WebAssembly branching can depend
+  on type information. This optimisation is described in~\ref{broncast}.
 
 %% \item[Structured control flow] All control flow in WebAssembly is structured:
 %%   the language forbids arbitrary jumps. Branching can only go to a parent block
@@ -137,34 +158,44 @@ Watib handles type checking, optimisation and assembly of Wasm programs given in
 textual format\footnote{binary format support as input is planned}. Function
 validation and optimisation is parallelisable. We added the option to run them
 in an arbitrary number of threads. This feature, and thus the dependency on
-pthreads is optional which is requiered for integration with Bigloo. We review
-some differences between watib and already existing toolchains (apart from its
-lack of features and overall maturity).
-\begin{description}
-\item[Fault tolerance] For the sake of user-friendliness, watib can recover from
-  most validation errors (and some syntax errors). It avoids having to correct
-  errors one by one which can be tedious for big files.
-\item[{Zealous\protect\footnotemark} respect of the spec] Binaryen's assembler accepts files
-  that do not conform to the specification and outputs file that are more or
-  less semantically equivalent~\cite{WasmAsExtension}. For the sake of
-  portability, watib follows the specification by default. A compatibility mode
-  with \textsf{wasm-as} is planned.
-  \footnotetext{in fact, the proofreading induced by the cautious study
-  of the spec resulted in a dozen (minor) pull requests and issues on the
+pthreads is optional which is requiered for integration with Bigloo.
+
+We now review some differences between watib and already existing toolchains
+(apart from its lack of features and overall maturity).
+\subsubsection{Fault tolerance}
+For the sake of user-friendliness, watib can recover from most validation errors
+(and some syntax errors). It avoids having to correct errors one by one which
+can be tedious for big files, as parsing alone can be time consuming.
+
+\subsubsection{{Zealous\protect\footnotemark} respect of the spec}
+Binaryen's assembler, \textsf{wasm-as}, accepts files that do not conform to the
+specification and outputs file that are more or less semantically equivalent. We
+compiled in watib's internal documentation a list of the modifications made by
+\textsf{wasm-as} we witnessed~\cite{WasmAsExtension}. It is reproduced in
+appendix~\ref{wasmasex}. For the sake of portability, watib follows the
+specification by default. A compatibility mode with \textsf{wasm-as} is
+planned.\footnotetext{in fact, the proofreading induced by the cautious study of
+  the spec resulted in a dozen (minor) pull requests and issue reports to the
   specification's draft}
-\item[Linear IR] The other toolchain aiming at providing sophisticated
-  optimisations, binaryen, has a tree like IR, in part for historical
-  reasons~\cite{BinaryenIR}. When the development of binaryen started, Wasm
-  wasn't stack based and features such as multiple return values or block
-  parameters weren't adopted. These features remain second class citizens in
-  binaryen\footnote{for instance, code using block parameters is assembled to
-  code using local variables instead by binaryen's \textsf{wasm-as}}. Watib's IR
-  is closer to modern Wasm. See~\ref{ir} for more details. We hope that will
-  enable different optimisations and a better treatment of code written using
-  WebAssembly's new features.
-\end{description}
-\section{Validation}
-\section{Optimisation}
+
+Before the introduction of watib, Bigloo's Wasm backend was generating code
+ill-typed according to the standard but which was still accepted by
+\textsf{wasm-as}, without any warning. In fact, the original implementation of
+exceptions was incorrect and a validation following the specification would have
+pointed a problem.
+
+\subsubsection{Linear IR}
+The other toolchain aiming at providing sophisticated optimisations, binaryen,
+has a tree like IR, in part for historical reasons~\cite{BinaryenIR}. When the
+development of binaryen started, Wasm wasn't stack based and features such as
+multiple return values or block parameters weren't adopted. These features
+remain second class citizens in binaryen\footnote{for instance, code using block
+parameters is assembled to code using local variables instead by binaryen's
+\textsf{wasm-as}}. Watib's IR is closer to modern Wasm. See~\ref{ir} for more
+details. We hope that will enable different optimisations and a better treatment
+of code written using WebAssembly's new features.
+\section{Validation}\label{val}
+\section{Optimisation}\label{opt}
 \subsection{The Intermediate Representation}\label{ir}
 \subsection{Optimisations}
 Watib performs several optimisation passes. We start by reviewing optimisations
@@ -173,19 +204,20 @@ generated useless code.
 \begin{description}
   \item[Copy Propagation] When a variable $x$ is assigned the value of another
     variable $y$, we replace references to $x$ with references to $y$, until the
-    next assignement to $x$ or $y$.
+    next assignement to $x$ or $y$. We were inspired
+    by~\cite[Section~12.5]{muchnick1997advanced} approach.
   \item[Pure Drops Elimination] We eliminate \textsf{drop} instructions and
     their argument when it has no side effect. We try to remove as extra
     computation as possible by inserting as much \textsf{drop} as needed.
   \item[Constant Folding] We evaluate some expressions whose value is known at
     compile time. We also also remove conditional branching when the condition
     is constant.
-  \item[Dead Code Elimination] We eliminate some instructions that are
+  \item[Unreachable Code Elimination] We eliminate some instructions that are
     known to never execute (after a \textsf{return} for instance). However, some
-    dead code may be needed for validation, even though it can't be
-    executed, see~\ref{unreachable} for an example. When well-typedness without
-    the dead instructions can't easily be guaranteed, an
-    \textsf{unreachable} instruction is inserted instead of the dead code.
+    dead code may be needed for validation, even though it can't be executed,
+    see~\ref{unreachable} for an example. When well-typedness without the dead
+    instructions can't easily be guaranteed, an \textsf{unreachable} instruction
+    is inserted instead of the dead code.
   \item[Peephole optimisation] We recognise small patterns in Wasm code and
     replace them with equivalent code that should be smaller or faster.
 \begin{figure}[h]
@@ -221,12 +253,17 @@ generated useless code.
     access, until it is modified.
 \end{description}
 
-We, now, review more Wasm-specific optimisations and detail in which way they
-use the previous ones.
+Most optimisations passes described earlier are general, in the sense that they
+are applied in most optimising compilers~\cite{muchnick1997advanced}. We, now,
+review more Wasm-specific optimisations and detail in which way they use the
+previous ones.
 \subsubsection{Cast Elimination}
 We eliminate redundant casts and replace type tests by constants if their result
 can be determined.
 
-\subsubsection{\textsf{br\_on\_cast} Introduction}\label{broncast}
+\subsubsection{Type-Dependent Control Flow Rewriting}\label{broncast}
 \printbibliography
+\newpage
+\appendix
+\section{Wasm-as' extensions to the specification}\label{wasmasex}
 \end{document}

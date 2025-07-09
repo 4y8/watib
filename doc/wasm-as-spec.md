@@ -5,7 +5,7 @@ behaviours are not documented. The list is non-exhaustive. Feel free to contact
 us if you find anything missing.
 
 ## Unreachable insertion
-Wasm-as tend to replace unreachable code by unreachable and add unreachable
+Wasm-as tend to replace dead code code by `unreachable` and add `unreachable`
 after blocks that don't exit. While semantically preserving, this transformation
 can transform invalid code in valid code. For instance, the following function
 is not well-typed according to the spec. But wasm-as inserts an `unreachable` at
@@ -18,6 +18,18 @@ the end, making it well type.
     (else (return (i32.const 0)))))
 ```
 
+In the following piece of code, the `br` is not well-typed but wasm-as accepts
+it:
+```wasm
+(func
+  (result i32)
+  (block $l (result i32)
+    (i32.const 0)
+    (if
+      (then (return (i32.const 0)))
+      (else (return (i32.const 0))))
+    (br $l)))
+```
 ## Automatic function reference declaration
 According to the specification, functions appearing in a `ref.func` have to
 appear outside the function bodies (in a global or in an elem section). Wasm-as
