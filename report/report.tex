@@ -2,7 +2,12 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}
-\usepackage[a4paper, left=1in, right=1in]{geometry}
+\usepackage[a4paper, left=1.2in, right=1.2in]{geometry}
+\usepackage{calc}
+
+\usepackage{amsmath}
+\DeclareMathOperator{\reft}{\textsf{ref}}
+\DeclareMathOperator{\refnullt}{\textsf{ref null}}
 
 \usepackage[backend=bibtex,style=alphabetic]{biblatex}
 \addbibresource{report/report.bib}
@@ -35,15 +40,20 @@ representation, it is a straightforward stranscription of the specification.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
-language endowed with a portable and efficient representation. Its
-standard~\cite{WebAssemblyCoreSpecification3} specifies typing rules
-(validation), semantics, an abstract syntax and two concrete syntaxes (formats)
-for the language. The binary format represents WebAssembly modules as a sequence
-of bytes. It is taken as input by Wasm virtual machines such as V8~\cite{V8} or
-SpiderMonkey~\cite{SpiderMonkey} and manipulated by toolchains such as
-binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools}. The textual format
-represents WebAssembly modules as S-expressions. It is taken as input by
+language endowed with a portable and efficient representation.
+
+The WebAssembly standard~\cite{WebAssemblyCoreSpecification3} specifies typing
+rules (validation), semantics, an abstract syntax and two concrete syntaxes
+(formats) for the language. The binary format represents WebAssembly modules as
+a sequence of bytes. It is taken as input by Wasm virtual machines such as
+V8~\cite{V8} or SpiderMonkey~\cite{SpiderMonkey} and manipulated by toolchains
+such as binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools}. The textual
+format represents WebAssembly modules as S-expressions. It is taken as input by
 toolchains or written by humans (and compilers such as Bigloo).
+
+The language has been designed to run by virtual machines that control its
+access to the rest of the system (javascript interop for the web, IO, etc.). We
+will refer to this virtual machine as the embedder.
 \begin{figure}[h]
 \centering
 \begin{tabular}{c c c}
@@ -196,6 +206,75 @@ parameters is assembled to code using local variables instead by binaryen's
 details. We hope that will enable different optimisations and a better treatment
 of code written using WebAssembly's new features.
 \section{Validation}\label{val}
+We start by giving an overview of WebAssembly's type system, and then describe
+our implementation of it.
+\subsection{WebAssembly's type system}
+%% condense ?
+The main types used in Wasm are:
+\begin{description}
+  \item[Value types] They represent values on the stack and arguments to
+    function. A \emph{value type} can be either numeric (\textsf{i32},
+    \textsf{f64}, etc.), vector (\textsf{v128}) or a \emph{reference type}.
+  \item[Reference types] They represent pointers to objects on the heap whose
+    types are \emph{heap types}. A reference can be either \emph{nullable} or
+    not. The two types are represented respectively as $\refnullt ht$ and $\reft
+    ht$, where $ht$ is the heap type pointed to.
+  \item[Heap types] They represent objects on the heap. They can be either a
+    type index refering to a \emph{composite type}, in which case the heap type
+    is concrete, or an abstract heap type.
+  \item[Composite types] They represent concrete objects on the heap. They are:
+    \begin{description}
+      \item[function types] types of a function represented by the types of its
+        inputs and its ouptuts (two vectors of value types),
+      \item[array types] types of an array represented by the type of its
+        elements which is a \emph{field type} (either a value type or a packed
+        type: \textsf{i8} or \textsf{i16}, the whole decorated by a mutability
+        declaration),
+      \item[structure types] types of a structure represented the field types of
+        its fields
+    \end{description}
+  \item[Abstract heap types] They mostly represent (formal) unions and
+    intersections of the previous ones:
+    \begin{description}
+      \item[\textsf{func}] the smallest supertype of all \emph{function types},
+      \item[\textsf{array}] the smallest supertype of all \emph{array types},
+      \item[\textsf{struct}] the smallest supertype of all \emph{structure
+      types},
+      \item[\textsf{exn}] the type of all exception references,
+      \item[\textsf{i31}] denotes unboxed scalars as tagged pointers, i.e. a
+        value of type \textsf{ref i31} is not a reference but a 31-bit integer,
+        it is distinguished from regular references by the interpreter using a
+        1-bit tag,
+      \item[\textsf{eq}] the type of all objects whose references can be
+        compared: either structures, arrays or unboxed integers,
+      \item[\textsf{extern}] the type of references passed by the embedder,
+      \item[\textsf{any}] a supertype of \textsf{eq} that also contains all
+        objects of type \textsf{extern} that were internalised (i.e. now
+        considered as Wasm objects).
+    \end{description}
+    Abstract heap types can also be dual of the previous ones: \textsf{nofunc}
+    is the largest subtype of all function types, \textsf{none} is the largest
+    subtype of all array and structure types, \textsf{noexn} is the largest
+    subtype of the types of expection reference and \textsf{noextern} is the
+    largest subtype of types of all extern references. These types aren't
+    inhabited, but nullable references to them are (they contain the null
+    pointer).
+
+\end{description}
+
+WebAssembly's type system supports \emph{declared and mutually iso-recursive
+subtyping}.
+
+Subtyping rules relating abstract heap types to the concrete one have already
+been given, as part of the definition of the former and transitivity.
+
+Wasm's subtyping is \emph{declared} as the subtyping relations between the
+defined types have to be specified as part of the type defintion. Their validity
+can be checked with the type definition's validation.
+
+We now give the intuition behind \emph{mutually iso-recursive subtyping}.
+See~\cite{rossberg2023mutually} for a full discussion.
+\subsection{A type checker for WebAssembly}
 \section{Optimisation}\label{opt}
 \subsection{The Intermediate Representation}\label{ir}
 \subsection{Optimisations}
@@ -263,6 +342,31 @@ We eliminate redundant casts and replace type tests by constants if their result
 can be determined.
 
 \subsubsection{Type-Dependent Control Flow Rewriting}\label{broncast}
+\begin{figure}[h]
+  \begin{minipage}{\widthof{(type \$pair (sub \$pair-nil (struct (field \$cdr (ref \$pair-nil))}}
+\begin{verbatim}
+(type $pair-nil (sub (struct)))
+(type $pair (sub $pair-nil (struct (field $cdr (ref $pair-nil))
+                                   (field $car i32))))
+(func $find-zero
+  (param $l (ref $pair-nil))
+  (result i32)
+  (if (ref.test (ref $pair) (local.get $l))
+    (then
+      (if (i32.eqz (struct.get $pair $car
+                     (ref.cast (ref $pair) (local.get $l))))
+        (then (return (i32.const 1)))
+        (else
+          (return_call $find-zero
+            (struct.get $pair $cdr
+              (ref.cast (ref $pair) (local.get $l)))))))
+    (else (return (i32.const 0))))
+  (unreachable))
+\end{verbatim}
+  \end{minipage}
+
+  \caption{A Wasm function testing if a list of integers contains 0}
+\end{figure}
 \printbibliography
 \newpage
 \appendix

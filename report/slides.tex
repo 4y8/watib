@@ -4,6 +4,7 @@
 \subtitle{\url{https://github.com/4y8/watib}}
 \institute{École normale supérieure}
 \usepackage{calc}
+\usepackage{mathpartir}
 \begin{document}
 \frame{\titlepage}
 \date{INRIA Sophia-Antiplois, July 10, 2025}
@@ -30,10 +31,29 @@
     \item Wasm backend fully integrated in Bigloo (this internship)
   \end{itemize}
 \end{frame}
-\begin{frame}[fragile]{Examples}
+\begin{frame}[fragile]{A concrete example}
+\footnotesize
 \begin{verbatim}
-(type $pair-nil (struct))
-(type $pair (sub $pair-nil (struct (field ($car (ref (eq)))))))
+(type $pair-nil (sub (struct)))
+(type $pair (sub $pair-nil (struct (field $cdr (ref $pair-nil))
+                                   (field $car i32))))
+\end{verbatim}
+\pause
+\begin{verbatim}
+(func $find-zero
+  (param $l (ref $pair-nil))
+  (result i32)
+  (if (ref.test (ref $pair) (local.get $l))
+    (then
+      (if (i32.eqz (struct.get $pair $car
+                     (ref.cast (ref $pair) (local.get $l))))
+        (then (return (i32.const 1)))
+        (else
+          (return_call $find-zero
+            (struct.get $pair $cdr
+              (ref.cast (ref $pair) (local.get $l)))))))
+    (else (return (i32.const 0))))
+  (unreachable))
 \end{verbatim}
 \end{frame}
 \begin{frame}
@@ -60,6 +80,121 @@
   \end{itemize}
 \end{frame}
 \section{Validation}
+\begin{frame}{Wasm's type system}
+  \begin{itemize}
+    \item Statically typed
+    \item Typed labels
+    \item With \emph{declared and mutually iso-recursive} subtyping
+  \end{itemize}
+\end{frame}
+\begin{frame}{Wasm types}
+  \begin{itemize}
+    \item Value types: values on the stack\pause
+      \begin{itemize}
+        \item numeric (i32, i64, f32, f64)
+        \item vector (v128)
+        \item \emph{reference}
+      \end{itemize}\pause
+    \item Reference types: pointers (nullable or not) to a value on the heap
+      \pause
+    \item Heap types: objects on the heap, abstract types or indices of concrete
+      types (\emph{composite})
+  \end{itemize}
+\end{frame}
+\begin{frame}{Heap types}
+  \begin{itemize}
+    \item Composite types
+      \begin{itemize}
+        \item \textsf{func} ${t_1}^*\to {t_2}^*$, ${t_i}^*$ is a
+          vector of value types\pause
+        \item \textsf{array} $t$, $t$ is a fieldtype (value type and
+          mutability)\pause
+        \item \textsf{struct} $t*$, $t*$ is a vector of fieldtypes
+      \end{itemize}
+    \item Abstract heap types
+      \begin{description}
+        \item[func, array, struct] supertype of the all the corresponding
+          composite types
+        \item[i31] unboxed integers
+        \item[eq] references comparable for equality (func, array, i31)
+      \end{description}
+  \end{itemize}
+\end{frame}
+\begin{frame}{Subtyping}
+  Rules given by definition for abstract heap types (with transitivity)
+
+  \centering
+  \begin{mathpar}
+    \inferrule{{(t_1'\leq t_1)}^*\\{(t_2\leq t_2')}^*}
+              {{t_1}^*\to {t_2}^*\leq {t_1'}^*\to {t_2'}^*}\\
+    \inferrule{t_1\leq t_2}
+              {\text{\textsf{const}}\, t_1\leq\text{\textsf{const}}\, t_2}\hspace{1in}
+\inferrule{t_1\equiv t_2}
+              {\text{\textsf{var}}\, t_1\leq\text{\textsf{var}}\, t_2}\\
+    \inferrule{t_1\leq t_2}
+              {\text{\textsf{array}}\, t_1\leq\text{\textsf{array}}\, t_2}\hspace{1in}
+    \inferrule{{(t_1\leq t_2)}^*}
+              {\text{\textsf{struct}}\, {t_1}^* {t'}^*\leq\text{\textsf{array}}\, {t_2}^*}
+  \end{mathpar}
+\end{frame}
+\begin{frame}{Typing instructions (without variable annotation)}
+  \begin{center}
+    \begin{mathpar}
+      \inferrule{{t_1}^*\to {t_2}^*\leq {t_1'}^*\to {t_2'}^*}
+                {{t_1}^*\to {t_2}^*\leq t^*{t_1'}^*\to t^*{t_2'}^*}
+    \end{mathpar}
+  \end{center}
+  Composition, with subtyping, to type a sequence of instructions
+\end{frame}
+\begin{frame}[fragile]{Declared subtyping}
+\begin{verbatim}
+(type $pair-nil
+  (sub (struct)))
+(type $pair
+  (sub $pair-nil
+    (struct
+      (field $cdr (ref $pair-nil))
+      (field $car i32))))
+\end{verbatim}
+\end{frame}
+\begin{frame}[fragile]{Mutually iso-recursive subtyping}
+\begin{verbatim}
+(rec (type $a (struct (ref $b)))
+     (type $b (struct (ref $c)))
+     (type $c (struct (ref $a))))
+\end{verbatim}
+\pause
+\begin{verbatim}
+(type $a ((type $a (struct (ref (rec 1))))
+          (type $b (struct (ref (rec 2))))
+          (type $c (struct (ref (rec 0))))).0)
+...
+\end{verbatim}
+\begin{itemize}
+  \item Avoid size blow-ups
+\end{itemize}
+\end{frame}
+
+\begin{frame}{A type checking algorithm}
+  \begin{itemize}
+    \item Tweak rules to avoid transitivity\pause
+    \item Maintain a stack of the types available\pause
+    \item The top of the stack should be a subtype of the expected one\pause
+    \item Update labels when entering blocks\pause
+    \item Polymorphic stack for unreachable code
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Some details}
+  \begin{itemize}
+    \item Most instructions have a most general type obtained from their
+      parameters\pause
+    \item For the others, avoid type variables by looking on top of the
+      stack\pause
+    \item ref.as\_non\_null : ref null $ht\to$ ref $ht$, forall $ht$
+  \end{itemize}
+\end{frame}
+
 \section{Optimisation}
 \begin{frame}[fragile]{Copy Propagation}{}
   \begin{center}
@@ -179,9 +314,142 @@
   \end{center}
   \vfill
 \begin{itemize}
-\item Walk through instructions and
+\item Walk through instructions and record to which labels we jump and signal if
+  an instruction doesn't return
 \item Be careful not to break well-typedness
 \end{itemize}
 \end{frame}
+
+\begin{frame}[fragile]{Cast Elimination}{}
+  \begin{center}
+  \begin{tabular}{c c c}
+    \begin{minipage}{\widthof{\texttt{(local \$x (ref \$pair))}}}
+\begin{verbatim}
+(local $x (ref $pair))
+...
+(local.get $x)
+(ref.cast (ref $pair))
+\end{verbatim}
+\end{minipage}
+    &
+    $\rightarrow$
+    &
+\begin{minipage}{\widthof{\texttt{(local \$x (ref \$pair))}}}
+\begin{verbatim}
+(local $x (ref $pair))
+...
+(local.get $x)
+
+\end{verbatim}
+\end{minipage}
+  \end{tabular}
+  \end{center}
+  \vfill
+\begin{itemize}
+\item For each casts check if the top of the stack is a subtype of the type we
+  cast to
+\item For tests we check against the actual type of the top of the stack
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Type-Dependent Control Flow Rewriting}{}
+  \begin{center}
+  \begin{tabular}{c c c}
+    \begin{minipage}{\widthof{\small\texttt{(if (ref.test (ref \$pair)}}}
+      \small
+\begin{verbatim}
+(local $l
+  (ref $pair-nil))
+(if (ref.test (ref $pair)
+      (local.get $l))
+    (then B1)
+    (else B2))
+\end{verbatim}
+\end{minipage}
+    &
+    $\rightarrow$
+    &
+\begin{minipage}{\widthof{\small\texttt{....(result (ref \$pair))}}}
+  \small
+\begin{verbatim}
+(local $x (ref $pair))
+(block $b1
+  (block $b2
+    (result (ref $pair))
+    (br_on_cast $b2
+        (ref $pair-nil)
+        (ref $pair)
+      (local.get $l))
+    B2
+    (br $l1))
+  (local.set $x)
+  B1[$l := $x])
+\end{verbatim}
+\end{minipage}
+  \end{tabular}
+  \end{center}
+\end{frame}
+\begin{frame}[fragile]{Going back to the find example}
+\small
+\begin{verbatim}
+(if (ref.test (ref $pair) (local.get $l))
+  (then
+    (if (i32.eqz (struct.get $pair $car
+                   (ref.cast (ref $pair) (local.get $l))))
+      (then (return (i32.const 1)))
+      (else
+        (return_call $find-zero
+          (struct.get $pair $cdr
+            (ref.cast (ref $pair) (local.get $l)))))))
+  (else (return (i32.const 0))))
+\end{verbatim}
+\end{frame}
+
+\begin{frame}[fragile]{Type-Dependent Control Flow Rewriting}
+\small
+\begin{verbatim}
+(local $x (ref $pair))
+
+(block $b (result (ref $pair))
+  (br_on_cast $b (ref $pair-nil) (ref $pair)
+    (local.get $l))
+  (return (i32.const 0)))
+(local.set $x)
+(if (i32.eqz (struct.get $pair $car
+               (ref.cast (ref $pair) (local.get $x))))
+    (then (return (i32.const 1)))
+    (else
+      (return_call $find-zero
+        (struct.get $pair $cdr
+          (ref.cast (ref $pair) (local.get $x))))))
+\end{verbatim}
+\end{frame}
+
+\begin{frame}[fragile]{Cast Elimination}
+\small
+\begin{verbatim}
+(local $x (ref $pair))
+
+(block $b (result (ref $pair))
+  (br_on_cast $b (ref $pair-nil) (ref $pair)
+    (local.get $l))
+  (return (i32.const 0)))
+(local.set $x)
+(if (i32.eqz (struct.get $pair $car
+               (local.get $x)))
+    (then (return (i32.const 1)))
+    (else
+      (return_call $find-zero
+        (struct.get $pair $cdr (local.get $x)))))
+\end{verbatim}
+\end{frame}
+
 \section{Conclusion}
+\begin{frame}{Conclusion}
+  \begin{itemize}
+    \item Not the whole spec supported
+    \item Missing size optimisations
+    \item Benchmarks!
+  \end{itemize}
+\end{frame}
 \end{document}
