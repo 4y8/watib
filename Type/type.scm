@@ -138,6 +138,7 @@
       ((and (pair? t1) (pair? t2))
        (every-same-length (lambda (t1 t2) (eq-clos-st? env t1 t2)) t1 t2))
       ((and (null? t1) (null? t2)) #t)
+      ((and (boolean? t1) (boolean? t2)) (eq? t1 t2))
       (else #f)))
 
 (define (eq-clos-dt?::bool env::env t1::pair t2::pair)

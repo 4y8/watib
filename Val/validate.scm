@@ -380,7 +380,7 @@
             ((equal? st '(poly)) '(poly))
             ((<vt= env (car st) (car ts))
              (aux (cdr st) (cdr ts)))
-            (#t (raise `(non-matching-stack ,(car st) ,(car ts))))))
+            (else (raise `(non-matching-stack ,(car st) ,(car ts))))))
    (aux st (reverse ts)))
 
 (define (check-block::sequence env::env body::pair-nil t::pair-nil
