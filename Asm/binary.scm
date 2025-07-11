@@ -356,6 +356,7 @@
    (unless (null? elems)
       (set! *nelem* 1)
       (leb128-write-unsigned 3 *elem-op*)
+      (write-byte #x00 *elem-op*)
       (write-vec elems leb128-write-unsigned *elem-op*)))
 
 (define (write-sec N::bint len::bint ip::output-port op::output-port)

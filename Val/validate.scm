@@ -901,15 +901,15 @@
 
 (define (valid-functions env::env a::long b::long)
    (let ((x (-> env nfunc)))
-      (do ((i 0 (+fx i 1)))
-          ((>=fx (+fx (*fx a i) b) x))
-         (let ((f (vector-ref *funcs* (+fx (*fx a i) b))))
+      (do ((i b (+fx i a)))
+          ((>=fx i x))
+         (let ((f (vector-ref *funcs* i)))
             (when f
                (with-handler
                   (lambda (e)
                      (format-exn env
                                  `(at-pos ,(with-access::func f (pos) pos) ,e)))
-                  (valid-function env f (+fx (*fx a i) b)))
+                  (valid-function env f i))
                (unless (null? (-> env error-list))
                   ;(format-exn env `(at-pos ,(with-access::func f (pos) pos) ""))
                   (for-each (lambda (e) (format-exn env e))
@@ -1099,13 +1099,13 @@
          ((or (module (? ident?) . ?mfs) (module . ?mfs))
           (let* ((type-mfs (map-pos (mf-pass/handle-error type-pass-mf) mfs)))
              (for-each (mf-pass/handle-error env-pass-mf) type-mfs)
-         (cond-expand
-        ((and multijob (library pthread))
-         (if (= nthreads 1)
-             (singlejob env)
-             (multijob env)))
-        (else
-         (singlejob env))))))
+             (cond-expand
+              ((and multijob (library pthread))
+               (if (= nthreads 1)
+                   (singlejob env)
+                   (multijob env)))
+              (else
+               (singlejob env))))))
       (unless error-encountered?
      (instantiate::prog
         (exports *exports*)
