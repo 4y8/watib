@@ -985,6 +985,10 @@
       ((empty-stack ?t)
        (sprintf "expected ~a on stack but got nothing" (type->string (car t))))
 
+      ((value-left-stack ?t)
+       (sprintf "expected empty stack, got a value of type ~a on top"
+                (type->string (car t))))
+
       ((supertype-final ?t1 ?t2)
        (sprintf "~a can't be a supertype of ~a because the first is marked as final"
                 (type->string t2) (type->string t1)))

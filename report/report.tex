@@ -18,29 +18,35 @@
 \begin{document}
 \maketitle
 \begin{abstract}
-  Watib is a WebAssembly Toolchain written In Bigloo. It has been integrated in
-  the Bigloo Scheme compiler and is available as a standalone tool. It currently
-  handles, parsing, validation (type checking), optimisation and assembly of
-  files in the WebAssembly Text format. We review watib's architecture and the
-  motivate the choices made. We also compare our toolchain to the existing ones.
+  WebAssembly (Wasm) is a code format aiming at providing efficient execution.
+  It now offers the features needed to be a compilation target for functional
+  programming languages such as Scheme. Such a backend has been developped in
+  the Bigloo compiler, relying on an external toolchain.
+
+  We present \textsf{watib}, a WebAssembly Toolchain written In Bigloo. It has
+  been integrated in the Bigloo Scheme compiler and is available as a standalone
+  tool. We present \textsf{watib}'s architecture and compare our toolchain with
+  the one used before.
 \end{abstract}
 
 \section{Introduction}
-The Bigloo~\cite{Bigloo} scheme compiler Wasm backend generated textual Wasm and
-relied on an external tool for the assembly. Watib was developped as a
-replacement for this tool and has been directly integrated in the Bigloo
-compiler. It is also available as a standalone tool with a command-line
-interface.
+In 2024, a Wasm backend was added to the Bigloo~\cite{Bigloo} scheme compiler.
+It generated textual Wasm and relied on an external tool for the assembly. Watib
+was developped as a replacement for this tool and has been directly integrated
+in the Bigloo compiler. It is also available as a standalone tool with a
+command-line interface.
 
-The rest of this section gives a high-level overview of WebAssembly and watib.
-Section~\ref{val} details watib's typechecker. Section~\ref{opt} describes the
-design of the different optimisation passes and the overall design of the
-optimiser. We omit the assembly phase as, once we have an intermediate
-representation, it is a straightforward stranscription of the specification.
+The rest of this section gives a high-level overview of WebAssembly and
+\textsf{watib}. Section~\ref{val} details \textsf{watib}'s typechecker.
+Section~\ref{opt} describes the design of the different optimisation passes and
+the overall design of the optimiser. We omit the assembly phase as, once we have
+an intermediate representation, it is a straightforward transcription of the
+specification.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
-language endowed with a portable and efficient representation.
+language endowed with a portable and efficient representation. New compilers
+targetting Wasm are developped~\cite{emscripten, kotlin, ocaml}.
 
 The WebAssembly standard~\cite{WebAssemblyCoreSpecification3} specifies typing
 rules (validation), semantics, an abstract syntax and two concrete syntaxes
@@ -51,132 +57,68 @@ such as binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools}. The textual
 format represents WebAssembly modules as S-expressions. It is taken as input by
 toolchains or written by humans (and compilers such as Bigloo).
 
-The language has been designed to run by virtual machines that control its
-access to the rest of the system (javascript interop for the web, IO, etc.). We
-will refer to this virtual machine as the embedder.
-\begin{figure}[h]
-\centering
-\begin{tabular}{c c c}
-\begin{minipage}{1.8in}
-\begin{verbatim}
-(func $add
-  (param $x i32)
-  (param $y i32)
-  (result i32)
-  (i32.add (local.get $x)
-           (local.get $y)))
-\end{verbatim}
-\end{minipage}&
-\begin{minipage}{1.6in}
-\begin{verbatim}
-(type $pair
-  (struct
-    (field $car
-      (mut (ref eq)))
-    (field $cdr
-      (mut (ref eq)))))
-\end{verbatim}
-\end{minipage}
-&\begin{minipage}{1.8in}
-\begin{verbatim}
-(func $get-car
-  (param $x (ref eq))
-  (result (ref eq))
-  (struct.get $pair $car
-    (ref.cast (ref $pair)
-      (local.get $x))))
-\end{verbatim}
-\end{minipage}
-\end{tabular}
-\caption{Examples of WebAssembly in textual format}
-\end{figure}
-
 The third version of the standard the standard adds features facilitating
 compiling from functional languages. For instance, Wasm has now a garbage
 collector, instructions for tail-calls (they are needed because the language
 doesn't support goto) and exceptions. This version is still in draft, but the
 mentionned features are stable and already implemented by the major Wasm
-engines. Bigloo's Wasm backend relies on these features.
+engines. Bigloo's Wasm backend relies on these features. They are demonstrated
+in the example of figure~\ref{ex}.
 
-We now review some of the characteristics of WebAssembly that influenced the
-design of watib.
-
-\begin{description}
-\item[Strong statical typing] WebAssembly is strongly and statically typed.
-  Watib thus performs a phase of type-checking (called validation in WebAssembly
-  language). Typing information appears in the binary format (on blocks for
-  instance) and Wasm engines validate the files given to them before executing
-  them. Thus, watib preserves well-typedness during all of its phases. In
-  particular, all optimisations are type preserving and they code the introduce
-  is well-typed and annotated. This typing discipline also implies that all down
-  casts are explicit. The optimisation phase tries to remove all the useless
-  ones and restructures the control flow to eliminate some redundant tests and
-  casts. This is made possible by the fact that WebAssembly branching can depend
-  on type information. This optimisation is described in~\ref{broncast}.
-
-%% \item[Structured control flow] All control flow in WebAssembly is structured:
-%%   the language forbids arbitrary jumps. Branching can only go to a parent block
-%%   (at the beginning or at the end depending on the block's nature, see
-%%   figure~\ref{cf-ex}).
-
-\item[Typed labels]
-Combining the two previous points implie that all labels are typed. Blocks take
-values on the stack as input and leave values on the stack as outputs. The types
-of the branching instructions ensure that blocks get the expected values on the
-stack.
-\end{description}
 \begin{figure}[h]
-\centering
-\begin{tabular}{c c c}
-\begin{minipage}{1.8in}
+  \begin{minipage}{\widthof{(type \$pair (sub \$pair-nil (struct (field \$cdr (ref \$pair-nil))}}
 \begin{verbatim}
-(block $l
+(type $pair-nil (sub (struct)))
+(type $pair (sub $pair-nil (struct (field $cdr (ref $pair-nil))
+                                   (field $car i32))))
+(func $find-zero
+  (param $l (ref $pair-nil))
   (result i32)
-  (if (i32.const 1)
+  (if (ref.test (ref $pair) (local.get $l))
     (then
-      (i32.const 42)
-      (br $l)))
-  (i32.const 67))
-\end{verbatim}
-\end{minipage}&
-\begin{minipage}{1.8in}
-\begin{verbatim}
-(i32.const 1)
-(loop $l
-  (param $i32)
-  (if
-    (then
-      (br $l
-        (call $cnt)))))
-\end{verbatim}
-\end{minipage}
-&\begin{minipage}{1.8in}
-\begin{verbatim}
-(block $l
-  (result (ref $pair))
-  (br_on_cast $l
-    (ref eq)
-    (ref $pair)
-    (local.get $x))
+      (if (i32.eqz (struct.get $pair $car
+                     (ref.cast (ref $pair) (local.get $l))))
+        (then (return (i32.const 1)))
+        (else
+          (return_call $find-zero
+            (struct.get $pair $cdr
+              (ref.cast (ref $pair) (local.get $l)))))))
+    (else (return (i32.const 0))))
   (unreachable))
 \end{verbatim}
-\end{minipage}
-\end{tabular}
-\caption{Examples of WebAssembly control flow}\label{cf-ex}
-\end{figure}
-\subsection{Watib}
-Watib handles type checking, optimisation and assembly of Wasm programs given in
-textual format\footnote{binary format support as input is planned}. Function
-validation and optimisation is parallelisable. We added the option to run them
-in an arbitrary number of threads. This feature, and thus the dependency on
-pthreads is optional which is requiered for integration with Bigloo.
+  \end{minipage}
 
-We now review some differences between watib and already existing toolchains
-(apart from its lack of features and overall maturity).
+  \caption{A Wasm function testing if a list of integers contains 0}\label{ex}
+\end{figure}
+
+\subsection{Watib}
+\textsf{Watib} handles type checking (the \texttt{Val} folder of the sources),
+optimisation (the \texttt{Opt} folder) and assembly (the \texttt{Asm} folder) of
+Wasm programs given in textual format\footnote{binary format support as input is
+planned}. Function validation and optimisation is parallelisable. We added the
+option to run them in an arbitrary number of threads. This feature, and thus the
+dependency on pthreads is optional which is requiered for integration with
+Bigloo.
+
+The WebAssembly platform is in constant evolution. Features are added to the
+engines before they are standardised. Thus potential users might want to be able
+to use them as soon as possible. Long-term maintenance is one of our goals.
+\textsf{Watib} has been designed to be able to keep up with the additions made
+to the language. Adding a instruction that isn't a block can be done by putting
+a new entry in the list of opcodes (\texttt{Asm/opcodes.sch}) and in the list of
+validation rules (\texttt{Val/instruction-types.sch}). The case of block
+instructions is more involved as they have syntaxes different from the other
+ones. The optimisation passes also have to be modified to take into account the
+new control flow possibilities. It should not be a problem because new kinds of
+blocks aren't often introduced.
+
+We now review some differences between \textsf{watib} and already existing
+toolchains (apart from the lack of features and maturity of the former).
 \subsubsection{Fault tolerance}
-For the sake of user-friendliness, watib can recover from most validation errors
-(and some syntax errors). It avoids having to correct errors one by one which
-can be tedious for big files, as parsing alone can be time consuming.
+For the sake of user-friendliness, \textsf{watib} can recover from most
+validation errors (and some syntax errors). It avoids having to correct errors
+one by one which can be tedious for big files, as parsing alone can be time
+consuming. We try to give informative error messages.
 
 \subsubsection{{Zealous\protect\footnotemark} respect of the spec}
 Binaryen's assembler, \textsf{wasm-as}, accepts files that do not conform to the
@@ -265,8 +207,9 @@ The main types used in Wasm are:
 WebAssembly's type system supports \emph{declared and mutually iso-recursive
 subtyping}.
 
-Subtyping rules relating abstract heap types to the concrete one have already
-been given, as part of the definition of the former and transitivity.
+Subtyping rules relating abstract heap types to the concrete ones and abstract
+ones with each other have already been given, as part of their definitions,
+to which we add transitivity.
 
 Wasm's subtyping is \emph{declared} as the subtyping relations between the
 defined types have to be specified as part of the type defintion. Their validity
@@ -342,31 +285,7 @@ We eliminate redundant casts and replace type tests by constants if their result
 can be determined.
 
 \subsubsection{Type-Dependent Control Flow Rewriting}\label{broncast}
-\begin{figure}[h]
-  \begin{minipage}{\widthof{(type \$pair (sub \$pair-nil (struct (field \$cdr (ref \$pair-nil))}}
-\begin{verbatim}
-(type $pair-nil (sub (struct)))
-(type $pair (sub $pair-nil (struct (field $cdr (ref $pair-nil))
-                                   (field $car i32))))
-(func $find-zero
-  (param $l (ref $pair-nil))
-  (result i32)
-  (if (ref.test (ref $pair) (local.get $l))
-    (then
-      (if (i32.eqz (struct.get $pair $car
-                     (ref.cast (ref $pair) (local.get $l))))
-        (then (return (i32.const 1)))
-        (else
-          (return_call $find-zero
-            (struct.get $pair $cdr
-              (ref.cast (ref $pair) (local.get $l)))))))
-    (else (return (i32.const 0))))
-  (unreachable))
-\end{verbatim}
-  \end{minipage}
 
-  \caption{A Wasm function testing if a list of integers contains 0}
-\end{figure}
 \printbibliography
 \newpage
 \appendix

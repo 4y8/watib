@@ -110,7 +110,7 @@
         \item \textsf{array} $t$, $t$ is a fieldtype (value type and
           mutability)\pause
         \item \textsf{struct} $t*$, $t*$ is a vector of fieldtypes
-      \end{itemize}
+      \end{itemize}\pause
     \item Abstract heap types
       \begin{description}
         \item[func, array, struct] supertype of the all the corresponding
@@ -333,8 +333,7 @@
 \end{minipage}
     &
     $\rightarrow$
-    &
-\begin{minipage}{\widthof{\texttt{(local \$x (ref \$pair))}}}
+    &\begin{minipage}{\widthof{\texttt{(local \$x (ref \$pair))}}}
 \begin{verbatim}
 (local $x (ref $pair))
 ...
