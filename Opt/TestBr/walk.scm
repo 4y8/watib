@@ -157,7 +157,7 @@
    (if-test->br! (-> i else))
    (let ((y (local-add! (-> i parent) rt-dst)))
       (replace-var! (-> i then) (-> var idx) y rt-dst)
-      (incr-labels! (-> i else) 0)
+      (incr-labels! (-> i else) -1)
       (with-access::sequence (-> i then) (body (ot outtype))
          (set! body
                `(,(instantiate::block

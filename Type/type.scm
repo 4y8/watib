@@ -128,22 +128,24 @@
 ;; our representations slopiness to do things shorter
 (define (eq-clos-st?::bool env::env t1 t2)
    (cond
-      ((symbol? t1) (eq? t1 t2))
       ((idx? t1) (eq-clos-st? env (type-get env t1) t2))
       ((idx? t2) (eq-clos-st? env t1 (type-get env t2)))
+      ((symbol? t1) (eq? t1 t2))
       ; we suppose defined types are already closed, i.e. we have to put closed
       ; types in the context, otherwise, we may have to close the whole context
       ; each time we want to close a type
-      ((or (deftype? t1) (rectype? t1) (deftype? t2) (rectype? t2))
+      ((and (deftype? t1) (deftype? t2))
        (equal? (cddr t1) (cddr t2)))
+      ((and (rectype? t1) (rectype? t2))
+       (=fx (cadr t1) (cadr t2)))
       ((and (pair? t1) (pair? t2))
-       (every' (lambda (t1 t2) eq-clos-st? env t1 t2) t1 t2))
+       (every-same-length (lambda (t1 t2) (eq-clos-st? env t1 t2)) t1 t2))
       ((and (null? t1) (null? t2)) #t)
       (else #f)))
 
 (define (eq-clos-dt?::bool env::env t1::pair t2::pair)
    (and (=fx (cadddr t1) (cadddr t2))
-        (every' (lambda (st1 st2) eq-clos-st? env st1 st2)
+        (every-same-length (lambda (st1 st2) (eq-clos-st? env st1 st2))
                 (caddr t1) (caddr t2))))
 
 ;; section 3.1.3

@@ -43,10 +43,16 @@
        (map thread-join! ts)))))
 
 (define (opt-file! p::prog nthreads::bint)
-   (cond-expand
-    ((and multijob (library pthread))))
-   (with-access::env (-> p env) (nfunc)
-      (do ((i 0 (+fx i 1)))
-          ((>=fx i nfunc))
-         (let-if (f (vector-ref (-> p funcs) i))
-            (opt-func! f p)))))
+   (opt-func! (vector-ref (-> p funcs) 690) p)
+   ;; (cond-expand
+   ;;  ((and multijob (library pthread))
+   ;;   (multijob prog nthreads))
+   ;;  (else (with-access::env (-> p env) (nfunc)
+   ;;    (do ((i 0 (+fx i 1)))
+   ;;        ((>=fx i nfunc))
+   ;;       (let-if (f (vector-ref (-> p funcs) i))
+   ;;          (opt-func! f p))))))
+
+
+
+   )
