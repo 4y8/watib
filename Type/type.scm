@@ -149,7 +149,9 @@
 
 ;; we use the same slopiness as in eq-clos-st?
 (define (unroll-st x::bint sts st)
-   (cond ((rectype? st) `(deftype ,(+fx (cadr st) x) ,sts ,(cadr st)))
+   (cond ((rectype? st)
+          `(deftype ,(+fx (cadr st) x) ,sts ,(cadr st)))
+         ((deftype? st) st)
          ((pair? st) (map (lambda (st) (unroll-st x sts st)) st))
          (else st)))
 

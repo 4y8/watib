@@ -351,7 +351,8 @@
 
 (define (get-struct-fldts x::typeidxp)
    (match-case (expand (-> x type))
-      ((struct . ?fldts) fldts)
+      ((struct . ?fldts)
+       fldts)
       (?t (raise `((expected struct) ,x ,t)))))
 
 (define (get-array-ft x::typeidxp)
@@ -372,7 +373,6 @@
 ; syntax-directed way
 (define (check-stack::pair-nil env::env st::pair-nil ts::pair-nil)
    (define (aux::pair-nil st::pair-nil ts::pair-nil)
-      (print "STACK ----" st ts)
       (cond ((null? st)
              (unless (null? ts) (raise `(empty-stack ,ts)))
              '())
