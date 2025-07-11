@@ -112,30 +112,40 @@
       ; todo - avoid calculating the length each time
       (+ n (length (-> f formals)))))
 
+;; (define-generic (block-gen! i::if-then lget::one-arg var::localidxp rt-src
+;;                             rt-dst)
+;;    (if-test->br! (-> i then))
+;;    (let ((y (local-add! (-> i parent) rt-dst)))
+;;       (replace-var! (-> i then) (-> var idx) y rt-dst)
+;;       (with-access::sequence (-> i then) (body)
+;;          (set! body
+;;                `(,lget
+;;                  ,(instantiate::three-args
+;;                    (intype (list rt-src))
+;;                    (outtype (list rt-dst))
+;;                    (parent (-> i parent))
+;;                    (opcode 'br_on_cast_fail)
+;;                    (x (instantiate::labelidxp (idx 0) (type '())))
+;;                    (y (instantiate::typep (type rt-src)))
+;;                    (z (instantiate::typep (type rt-dst))))
+;;                  ,(instantiate::one-arg
+;;                    (intype (list rt-dst))
+;;                    (outtype '())
+;;                    (parent (-> i parent))
+;;                    (opcode 'local.set)
+;;                    (x (instantiate::localidxp (idx y) (init? #f)
+;;                                               (type rt-dst))))
+;;                  ,@body)))))
 (define-generic (block-gen! i::if-then lget::one-arg var::localidxp rt-src
-                            rt-dst)
-   (if-test->br! (-> i then))
-   (let ((y (local-add! (-> i parent) rt-dst)))
-      (replace-var! (-> i then) (-> var idx) y rt-dst)
-      (with-access::sequence (-> i then) (body)
-         (set! body
-               `(,lget
-                 ,(instantiate::three-args
-                   (intype (list rt-src))
-                   (outtype (list rt-dst))
-                   (parent (-> i parent))
-                   (opcode 'br_on_cast_fail)
-                   (x (instantiate::labelidxp (idx 0) (type '())))
-                   (y (instantiate::typep (type rt-src)))
-                   (z (instantiate::typep (type rt-dst))))
-                 ,(instantiate::one-arg
-                   (intype (list rt-dst))
-                   (outtype '())
-                   (parent (-> i parent))
-                   (opcode 'local.set)
-                   (x (instantiate::localidxp (idx y) (init? #f)
-                                              (type rt-dst))))
-                 ,@body)))))
+                             rt-dst)
+   (let ((ni::if-else (duplicate::if-else i
+                       (else (instantiate::sequence (intype '())
+                                                    (outtype '())
+                                                    (parent (-> i parent))
+                                                    (opcode 'nop)
+                                                    (body '()))))))
+      (block-gen! ni lget var rt-src rt-dst)
+      (set! (-> i then) (-> ni then))))
 
 (define-method (block-gen! i::if-else lget::one-arg var::localidxp rt-src
                            rt-dst)
@@ -162,6 +172,11 @@
                                                    (type (list rt-dst))))
                         (y (instantiate::typep (type rt-src)))
                         (z (instantiate::typep (type rt-dst))))
+                      ,(instantiate::instruction
+                        (intype (list (rt-diff rt-src rt-dst)))
+                        (outtype '())
+                        (parent (-> i parent))
+                        (opcode 'drop))
                       ,@(with-access::sequence (-> i else) (body) body)
                       ; the type here is kind of a hack, we can't really do
                       ; better without maintaining the stack state
