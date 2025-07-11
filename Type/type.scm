@@ -34,9 +34,6 @@
            (eq-clos-dt?::bool env::env t1::pair t2::pair)
            (unroll-st x::bint sts st)
            (unroll-dt::pair t::pair)
-           (roll-st env::env st x::bint n::bint)
-           (roll-rect::pair env::env rect::pair x::bint)
-           (roll* env::env rect::pair x::bint)
            (expand t)))
 
 (read-table *numtypes* "Type/numtypes.sch")
@@ -158,26 +155,8 @@
 
 ;; expects well formed arguments
 (define (unroll-dt::pair t::pair)
-   (unroll-st (cadr t) (caddr t) (list-ref (caddr t) (cadddr t))))
-
-(define (roll-st env::env st x::bint n::bint)
-   (cond
-    ((idx? st)
-     (let ((id (type-get-index env st)))
-        (if (and (<=fx x id) (<fx id n))
-            `(rec ,(-fx id x))
-            st)))
-    ((pair? st) (map (lambda (st) (roll-st env st x n)) st))
-    (else st)))
-
-(define (roll-rect::pair env::env rect::pair x::bint)
-   (let ((n (+fx x (length (cdr rect)))))
-      (map (lambda (st) (roll-st env st x n)) (cdr rect))))
-
-(define (roll* env::env rect::pair x::bint)
-   (let ((rolled-rect (roll-rect env rect x)))
-      (list-tabulate (length (cdr rect))
-                     (lambda (i) `(deftype ,(+fx i x) ,rolled-rect ,i)))))
+   (unroll-st (-fx (cadr t) (cadddr t))
+              (caddr t) (list-ref (caddr t) (cadddr t))))
 
 (define (expand t)
    (match-case (cdr (unroll-dt t)) ; remove the sub keyword

@@ -114,11 +114,7 @@
       (else #f)))
 
 (define (<dt=::bool env::env t1 t2)
-   (print "eeeeeee")
-   (print t1)
-   (print t2)
    (if (eq-clos-dt? env t1 t2)
-       (begin (print "errrrrr") #t)
+       #t
        (let ((ht (get-sub-heaptype (unroll-dt t1))))
-         (print (get-sub-heaptype (unroll-dt t1)))
           (and ht (<ht= env ht t2)))))

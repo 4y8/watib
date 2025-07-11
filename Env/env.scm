@@ -206,7 +206,7 @@
    (set! (-> env label-names) (cdr (-> env label-names))))
 
 ;;;;;;;; REPLACE LAST TYPE WITH A TYPEIDX
-(define (get-struct-fldts env::env x::long)
+(define (get-struct-fieldtypes env::env x::long)
    (match-case (expand (type-get env x))
       ((struct . ?fldts) fldts)
       (?t (raise `(expected-struct ,x ,t)))))
@@ -217,7 +217,7 @@
       (raise `(expected-struct ,(-> env last-type)
                ,(expand (type-get env (-> env last-type))))))
    (let* ((idx (field-get-index env (-> env last-type) x))
-          (t (list-ref (get-struct-fldts env (-> env last-type)) idx)))
+          (t (list-ref (get-struct-fieldtypes env (-> env last-type)) idx)))
       (instantiate::fieldidxp (idx idx) (mut? (car t)) (type (cadr t)))))
 
 (define (typeidx::typeidxp env::env x)

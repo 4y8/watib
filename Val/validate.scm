@@ -290,10 +290,10 @@
                       `(sub final ,(valid-ct env st x)))))))
 
       (let ((rolled-sts (map valid-st sts (iota (length sts) x 1))))
-         (for-each (lambda (i t)
+         (for-each (lambda (i)
                      (set-type! env (+fx x i)
                                 `(deftype ,(+fx x i) ,rolled-sts ,i)))
-                   (iota (length sts)) rolled-sts)
+                   (iota (length sts)))
          rolled-sts)))
 
 ;; section 3.4
@@ -352,8 +352,7 @@
 (define (get-struct-fldts x::typeidxp)
    (match-case (expand (-> x type))
       ((struct . ?fldts) fldts)
-      (?t
-       (raise `((expected struct) ,x ,t)))))
+      (?t (raise `((expected struct) ,x ,t)))))
 
 (define (get-array-ft x::typeidxp)
    (match-case (expand (-> x type))
@@ -373,6 +372,7 @@
 ; syntax-directed way
 (define (check-stack::pair-nil env::env st::pair-nil ts::pair-nil)
    (define (aux::pair-nil st::pair-nil ts::pair-nil)
+      (print "STACK ----" st ts)
       (cond ((null? st)
              (unless (null? ts) (raise `(empty-stack ,ts)))
              '())

@@ -175,6 +175,7 @@
   (struct.new
    (,typeidx)
    ,(lambda (env::env x::typeidxp)
+      (print "eeeeeeeeee")
        `(,(map unpack-ft (get-struct-fldts x)) ((ref ,(-> x idx))))))
 
   ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.105

@@ -11,10 +11,8 @@
 (define (every-same-length f . lists)
    (if (any null? lists)
        (every null? lists)
-       (begin
-         (print (map car lists))
        (and (apply f (map car lists))
-            (apply every-same-length f (map cdr lists))))))
+            (apply every-same-length f (map cdr lists)))))
 
 (define (length>=?::bool l::pair-nil i::bint)
    (if (null? l)
