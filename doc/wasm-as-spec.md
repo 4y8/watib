@@ -40,3 +40,21 @@ According to the specification, when using `array.get` or `struct.get` on a
 packed field (`i8` or `i16`), a sign extension has to be specified. It means
 that either `.get_u` or `.get_s` has to be used. Wasm-as allows `.get`
 instructions on packed types, defaulting to unsigned.
+
+## Replacement of block input values by locals
+Binaryen's README mentions that block input values are represented in the IR by
+`pop` subexpressions for `catch` blocks and not supported for the others. It is
+not mentionned that code using block input values will be replaced by the use
+local variables. For instance, the following code:
+```wasm
+(i32.const 0) 
+(block (param i32)
+  (drop))
+```
+is assembled to:
+```wasm
+(i32.const 0)
+(local.set 0)
+(local.get 0)
+(drop)
+```

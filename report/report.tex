@@ -2,7 +2,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}
-\usepackage[a4paper, left=1.2in, right=1.2in]{geometry}
+\usepackage[a4paper, left=1in, right=1in]{geometry}
 \usepackage{calc}
 
 \usepackage{amsmath}
@@ -63,7 +63,8 @@ collector, instructions for tail-calls (they are needed because the language
 doesn't support goto) and exceptions. This version is still in draft, but the
 mentionned features are stable and already implemented by the major Wasm
 engines. Bigloo's Wasm backend relies on these features. They are demonstrated
-in the example of figure~\ref{ex}.
+in the example of figure~\ref{ex}. For a more detailed introduction to
+WebAssembly, see~\cite[Section~2.1]{phipps2023continuing}.
 
 \begin{figure}[h]
   \begin{minipage}{\widthof{(type \$pair (sub \$pair-nil (struct (field \$cdr (ref \$pair-nil))}}
@@ -113,21 +114,28 @@ new control flow possibilities. It should not be a problem because new kinds of
 blocks aren't often introduced.
 
 We now review some differences between \textsf{watib} and already existing
-toolchains (apart from the lack of features and maturity of the former).
+toolchains (apart from the lack of features and maturity of the former). We
+focus on bynarien (and its assembler \textsf{wasm-as}). It is the toolchain most
+compiler use~\cite{Binaryen} and the one Bigloo used before switching to
+\textsf{watib}.
 \subsubsection{Fault tolerance}
 For the sake of user-friendliness, \textsf{watib} can recover from most
 validation errors (and some syntax errors). It avoids having to correct errors
 one by one which can be tedious for big files, as parsing alone can be time
-consuming. We try to give informative error messages.
+consuming. The Bigloo Wasm backend produced a file of 1,6 million lines. Running
+\textsf{wasm-as} to find a single error would take a noticeable amount of time.
+We, also, try to give informative error messages. The benefits of these choices
+become apparent when using our toolchain to correct code written by hand, which
+is a mandatory part of writing a Wasm backend.
 
 \subsubsection{{Zealous\protect\footnotemark} respect of the spec}
 Binaryen's assembler, \textsf{wasm-as}, accepts files that do not conform to the
 specification and outputs file that are more or less semantically equivalent. We
-compiled in watib's internal documentation a list of the modifications made by
-\textsf{wasm-as} we witnessed~\cite{WasmAsExtension}. It is reproduced in
-appendix~\ref{wasmasex}. For the sake of portability, watib follows the
+compiled in \textsf{watib}'s internal documentation a list of the modifications
+made by \textsf{wasm-as} we witnessed~\cite{WasmAsExtension}. It is reproduced
+in Appendix~\ref{wasmasex}. For the sake of portability, watib follows the
 specification by default. A compatibility mode with \textsf{wasm-as} is
-planned.\footnotetext{in fact, the proofreading induced by the cautious study of
+planned.\footnotetext{in fact, the proofreading induced by our cautious study of
   the spec resulted in a dozen (minor) pull requests and issue reports to the
   specification's draft}
 
@@ -138,15 +146,17 @@ exceptions was incorrect and a validation following the specification would have
 pointed a problem.
 
 \subsubsection{Linear IR}
-The other toolchain aiming at providing sophisticated optimisations, binaryen,
-has a tree like IR, in part for historical reasons~\cite{BinaryenIR}. When the
-development of binaryen started, Wasm wasn't stack based and features such as
-multiple return values or block parameters weren't adopted. These features
-remain second class citizens in binaryen\footnote{for instance, code using block
-parameters is assembled to code using local variables instead by binaryen's
-\textsf{wasm-as}}. Watib's IR is closer to modern Wasm. See~\ref{ir} for more
-details. We hope that will enable different optimisations and a better treatment
-of code written using WebAssembly's new features.
+Binaryen's \textsf{wasm-opt}, has a tree like IR, in part for historical
+reasons~\cite{BinaryenIR}. When the development of binaryen started, Wasm wasn't
+stack based and features such as multiple return values or block parameters
+weren't adopted. These features remain second class citizens in
+binaryen\footnote{for instance, code using block parameters is assembled to code
+using local variables instead by binaryen's \textsf{wasm-as}}. \textsf{Watib}'s
+IR is closer to modern Wasm. We represent the instructions in a linear way. It
+allows to output code using block paramters for instance. We hope that will
+enable different optimisations and a better treatment of code written using
+WebAssembly's new features.
+
 \section{Validation}\label{val}
 We start by giving an overview of WebAssembly's type system, and then describe
 our implementation of it.

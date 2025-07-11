@@ -16,7 +16,7 @@
            (ast_node "Ast/node.scm"))
 
    (export (class &watlib-validate-error::&error)
-       (valid-file f::pair-nil nthreads::bint keep-going::obj silent::bool)))
+       (valid-file f::pair-nil nthreads::long keep-going::obj silent::bool)))
 
 ;;; we force everywhere the number of type indices after sub final? to be one;
 ;;; even though forms with more than one type are syntactically correct, they
@@ -68,13 +68,13 @@
 (define-macro (map-env f env . l)
    `(map (lambda (x) (,f ,env x)) ,@l))
 
-(define (stack-take::pair-nil st::pair-nil i::bint)
+(define (stack-take::pair-nil st::pair-nil i::long)
    (cond ((=fx i 0) '())
          ((null? st) (raise 'empty-stack))
          ((eq? (car st) 'poly) (make-list i 'bot))
          (else (cons (car st) (stack-take (cdr st) (-fx i 1))))))
 
-(define (stack-drop::pair-nil st::pair-nil i::bint)
+(define (stack-drop::pair-nil st::pair-nil i::long)
    (cond ((=fx i 0) '())
          ((null? st) (raise 'empty-stack))
          ((eq? (car st) 'poly) '(poly))
@@ -87,7 +87,7 @@
          ((eq? 'poly (car st)) (values 'bot st))
          (else (raise `(expected-reftype-stack ,st)))))
 
-(define (valid-func-ref?::bool env::env x::bint)
+(define (valid-func-ref?::bool env::env x::long)
    (let ((h (-> env refs)))
       (or (hashtable-contains? h x)
           (hashtable-contains? h (vector-ref (-> env func-names) x)))))
@@ -188,7 +188,7 @@
       (else (raise `(expected-fields ,l)))))
 
 ;; section 3.2.10
-(define (valid-ct env::env t x::bint)
+(define (valid-ct env::env t x::long)
    (match-case t
       ((func . ?p/r)
        (multiple-value-bind (p r) (valid-param/result env p/r)
@@ -204,7 +204,7 @@
 ;; validated: a first lifting is done while checking modules.
 
 ;; section 3.2.12
-(define (valid-rect env::env l x::bint)
+(define (valid-rect env::env l x::long)
    (define (valid-st t x)
       (match-case t
          ((sub final . ?rst)
@@ -262,7 +262,7 @@
                      (list #f (valid-vt env t)))))))
 
 ;; section 6.4.9
-(define (clean-mod-rectype! env::env l x::bint)
+(define (clean-mod-rectype! env::env l x::long)
    ; the `(rec ...) in the environment assures rolling
    (let ((sts (map-in-order
                  (match-lambda
@@ -867,7 +867,7 @@
          (else
           (raise 'expected-modulefield)))))
 
-(define (valid-global env::env g::global x::bint)
+(define (valid-global env::env g::global x::long)
    (let ((old-nglobal (-> env nglobal)))
       ; global can only refer to the previous ones
      (set! (-> env nglobal) x)
@@ -883,7 +883,7 @@
         (set! (-> env nglobal) old-nglobal)
         (set! (-> g body) e))))
 
-(define (valid-function env::env f::func x::bint)
+(define (valid-function env::env f::func x::long)
    (multiple-value-bind (n lts body)
       (valid-names/local/get-tl env (-> f body))
       (set! (-> env local-names) (append (-> f formals) n))
@@ -899,7 +899,7 @@
           (check-block env body (cadr (-> f type))
                        `(() ,(cadr (-> f type))))))))
 
-(define (valid-functions env::env a::bint b::bint)
+(define (valid-functions env::env a::long b::long)
    (let ((x (-> env nfunc)))
       (do ((i 0 (+fx i 1)))
           ((>=fx (+fx (*fx a i) b) x))
@@ -1079,7 +1079,7 @@
    (valid-exports env)
    (valid-functions env 1 0))
 
-(define (valid-file f::pair-nil nt::bint kg::obj s::bool)
+(define (valid-file f::pair-nil nt::long kg::obj s::bool)
    (set! nthreads nt)
    (set! keep-going kg)
    (set! silent s)

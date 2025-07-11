@@ -66,7 +66,7 @@
               intype::pair-nil
               outtype::pair-nil
               (__actouttype::pair-nil (default '()))
-              (actouttype (get (lambda p::instruction
+              (actouttype (get (lambda (p::instruction)
                                   (if (null? (-> p __actouttype))
                                       (-> p outtype)
                                       (-> p __actouttype))))

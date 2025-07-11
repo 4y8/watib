@@ -117,7 +117,7 @@
    (if-test->br! (-> i then))
    (let ((y (local-add! (-> i parent) rt-dst)))
       (replace-var! (-> i then) (-> var idx) y rt-dst)
-      (with-access::block (-> i then) (body)
+      (with-access::sequence (-> i then) (body)
          (set! body
                `(,lget
                  ,(instantiate::three-args
