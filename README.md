@@ -21,6 +21,7 @@ optimise and convert it to binary format. It supports several options:
   encoutered (won't produce an output file),
 + `-v` or `--validate-only` to stop after validation,
 + `-O0` to disable the optimisations,
++ `-O1` to enable optimisations (default),
 + `-j <n>` to use more than one job.
 ## Overview
 The source code consists of the following directories:

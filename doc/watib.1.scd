@@ -2,7 +2,7 @@ WATIB(1)
 
 # NAME
 
-watlib - wasm toolchain
+watib - wasm toolchain
 
 # SYNOPSIS
 
@@ -33,7 +33,7 @@ specification.
 *-O0*
 	Disable optimisations.
 
-*-O2*
+*-O1*
 	Enable optimisations (default).
 
 *-o* file

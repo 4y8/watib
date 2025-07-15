@@ -1,4 +1,7 @@
-\documentclass[10pt]{article}
+\documentclass[a4paper,11pt]{article}
+\usepackage{libertine}
+\usepackage{inconsolata}
+\usepackage{xcolor}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}
@@ -9,12 +12,14 @@
 \DeclareMathOperator{\reft}{\textsf{ref}}
 \DeclareMathOperator{\refnullt}{\textsf{ref null}}
 
-\usepackage[backend=bibtex,style=alphabetic]{biblatex}
+\usepackage{tikz}
+\usepackage{wrapfig}
+
+\usepackage[backend=bibtex]{biblatex}
 \addbibresource{report/report.bib}
 \author{Aghilas Y. Boussaa \texttt{<aghilas.boussaa@ens.fr>}}
 
-\title{\textsf{watib}: Design and implementation of an optimising WebAssembly
-  toolchain}
+\title{\textsf{watib}: An optimising toolchain for modern WebAssembly}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -30,18 +35,20 @@
 \end{abstract}
 
 \section{Introduction}
-In 2024, a Wasm backend was added to the Bigloo~\cite{Bigloo} scheme compiler.
-It generated textual Wasm and relied on an external tool for the assembly. Watib
-was developped as a replacement for this tool and has been directly integrated
-in the Bigloo compiler. It is also available as a standalone tool with a
-command-line interface.
+In 2024, a Wasm backend was added to the Bigloo~\cite{Bigloo} Scheme compiler.
+It generated textual Wasm and relied on an external tool for the assembly.
+\textsf{Watib} was developped as a replacement for this tool and has been
+directly integrated in the Bigloo compiler. It is also available as a standalone
+tool with a command-line
+interface\footnote{\url{https://www.normalesup.org/~boussaa/watib/}}.
 
 The rest of this section gives a high-level overview of WebAssembly and
 \textsf{watib}. Section~\ref{val} details \textsf{watib}'s typechecker.
 Section~\ref{opt} describes the design of the different optimisation passes and
-the overall design of the optimiser. We omit the assembly phase as, once we have
-an intermediate representation, it is a straightforward transcription of the
-specification.
+the overall design of the optimiser. Section~\ref{bench} compares
+\textsf{watib}'s and existing tools' performances We omit the assembly phase as,
+once we have an intermediate representation, it is a straightforward
+transcription of the specification.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
@@ -139,8 +146,8 @@ planned.\footnotetext{in fact, the proofreading induced by our cautious study of
   the spec resulted in a dozen (minor) pull requests and issue reports to the
   specification's draft}
 
-Before the introduction of watib, Bigloo's Wasm backend was generating code
-ill-typed according to the standard but which was still accepted by
+Before the introduction of \textsf{watib}, Bigloo's Wasm backend was generating
+code ill-typed according to the standard but which was still accepted by
 \textsf{wasm-as}, without any warning. In fact, the original implementation of
 exceptions was incorrect and a validation following the specification would have
 pointed a problem.
@@ -151,68 +158,39 @@ reasons~\cite{BinaryenIR}. When the development of binaryen started, Wasm wasn't
 stack based and features such as multiple return values or block parameters
 weren't adopted. These features remain second class citizens in
 binaryen\footnote{for instance, code using block parameters is assembled to code
-using local variables instead by binaryen's \textsf{wasm-as}}. \textsf{Watib}'s
-IR is closer to modern Wasm. We represent the instructions in a linear way. It
-allows to output code using block paramters for instance. We hope that will
-enable different optimisations and a better treatment of code written using
-WebAssembly's new features.
+using local variables instead by binaryen's \textsf{wasm-as}}, as these new
+features can create a data flow not representable by classic ASTs. For instance,
+in figure~\ref{data-flow} the results of same function is shared by two nodes
+and a node takes its two inputs from a single node.
+
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}
+    \node[draw] (f) at (0, 0) {\texttt{(call f)\color{lightgray}~:~() $\to$ (i32 i32)}};
+    \node[draw] (g) at (0, -1) {\texttt{(call g)\color{lightgray}~:~(i32) $\to$ (i32)}};
+    \node[draw] (h) at (0, -2) {\texttt{(call h)\color{lightgray}~:~(i32 i32) $\to$ (i32 i32)}};
+    \node[draw] (i) at (0, -3) {\texttt{(call i)\color{lightgray}~:~(i32 i32) $\to$ (i32)}};
+    \node[draw] (d) at (0, -4) {\texttt{(drop)}};
+
+    \draw[->,>=latex] (f) to (g);
+    \draw[->,>=latex] (f.east) to[in=15, out=-15] (h.east);
+    \draw[->,>=latex] (g) to (h);
+    \draw[->,>=latex] (h) to[bend right] (i);
+    \draw[->,>=latex] (h) to[bend left] (i);
+    \draw[->,>=latex] (i) to (d);
+  \end{tikzpicture}
+  \caption{Non classical data flow with multiple return values}\label{data-flow}
+\end{figure}
+
+\textsf{Watib}'s IR is closer to modern Wasm. We represent the instructions in a
+linear way. It allows to output code that use block parameters without
+additional burden for instance. We hope that will enable different optimisations
+and a better treatment of code written using WebAssembly's new features.
 
 \section{Validation}\label{val}
 We start by giving an overview of WebAssembly's type system, and then describe
 our implementation of it.
 \subsection{WebAssembly's type system}
-%% condense ?
-The main types used in Wasm are:
-\begin{description}
-  \item[Value types] They represent values on the stack and arguments to
-    function. A \emph{value type} can be either numeric (\textsf{i32},
-    \textsf{f64}, etc.), vector (\textsf{v128}) or a \emph{reference type}.
-  \item[Reference types] They represent pointers to objects on the heap whose
-    types are \emph{heap types}. A reference can be either \emph{nullable} or
-    not. The two types are represented respectively as $\refnullt ht$ and $\reft
-    ht$, where $ht$ is the heap type pointed to.
-  \item[Heap types] They represent objects on the heap. They can be either a
-    type index refering to a \emph{composite type}, in which case the heap type
-    is concrete, or an abstract heap type.
-  \item[Composite types] They represent concrete objects on the heap. They are:
-    \begin{description}
-      \item[function types] types of a function represented by the types of its
-        inputs and its ouptuts (two vectors of value types),
-      \item[array types] types of an array represented by the type of its
-        elements which is a \emph{field type} (either a value type or a packed
-        type: \textsf{i8} or \textsf{i16}, the whole decorated by a mutability
-        declaration),
-      \item[structure types] types of a structure represented the field types of
-        its fields
-    \end{description}
-  \item[Abstract heap types] They mostly represent (formal) unions and
-    intersections of the previous ones:
-    \begin{description}
-      \item[\textsf{func}] the smallest supertype of all \emph{function types},
-      \item[\textsf{array}] the smallest supertype of all \emph{array types},
-      \item[\textsf{struct}] the smallest supertype of all \emph{structure
-      types},
-      \item[\textsf{exn}] the type of all exception references,
-      \item[\textsf{i31}] denotes unboxed scalars as tagged pointers, i.e. a
-        value of type \textsf{ref i31} is not a reference but a 31-bit integer,
-        it is distinguished from regular references by the interpreter using a
-        1-bit tag,
-      \item[\textsf{eq}] the type of all objects whose references can be
-        compared: either structures, arrays or unboxed integers,
-      \item[\textsf{extern}] the type of references passed by the embedder,
-      \item[\textsf{any}] a supertype of \textsf{eq} that also contains all
-        objects of type \textsf{extern} that were internalised (i.e. now
-        considered as Wasm objects).
-    \end{description}
-    Abstract heap types can also be dual of the previous ones: \textsf{nofunc}
-    is the largest subtype of all function types, \textsf{none} is the largest
-    subtype of all array and structure types, \textsf{noexn} is the largest
-    subtype of the types of expection reference and \textsf{noextern} is the
-    largest subtype of types of all extern references. These types aren't
-    inhabited, but nullable references to them are (they contain the null
-    pointer).
-
-\end{description}
 
 WebAssembly's type system supports \emph{declared and mutually iso-recursive
 subtyping}.
@@ -225,8 +203,8 @@ Wasm's subtyping is \emph{declared} as the subtyping relations between the
 defined types have to be specified as part of the type defintion. Their validity
 can be checked with the type definition's validation.
 
-We now give the intuition behind \emph{mutually iso-recursive subtyping}.
-See~\cite{rossberg2023mutually} for a full discussion.
+We now give the intuition behind \emph{mutually iso-recursive subtyping} ---
+see~\cite{rossberg2023mutually} for a full discussion.
 \subsection{A type checker for WebAssembly}
 \section{Optimisation}\label{opt}
 \subsection{The Intermediate Representation}\label{ir}
@@ -247,38 +225,13 @@ generated useless code.
     is constant.
   \item[Unreachable Code Elimination] We eliminate some instructions that are
     known to never execute (after a \textsf{return} for instance). However, some
-    dead code may be needed for validation, even though it can't be executed,
-    see~\ref{unreachable} for an example. When well-typedness without the dead
-    instructions can't easily be guaranteed, an \textsf{unreachable} instruction
-    is inserted instead of the dead code.
+    dead code may be needed for validation, even though it can't be executed.
+    For instance, removing the \textsf{(unreachable)} instruction at the end of
+    the function of figure~\ref{ex} makes it ill-typed.  When well-typedness
+    without the dead instructions can't easily be guaranteed, an
+    \textsf{unreachable} instruction is inserted instead of the dead code.
   \item[Peephole optimisation] We recognise small patterns in Wasm code and
     replace them with equivalent code that should be smaller or faster.
-\begin{figure}[h]
-\centering
-\begin{tabular}{c c}
-\begin{minipage}{2.8in}
-\begin{verbatim}
-(func $f
-  (result i32)
-  (if (i32.const 1)
-    (then (return (i32.const 0)))
-    (else (return (i32.const 1)))))
-\end{verbatim}
-\end{minipage}
-&\begin{minipage}{2.8in}
-\begin{verbatim}
-(func $f
-  (result i32)
-  (if (i32.const 1)
-    (then (return (i32.const 0)))
-    (else (return (i32.const 1))))
-  (unreachable))
-\end{verbatim}
-\end{minipage}
-\end{tabular}
-\caption{The function on the left is ill-typed while the function on the right
-  is well-typed}\label{unreachable}
-\end{figure}
   \item[Type propagation] This one is not an optimisation \emph{per se}. It only
     refines type annotations of variables in the IR. When a variable is assigned
     a value, the type of this value (which may be a strict subtype of the
@@ -292,10 +245,21 @@ review more Wasm-specific optimisations and detail in which way they use the
 previous ones.
 \subsubsection{Cast Elimination}
 We eliminate redundant casts and replace type tests by constants if their result
-can be determined.
+can be determined. Such casts and tests could be introduced by copy-propagation
+as when we may replace a variable with another one of a smaller type or by the
+next optimisation. To stay conservative about side-effects eliminated tests are
+replaced by a \textsf{(drop)} and the result of the test, which is a constant.
+Pure Drop Elimination will remove some useless computation. Constant folding
+will propagate the result of the test.
+
+To check for type tests to eliminate, we compare the argument's actual type
+(which may be smaller than its static type) against the type it is tested for.
+For casts, we only check against the static type as the cast can be necessary to
+maintain well-typedness.
 
 \subsubsection{Type-Dependent Control Flow Rewriting}\label{broncast}
-
+\section{Benchmarks}\label{bench}
+\section{Conclusion}
 \printbibliography
 \newpage
 \appendix
