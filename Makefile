@@ -5,7 +5,7 @@ SRCS = Misc/let-if.scm Opt/optimise.scm Val/validate.scm \
        Opt/Unreachable/walk.scm Opt/Const/walk.scm Opt/PureDrop/walk.scm \
        Opt/CopyProp/walk.scm Opt/Peephole/walk.scm Opt/PropType/walk.scm \
        Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm \
-       Misc/parse.scm  Asm/leb128.scm
+       Misc/parse.scm Asm/leb128.scm
 
 OBJS = $(SRCS:.scm=.o)
 
@@ -14,9 +14,9 @@ FLAGS = -O3 -unsafe
 
 all: watib
 
-tools: wati-test
+tools: tools/wati-test
 
-wati-test: tools/wati-test.o $(OBJS)
+tools/wati-test: tools/wati-test.o $(OBJS)
 	bigloo $(FLAGS) tools/wati-test.o $(OBJS) -o tools/wati-test
 
 watib: watib.o $(OBJS)
@@ -34,5 +34,5 @@ slides.pdf: report/slides.tex
 clean:
 	latexmk -C report/report.tex
 	rm -f report-blx.bib report.bbl
-	rm -f $(OBJS) *.o *.wasm
-	rm -f watib
+	rm -f $(OBJS) *.o *.wasm tools/*.o
+	rm -f watib tools/wati-test
