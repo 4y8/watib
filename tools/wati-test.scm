@@ -48,7 +48,7 @@
                         (display "\\" op))
                      (write-char (string-ref s i) op)))
                 (display "\")\n" op))))
-         ((assert_invalid ?m ?msg)
+         (((or assert_malformed assert_invalid) ?m ?msg)
           (define err? #f)
           (with-handler
              (lambda (e)
