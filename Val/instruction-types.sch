@@ -379,40 +379,64 @@
   ;; The only thing to do is, then, to check that we have declared a memory
   ;; because the other validation preconditions are always satisfied with the
   ;; default values.
-  (i32.load
-   ()
-   ,(lambda (env::env)
-       (unless (>=fx (-> env nmem) 1)
-          (raise 'no-declared-memory))
-       '((i32) (i32))))
 
-  (i32.store
-   ()
-   ,(lambda (env::env)
-       (unless (>=fx (-> env nmem) 1)
-          (raise 'no-declared-memory))
-       '((i32 i32) ())))
+  (i32.load () ,(load-instruction 'i32))
+  (i64.load () ,(load-instruction 'i64))
 
-  (i32.load8_s
-   ()
-   ,(lambda (env::env)
-       (unless (>=fx (-> env nmem) 1)
-          (raise 'no-declared-memory))
-       '((i32) (i32))))
+  (f32.load () ,(load-instruction 'f32))
+  (f64.load () ,(load-instruction 'f64))
 
-  (i32.load8_u
-   ()
-   ,(lambda (env::env)
-       (unless (>=fx (-> env nmem) 1)
-          (raise 'no-declared-memory))
-       '((i32) (i32))))
+  (i32.load8_s () ,(load-instruction 'i32))
+  (i32.load8_u () ,(load-instruction 'i32))
 
-  (i32.store8
+  (i32.load16_s () ,(load-instruction 'i32))
+  (i32.load16_u () ,(load-instruction 'i32))
+
+  (i64.load8_s () ,(load-instruction 'i64))
+  (i64.load8_u () ,(load-instruction 'i64))
+
+  (i64.load16_s () ,(load-instruction 'i64))
+  (i64.load16_u () ,(load-instruction 'i64))
+
+  (i64.load32_s () ,(load-instruction 'i64))
+  (i64.load32_u () ,(load-instruction 'i64))
+
+  (i32.store () ,(store-instruction 'i32))
+  (i64.store () ,(store-instruction 'i64))
+
+  (f32.store8 () ,(store-instruction 'f32))
+  (f64.store8 () ,(store-instruction 'f64))
+
+  (i32.store8 () ,(store-instruction 'i32))
+  (i32.store16 () ,(store-instruction 'i32))
+
+  (i64.store8 () ,(store-instruction 'i64))
+  (i64.store16 () ,(store-instruction 'i64))
+  (i64.store32 () ,(store-instruction 'i64))
+
+  (memory.size
    ()
    ,(lambda (env::env)
        (unless (>=fx (-> env nmem) 1)
           (raise 'no-declared-memory))
-       '((i32 i32) ())))
+       (with-access::memory (vector-ref (-> env mem-types) 0) (at)
+          `(() (,at)))))
+
+  (memory.grow
+   ()
+   ,(lambda (env::env)
+       (unless (>=fx (-> env nmem) 1)
+          (raise 'no-declared-memory))
+       (with-access::memory (vector-ref (-> env mem-types) 0) (at)
+          `((,at) (,at)))))
+
+  (memory.fill
+   ()
+   ,(lambda (env::env)
+       (unless (>=fx (-> env nmem) 1)
+          (raise 'no-declared-memory))
+       (with-access::memory (vector-ref (-> env mem-types) 0) (at)
+          `((,at i32 ,at) ()))))
 
   ;; section 3.4.11
   (nop () (() ()))
