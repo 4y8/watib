@@ -36,6 +36,7 @@
 
   (local.get  . "\x20")
   (local.set  . "\x21")
+  (local.tee  . "\x22")
   (global.get . "\x23")
   (global.set . "\x24")
 
