@@ -130,10 +130,14 @@
 
 
   (i32.wrap_i64        () ((i64) (i32)))
+  (i32.trunc_f32_s     () ((f32) (i32)))
+  (i32.trunc_f32_u     () ((f32) (i32)))
   (i32.trunc_f64_s     () ((f64) (i32)))
   (i32.trunc_f64_u     () ((f64) (i32)))
   (i64.extend_i32_s    () ((i32) (i64)))
   (i64.extend_i32_u    () ((i32) (i64)))
+  (i64.trunc_f32_s     () ((f32) (i64)))
+  (i64.trunc_f32_u     () ((f32) (i64)))
   (i64.trunc_f64_s     () ((f64) (i64)))
   (i64.trunc_f64_u     () ((f64) (i64)))
   (f64.convert_i32_s   () ((i32) (f64)))
@@ -147,6 +151,11 @@
   (i64.reinterpret_f64 () ((f64) (i64)))
   (f32.reinterpret_i32 () ((i32) (f32)))
   (f64.reinterpret_i64 () ((i64) (f64)))
+  (i32.extend8_s       () ((i32) (i32)))
+  (i32.extend16_s      () ((i32) (i32)))
+  (i64.extend8_s       () ((i64) (i64)))
+  (i64.extend16_s      () ((i64) (i64)))
+  (i64.extend32_s      () ((i64) (i64)))
 
   ;; section 3.4.2
   (ref.null (,ht) ,(lambda (- ht::typep) `(() ((ref null ,(-> ht type))))))
@@ -404,8 +413,8 @@
   (i32.store () ,(store-instruction 'i32))
   (i64.store () ,(store-instruction 'i64))
 
-  (f32.store8 () ,(store-instruction 'f32))
-  (f64.store8 () ,(store-instruction 'f64))
+  (f32.store () ,(store-instruction 'f32))
+  (f64.store () ,(store-instruction 'f64))
 
   (i32.store8 () ,(store-instruction 'i32))
   (i32.store16 () ,(store-instruction 'i32))

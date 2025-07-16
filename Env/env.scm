@@ -190,7 +190,7 @@
         (raise `(labelidx-out-of-range ,x))))
    ((ident? x)
     (index (-> env label-names) x 0 'unknown-label))
-   (else `((expected-idx label) ,x))))
+   (else (raise `((expected-idx label) ,x)))))
 
 (define (label-get-type env::env x::long)
    (vector-ref (-> env label-types) (- (-> env nlabel) x 1)))

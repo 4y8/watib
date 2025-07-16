@@ -84,4 +84,6 @@
 
    (call-with-input-file input-file test-file)
 
-   (printf "failed ~a/~a\n" *nerr* *ntest*))
+   (printf "failed ~a/~a\n" *nerr* *ntest*)
+   (unless (=fx *nerr* 0)
+      (exit 1)))
