@@ -202,7 +202,9 @@
 
   ; we do not support offset/alignment/memidx yet, the opcodes contain the
   ; default value.
+  (i32.load    . "\x28\x02\x00")
   (i32.load8_s . "\x2C\x00\x00")
   (i32.load8_u . "\x2D\x00\x00")
   (i32.store   . "\x36\x02\x00")
-  (i32.store8  . "\x3A\x00\x00"))
+  (i32.store8  . "\x3A\x00\x00")
+  )

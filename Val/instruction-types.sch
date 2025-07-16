@@ -379,6 +379,13 @@
   ;; The only thing to do is, then, to check that we have declared a memory
   ;; because the other validation preconditions are always satisfied with the
   ;; default values.
+  (i32.load
+   ()
+   ,(lambda (env::env)
+       (unless (>=fx (-> env nmem) 1)
+          (raise 'no-declared-memory))
+       '((i32) (i32))))
+
   (i32.store
    ()
    ,(lambda (env::env)

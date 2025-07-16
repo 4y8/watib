@@ -44,7 +44,7 @@ is being implemented).
 ## Missing
 Watib doesn't support the following features yet (the list may be incomplete):
 + Tables,
-+ Memory instructions,
++ Most memory instructions,
 + Vector instructions,
 + Active data declarations,
 + Elem declarations other than `(elem declare func ...)`,
@@ -52,7 +52,8 @@ Watib doesn't support the following features yet (the list may be incomplete):
 + Omission of the module keyword,
 + Type indices in type-uses (i.e. functions have to be declared with `(param ...)` and `(result ...)`,
 + Offset and alignment in `load8_sx` and `store8`,
-+ NaN of the form `nan:...` (only nan is supported).
++ Multiple memories,
++ NaN of the form `nan:...` (only nan is supported) and hexfloats.
 
 If you want to use watib and need one of these, feel free to raise an issue or
 send an email at [aghilas.boussaa@normalesup.org](mailto:aghilas.boussaa@normalesup.org).

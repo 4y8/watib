@@ -306,9 +306,10 @@
          ((symbol? n)
           (let ((s (symbol->string n)))
              (if (and (>= (string-length s) 2) (substring-at? s "0x" 0))
-                 (string->number (substring s 2) 16)
+                 (let ((m (string->number (substring s 2) 16)))
+                   (if m m (raise `(expected-number ,n))))
                  (raise `(expected-number ,n)))))
-         (#t (raise `(expected-number ,n)))))
+         (else (raise `(expected-number ,n)))))
 
 (define (i32::i32p env::env n)
    (let ((n (wnumber->number n)))
@@ -993,6 +994,9 @@
       ((supertype-final ?t1 ?t2)
        (sprintf "~a can't be a supertype of ~a because the first is marked as final"
                 (type->string t2) (type->string t1)))
+
+      (no-declared-memory
+       ("used a memory instruction while no memory was declared"))
 
       (else (sdisplay e))))
 
