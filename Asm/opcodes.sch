@@ -117,9 +117,9 @@
   (i64.xor    . "\x85")
   (i64.shl    . "\x86")
   (i64.shr_s  . "\x87")
-  (i64.shr_u  . "\x89")
-  (i64.rotl   . "\x8A")
-  (i64.rotr   . "\x8B")
+  (i64.shr_u  . "\x88")
+  (i64.rotl   . "\x89")
+  (i64.rotr   . "\x8A")
 
   (f32.abs      . "\x8B")
   (f32.neg      . "\x8C")
