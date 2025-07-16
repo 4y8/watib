@@ -38,9 +38,9 @@
                     (raise e)))
              (let ((p::prog (valid-file m 1 #f #f)))
                 (opt-file! p 1)
-                (write "(module \"" op)
+                (display "(module \"" op)
                 (asm-file! p op)
-                (write "\")\n" op))))
+                (display "\")\n" op))))
          ((assert_invalid ?m ?msg)
           (define err? #f)
           (with-handler

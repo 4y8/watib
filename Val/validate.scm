@@ -996,7 +996,7 @@
                 (type->string t2) (type->string t1)))
 
       (no-declared-memory
-       ("used a memory instruction while no memory was declared"))
+       "used a memory instruction while no memory was declared")
 
       (else (sdisplay e))))
 
