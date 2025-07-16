@@ -2,10 +2,16 @@
 
 ;; Interface with the official test suite.
 ;;
-;; Semantics are not checked yet.
+;; We take as input wast files. For a detailed description of the format, see:
+;; https://github.com/WebAssembly/spec/blob/main/interpreter/README.md#scripts.
+;;
+;; We output wast files where the module declarations have been taken by binary
+;; inserts corresponding to watib's output on the module.
 
 (module wati-test
-   (import (val_validate "Val/validate.scm"))
+   (import (val_validate "Val/validate.scm")
+           (opt_optimise "Opt/optimise.scm")
+           (asm_binary   "Asm/binary.scm"))
    (library pthread srfi1)
    (main main))
 
@@ -13,6 +19,7 @@
 (define *ntest* 0)
 
 (define (test-file p::input-port)
+   (define op (open-output-file "out.wast"))
    (do ((m (read p #t) (read p #t)))
        ((eof-object? m))
       (set! *ntest* (+ 1 *ntest*))
@@ -28,9 +35,12 @@
                         "wati-test"
                         "module was invalidated while it is valid --- "
                         (with-access::&watib-validate-error e (obj) obj)))
-                    (raise e)
-                    ))
-             (valid-file m 1 #f #f)))
+                    (raise e)))
+             (let ((p::prog (valid-file m 1 #f #f)))
+                (opt-file! p 1)
+                (write "(module \"" op)
+                (asm-file! p op)
+                (write "\")\n" op))))
          ((assert_invalid ?m ?msg)
           (define err? #f)
           (with-handler
@@ -46,17 +56,21 @@
               "wati-test"
               (string-append
                "module was validated while it shouldn't because "
-               msg)))))))
+               msg))))
+         ((assert_return . ?-)
+          (write m op)
+          (display "\n" op))))
+   (close-output-port op))
 
 (define (main argv)
-   (define input-files '())
+   (define input-file #f)
 
    (args-parse (cdr argv)
       ((("--help" "-h") (help "Display this help message and quit"))
        (args-parse-usage #f))
       (else
-       (set! input-files (cons else input-files))))
+       (set! input-file else)))
 
-   (for-each (lambda (f) (call-with-input-file f test-file)) input-files)
+   (call-with-input-file input-file test-file)
 
    (printf "failed ~a/~a\n" *nerr* *ntest*))
