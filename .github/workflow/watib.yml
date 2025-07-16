@@ -1,0 +1,57 @@
+name: watib CI for the spec's tests
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-lastest
+
+    steps:
+      - name: Checkout source code
+        use: actions/checkout@v4
+
+      - name: Get Bigloo dependencies
+        run: |
+          sudo apt -qq update
+          sudo apt install -y dh-make
+          sudo apt install -y libssl3 libssl-dev
+          sudo apt install -y libsqlite3-0 libsqlite3-dev
+          sudo apt install -y libasound2-dev
+          sudo apt install -y libflac-dev
+          sudo apt install -y libmpg123-0 libmpg123-dev
+          sudo apt install -y libavahi-core7 libavahi-core-dev libavahi-common-dev libavahi-common3 libavahi-client3 libavahi-client-dev
+          sudo apt install -y libunistring-dev
+          sudo apt install -y libpulse-dev libpulse0
+          sudo apt install -y automake libtool
+          sudo apt install -y libgmp-dev libgmp3-dev libgmp10
+
+      - name: Build Bigloo
+        run: |
+          wget -nv http://www-sop.inria.fr/indes/fp/Bigloo/download/bigloo-unstable.tar.gz -O /tmp/bigloo-unstable.tar.gz > /dev/null
+          pushd /tmp && tar xfz /tmp/bigloo-unstable.tar.gz && popd
+          pushd /tmp/bigloo-unstable && ./configure --prefix=/usr > /dev/null 2>&1 && make -j 2>&1 > /dev/null && sudo make install > /dev/null && popd
+
+      - name: Install OCaml (for the reference interpreter)
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 4.14.x
+
+      - name: Get and build the interpeter
+        run: |
+          pushd /tmp && git clone https://github.com/WebAssembly/spec.git && pushd spec/interpreter && make && popd && popd
+
+      - name: Get the test suite
+        run: |
+          pushd /tmp && git clone https://github.com/4y8/wasm-tests && popd
+
+      - name: Build watib
+        run: |
+          make tools
+
+      - name: Run the tests
+        run: |
+          /tmp/wasm-tests/test.sh ./tools/wati-test /tmp/spec/interpreter/wasm
