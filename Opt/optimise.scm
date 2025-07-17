@@ -61,4 +61,4 @@
        (do ((i 0 (+fx i 1)))
           ((>=fx i nfunc))
          (let-if (f (vector-ref (-> p funcs) i))
-            (opt-func! f p glags)))))))
+            (opt-func! f p flags)))))))
