@@ -8,6 +8,7 @@
 \usepackage[a4paper, left=1in, right=1in]{geometry}
 \usepackage{calc}
 
+\usepackage{mathpartir}
 \usepackage{amsmath}
 \DeclareMathOperator{\reft}{\textsf{ref}}
 \DeclareMathOperator{\refnullt}{\textsf{ref null}}
@@ -70,7 +71,7 @@ collector, instructions for tail-calls (they are needed because the language
 doesn't support goto) and exceptions. This version is still in draft, but the
 mentionned features are stable and already implemented by the major Wasm
 engines. Bigloo's Wasm backend relies on these features. They are demonstrated
-in the example of figure~\ref{ex}. For a more detailed introduction to
+in the example of Figure~\ref{ex}. For a more detailed introduction to
 WebAssembly, see~\cite[Section~2.1]{phipps2023continuing}.
 
 \begin{figure}[h]
@@ -160,7 +161,7 @@ weren't adopted. These features remain second class citizens in
 binaryen\footnote{for instance, code using block parameters is assembled to code
 using local variables instead by binaryen's \textsf{wasm-as}}, as these new
 features can create a data flow not representable by classic ASTs. For instance,
-in figure~\ref{data-flow} the results of same function is shared by two nodes
+in Figure~\ref{data-flow} the results of same function is shared by two nodes
 and a node takes its two inputs from a single node.
 
 \begin{figure}[h]
@@ -194,11 +195,6 @@ our implementation of it.
 
 WebAssembly's type system supports \emph{declared and mutually iso-recursive
 subtyping}.
-
-Subtyping rules relating abstract heap types to the concrete ones and abstract
-ones with each other have already been given, as part of their definitions,
-to which we add transitivity.
-
 Wasm's subtyping is \emph{declared} as the subtyping relations between the
 defined types have to be specified as part of the type defintion. Their validity
 can be checked with the type definition's validation.
@@ -206,12 +202,52 @@ can be checked with the type definition's validation.
 We now give the intuition behind \emph{mutually iso-recursive subtyping} ---
 see~\cite{rossberg2023mutually} for a full discussion.
 \subsection{A type checker for WebAssembly}
+The typing rules given by the third section of the specification are purely
+declarative. They give more than one type to many instructions and rely on the
+transitivity rule of subtyping, which can't be implemented as is. If we want to
+check that $t_1 \leq t_2$ in presence of transitivity, we need to choose a third
+type to compare it to $t_1$ and $t_2$, which complicates subtyping. We, thus,
+needed to adapt them to implement a type checker. Our type-checker is similar to
+the one shipped we the specification. For the subtyping of \emph{value types},
+we rewrote the rules to have equivalent ones without the transitivity
+rules\footnote{they are implemented by the function \texttt{<ht=} of the
+\texttt{Type/match.scm} and reproduced in Appendix~\ref{subtyping}} and for
+\emph{instruction types}, we rely on a stack and most general types, as
+explained in the next paragraph.
+
+To check a sequence of instructions we maintain an internal state recording the
+types of the elements present on the stack, instead of analysing each
+instruction individually and checking that the types compose well --- which is
+what is described by the declarative rules.
+
+Most instructions have a most general type (i.e. a type subtype of all the other
+types we can type the instruction with) or are not exited (like unconditional
+branches). The typing rules for the latter are $i:{t_1}^*t^*\to {t_2}^*$ for all
+$t_1$ and $t_2$. We represent it as ${t_1}^*t^*\to {t_2}^*$, where \textsf{poly}
+is a special symbol indicating that the stack can be whatever we need it to be
+--- it can be thought as a type variable, on which we do not perform explicit
+unification. When we refer to the type one of those instruction, we mean its
+most general type or the type with the \textsf{poly} symbol, these types are
+contined in the file \texttt{Val/instruction-types.sch}. The instructions that
+do not fall in either category (for instance, \textsf{ref.as\_non\_null} has
+type $\refnullt ht\to \reft ht$ for all heap type $ht$) are treated in a
+separate function, they peek on the stack to compute their output type, avoiding
+the use of type variables.
+
+We describe how one instruction $i$ modifies the state of this stack. Either the
+instruction is treated in an ad-hoc way
+
+\begin{itemize}
+\item Let ${t_1}^*\to{t_2}^*$ be the type of $i$.
+\end{itemize}
 \section{Optimisation}\label{opt}
-\subsection{The Intermediate Representation}\label{ir}
-\subsection{Optimisations}
-Watib performs several optimisation passes. We start by reviewing optimisations
-which benefit the others, by giving more precise information or removing
-generated useless code.
+\textsf{Watib} performs several optimisation passes. They all take care to
+maintain typing information. As we show it later, some code is unnecessary
+execution-wise but needs to be kept to maintain well-typedness.
+
+We start by reviewing optimisations which benefit the others, by giving more
+precise information or removing generated useless code.
+
 \begin{description}
   \item[Copy Propagation] When a variable $x$ is assigned the value of another
     variable $y$, we replace references to $x$ with references to $y$, until the
@@ -227,11 +263,13 @@ generated useless code.
     known to never execute (after a \textsf{return} for instance). However, some
     dead code may be needed for validation, even though it can't be executed.
     For instance, removing the \textsf{(unreachable)} instruction at the end of
-    the function of figure~\ref{ex} makes it ill-typed.  When well-typedness
-    without the dead instructions can't easily be guaranteed, an
-    \textsf{unreachable} instruction is inserted instead of the dead code.
+    the function of Figure~\ref{ex} makes it ill-typed. The \textsf{if}
+    instruction puts nothing on the stack while the function expects an
+    \textsf{i32} on top of the stack. When well-typedness without the dead
+    instructions can't easily be guaranteed, an \textsf{unreachable} instruction
+    is inserted instead of the dead code.
   \item[Peephole optimisation] We recognise small patterns in Wasm code and
-    replace them with equivalent code that should be smaller or faster.
+    replace them with equivalent code that is smaller or faster.
   \item[Type propagation] This one is not an optimisation \emph{per se}. It only
     refines type annotations of variables in the IR. When a variable is assigned
     a value, the type of this value (which may be a strict subtype of the
@@ -243,7 +281,7 @@ Most optimisations passes described earlier are general, in the sense that they
 are applied in most optimising compilers~\cite{muchnick1997advanced}. We, now,
 review more Wasm-specific optimisations and detail in which way they use the
 previous ones.
-\subsubsection{Cast Elimination}
+\subsection{Cast Elimination}
 We eliminate redundant casts and replace type tests by constants if their result
 can be determined. Such casts and tests could be introduced by copy-propagation
 as when we may replace a variable with another one of a smaller type or by the
@@ -257,11 +295,41 @@ To check for type tests to eliminate, we compare the argument's actual type
 For casts, we only check against the static type as the cast can be necessary to
 maintain well-typedness.
 
-\subsubsection{Type-Dependent Control Flow Rewriting}\label{broncast}
+\subsection{Type-Dependent Control Flow Rewriting}\label{broncast}
+A common pattern in the Wasm code generated by the Bigloo compiler is a
+branching on a type test, and the use of casts in case the test is successful,
+like in Figure~\ref{ex}. If Wasm wasn't statically typed, these casts could be
+removed by an optimising compiler that would determine that they are redundant.
+
+\subsection{Control-Flow Graph transformation}
 \section{Benchmarks}\label{bench}
 \section{Conclusion}
 \printbibliography
 \newpage
 \appendix
 \section{Wasm-as' extensions to the specification}\label{wasmasex}
+\section{Matching rules for \emph{heap types}}\label{subtyping}
+\begin{mathpar}
+  \inferrule{t_1 = t_2}{C\vdash t_1\leq t_2}\hfill
+  \inferrule{\\}{C\vdash \bot\leq t}\hfill
+  \inferrule{C\vdash C.\text{\textsf{types}}[x]\leq t}{C\vdash x \leq t}\hfill
+  \inferrule{C\vdash t \leq C.\text{\textsf{types}}[x]}{C\vdash t \leq x}\\
+  \inferrule{C\vdash t\leq\text{\textsf{any}}}
+            {C\vdash\text{\textsf{none}}\leq t}\hfill
+  \inferrule{C\vdash t\leq\text{\textsf{func}}}
+            {C\vdash\text{\textsf{nofunc}}\leq t}\hfill
+  \inferrule{C\vdash t\leq\text{\textsf{extern}}}
+            {C\vdash\text{\textsf{noextern}}\leq t}\hfill
+  \inferrule{C\vdash t\leq\text{\textsf{exn}}}
+            {C\vdash\text{\textsf{noexn}}\leq t}\\
+  \inferrule{C\vdash t\leq\text{\textsf{any}}}
+            {C\vdash t\leq\text{\textsf{eq}}}\hfill
+  \inferrule{\\}{C\vdash\text{\textsf{i31}}\leq\text{\textsf{eq}}}\hfill
+  \inferrule{\\}{C\vdash\text{\textsf{struct}}\leq\text{\textsf{eq}}}\hfill
+  \inferrule{\\}{C\vdash\text{\textsf{array}}\leq\text{\textsf{eq}}}\\
+  \inferrule{\text{\textsf{unroll}} (deftype)= (symbol\ldots)}
+            {C\vdash deftype\leq\text{\textsf{symbol}}}\hfill
+\inferrule{\text{\textsf{unroll}} (deftype)= (symbol\ldots)\\ C\vdash symbol\leq\text{\textsf{eq}}}
+            {C\vdash deftype\leq\text{\textsf{eq}}}
+\end{mathpar}
 \end{document}

@@ -3,14 +3,19 @@
 ;; Definitions of the data structures representing CFGs.
 
 (module cfg_node
+   (from (ast_node "Ast/node.scm"))
+
    (export (abstract-class jump::object)
-           (class direct-jump::jump
+           (class unconditional::jump
               dst::cfg-node)
 
            ;; no expression because the jump depends on the top of the stack
-           (class if-jump::jump
+           (class conditional::jump
               dst-true::cfg-node
               dst-false::cfg-node)
+
+           (class terminal::jump
+              i::instruction)
 
            (class cfg-node::object
               body::pair-nil
@@ -23,8 +28,11 @@
 
 (define-generic (get-succs j::jump))
 
-(define-method (get-succs j::direct-jump)
+(define-method (get-succs j::unconditional)
    (list (-> j dst)))
 
-(define-method (get-succs j::if-jump)
+(define-method (get-succs j::conditional)
    (list (-> j dst-true) (-> j dst-false)))
+
+(define-method (get-succs j::terminal)
+   (list '()))

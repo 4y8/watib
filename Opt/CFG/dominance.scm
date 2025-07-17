@@ -1,6 +1,6 @@
 ;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
 
-;; Compute dominance trees for CFGs.
+;; Computation of dominance trees for CFGs.
 ;;
 ;; We follow the algorithm described in Cooper, K. D., Harvey, T. J., & Kennedy,
 ;; K. (2001). A simple, fast dominance algorithm. Software Practice &
@@ -41,8 +41,8 @@
                         (unless (=fx (-> p idx)
                                      (with-access::cfg-node (dom n) (idx) idx))
                            (set! changed #t)
-                           (vector-set! doms (-fx 0 (-> entry n)) p)))
-                      order l))
-         (if changed (loop)))
+                           (vector-set! doms (-fx 0 (-> entry idx)) p)))
+                      order l)
+            (if changed (loop))))
       (loop)
       doms))
