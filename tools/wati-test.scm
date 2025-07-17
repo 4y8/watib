@@ -37,7 +37,7 @@
                         (with-access::&watib-validate-error e (obj) obj)))
                     (raise e)))
              (let ((p::prog (valid-file m 1 #f #f)))
-                (opt-file! p 1)
+                (opt-file! p 1 (instantiate::opt-flags))
                 (display "(module binary \"" op)
                 (let* ((s (string-hex-extern (call-with-output-string
                                               (lambda (op) (asm-file! p op)))))

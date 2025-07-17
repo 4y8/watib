@@ -1,8 +1,11 @@
 # watib
-Watib (WebAssembly Toolchain In Bigloo) is a (WIP) WebAssembly toolchain. It
-aims at being user friendly and fast. We currently support a big part of the
-current draft of the version 3 of the standard. See [here](#missing) for more
-details on what is currently missing.
+[![watib
+CI](https://github.com/4y8/watib/actions/workflows/watib.yml/badge.svg)](https://github.com/4y8/watib/actions/workflows/watib.yml)
+[Watib](https://www.normalesup.org/~boussaa/watib) (WebAssembly Toolchain In
+Bigloo) is a (WIP) WebAssembly toolchain. It aims at being user friendly and
+fast. We currently support a big part of the current draft of the version 3 of
+the standard. See [here](#missing) for more details on what is currently
+missing.
 
 It is used by the Bigloo scheme compiler for its wasm backend.
 
@@ -41,6 +44,9 @@ The functions in the first four directories are more or less straightforward
 transcriptions of the spec. The code is annotated with the positions in the spec
 it implements (the precision of the annotations depends on the subtlety of what
 is being implemented).
+
+More detailed information can be found in watib's
+[documentation](./doc/README.md).
 ## Missing
 Watib doesn't support the following features yet (the list may be incomplete):
 + Tables,
