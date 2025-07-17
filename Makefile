@@ -5,12 +5,13 @@ SRCS = Misc/let-if.scm Opt/optimise.scm Val/validate.scm \
        Opt/Unreachable/walk.scm Opt/Const/walk.scm Opt/PureDrop/walk.scm \
        Opt/CopyProp/walk.scm Opt/Peephole/walk.scm Opt/PropType/walk.scm \
        Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm \
-       Misc/parse.scm Asm/leb128.scm Val/instructions.scm
+       Misc/parse.scm Asm/leb128.scm Val/instructions.scm Opt/CFG/node.scm \
+       Opt/CFG/order.scm Opt/CFG/dominance.scm Opt/CFG/walk.scm
 
 OBJS = $(SRCS:.scm=.o)
 
-#FLAGS = -O2 -g
-FLAGS = -O3 -unsafe
+FLAGS = -O2 -g
+#FLAGS = -O3 -unsafe
 
 all: watib tools
 

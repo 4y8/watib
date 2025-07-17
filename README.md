@@ -1,6 +1,7 @@
 # watib
 [![watib
 CI](https://github.com/4y8/watib/actions/workflows/watib.yml/badge.svg)](https://github.com/4y8/watib/actions/workflows/watib.yml)
+
 [Watib](https://www.normalesup.org/~boussaa/watib) (WebAssembly Toolchain In
 Bigloo) is a (WIP) WebAssembly toolchain. It aims at being user friendly and
 fast. We currently support a big part of the current draft of the version 3 of

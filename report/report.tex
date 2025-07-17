@@ -104,9 +104,9 @@ WebAssembly, see~\cite[Section~2.1]{phipps2023continuing}.
 optimisation (the \texttt{Opt} folder) and assembly (the \texttt{Asm} folder) of
 Wasm programs given in textual format\footnote{binary format support as input is
 planned}. Function validation and optimisation is parallelisable. We added the
-option to run them in an arbitrary number of threads. This feature, and thus the
-dependency on pthreads is optional which is requiered for integration with
-Bigloo.
+option to run them in an arbitrary number of threads using the \textsf{pthreads}
+library. This feature, and thus the dependency on an external library is
+optional which is requiered for integration with the Bigloo compiler.
 
 The WebAssembly platform is in constant evolution. Features are added to the
 engines before they are standardised. Thus potential users might want to be able

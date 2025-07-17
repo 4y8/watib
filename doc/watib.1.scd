@@ -6,7 +6,7 @@ watib - wasm toolchain
 
 # SYNOPSIS
 
-*watib* [options] filename ...
+*watib* [options] _filename_ ...
 
 # DESCRIPTION
 
@@ -20,6 +20,9 @@ specification.
 
 *-h, --help*
 	Display help message and quit.
+
+*-o* _file_
+	Output binary to file.
 
 *-k, --keep-going*
 	Continue when encountering an error.
@@ -36,8 +39,41 @@ specification.
 *-O1*
 	Enable optimisations (default).
 
-*-o* file
-	Output binary to file.
+*-fno-testbr*
+	Disable type based control flow rewriting.
+
+*-ftestbr*
+	Enable type based control flow rewriting.
+
+*-fno-copyprop*
+	Disable copy propagation.
+
+*-fcopyprop*
+	Enable copy propagation.
+
+*-fno-uncast*
+	Disable redundant type tests and casts elimination.
+
+*-funcast*
+	Enable redundant type tests and casts elimination.
+
+*-fno-unreachable*
+	Disable unreachable code elimination.
+
+*-funreachable*
+	Enable unreachable code elimination.
+
+*-fno-const*
+	Disable unreachable code elimination.
+
+*-fconst*
+	Enable unreachable code elimination.
+
+*-fno-puredrop*
+	Disable redundant drop elimination.
+
+*-fpuredrop*
+	Enable redundant drop elimination.
 
 # AUTHORS
 
