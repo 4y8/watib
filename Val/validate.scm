@@ -996,7 +996,8 @@
      (with-handler error-notify
         (unless silent
           (when (epair? obj)
-            (error/location "watib" "" msg (cadr (cer obj)) (caddr (cer obj)))))))
+            (error/location "watib" "" msg (cadr (cer obj))
+                            (caddr (cer obj)))))))
 
    (define (rep/pos msg pos)
      (with-handler error-notify
@@ -1006,7 +1007,7 @@
    (match-case e
       ((in-module ?m ?e)
        (rep/pos (error->string env e) (cer m)))
-      ((at-pos ?i (at-instruction . ?-))
+      ((at-pos ?i (or (at-instruction . ?-) (at-pos . ?-)))
        (format-exn env (caddr e)))
       ((at-pos ?p ?e)
        (rep/pos (error->string env e) p))
