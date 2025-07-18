@@ -23,6 +23,8 @@
                                       ;; equal to 0, 1 thus means we don't have
                                       ;; one yet
               (preds::pair-nil (default '()))
+              intype::pair-nil
+              outtype::pair-nil
               end::jump)
            (generic get-succs j::jump)))
 

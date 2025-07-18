@@ -235,11 +235,26 @@ separate function, they peek on the stack to compute their output type, avoiding
 the use of type variables.
 
 We describe how one instruction $i$ modifies the state of this stack. Either the
-instruction is treated in an ad-hoc way
+instruction is treated in an ad-hoc way (function \texttt{adhoc-instr}), or we
+apply the following procedure (function \texttt{valid-instr}):
 
 \begin{itemize}
-\item Let ${t_1}^*\to{t_2}^*$ be the type of $i$.
+\item Let ${t_n\ldots t_1}^*\to{t'}^*$ be the type of $i$.
+\item Check that the $i^{\text{th}}$ type on the stack is a subtype of $t_i$ and
+  pop it, for $i$ from $1$ to $n$. If the stack is equal to \textsf{(poly)}, we
+  consider that for all $i$, the $i^{\text{th}}$ type on the stack is
+  $\bot$\footnote{we, thus, thaught of replacing the \textsf{poly} symbol by a
+  circular list $(\bot,\bot,\ldots)$}, making the previous test successful.
+\item If ${t'}^*$ is equal to \textsf{(poly)}, replace the stack by
+  \textsf{(poly)}, otherwise push the return types on top of the stack.
 \end{itemize}
+
+When checking the types of blocks we set the parameter types as initial state of
+the stack and compare the final the state of the stack with the expected type.
+For that final check, we pop types from the stack and make sure that they are
+subtype of the expected ones. We then check that the resulting stack is empty or
+equal to \textsf{(poly)}.
+
 \section{Optimisation}\label{opt}
 \textsf{Watib} performs several optimisation passes. They all take care to
 maintain typing information. As we show it later, some code is unnecessary
