@@ -43,6 +43,7 @@ jobs:
 
       - name: Get and build the interpeter
         run: |
+          opam install . --deps-only
           pushd /tmp && git clone https://github.com/WebAssembly/spec.git && pushd spec/interpreter && opam exec make && popd && popd
 
       - name: Get the test suite

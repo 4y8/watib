@@ -192,8 +192,10 @@ and a better treatment of code written using WebAssembly's new features.
 We start by giving an overview of WebAssembly's type system, and then describe
 our implementation of type checker for it.
 \subsection{WebAssembly's type system}
-WebAssembly's main types are \emph{value types}. They are the types of values on
-the stack.
+WebAssembly is statically typed. Its main types are \emph{value types}. They are
+the types of values on the stack. They can be \emph{numeric types}
+(\textsf{i32}, \textsf{f64}, etc.), \emph{vector types} (\textsf{v128}) or
+\emph{reference types}.
 
 WebAssembly's type system supports \emph{declared and mutually iso-recursive
 subtyping}.
