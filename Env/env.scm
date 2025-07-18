@@ -77,7 +77,7 @@
 
 (define (type-get-index::long env::env x)
    (get-index (-> env type-table) (-> env ntype) x '(idx-out-of-range type)
-              '(unknown type) '(expected-idx type)))
+              '(unknown type) '(expected typeidx)))
 
 (define (type-get env::env x)
    (vector-ref (-> env types) (type-get-index env x)))
@@ -111,7 +111,8 @@
        (define (,(symbol-append x '-get-index::long) env::env x)
           (get-index (-> env ,(symbol-append x '-table))
                      (-> env ,(symbol-append 'n x)) x
-                     '(idx-out-of-range ,x) '(unknown ,x) '(expected-idx ,x)))
+                     '(idx-out-of-range ,x) '(unknown ,x)
+                     '((expected ,(symbol-append x 'idx)) ,x)))
 
        (define (,(symbol-append x '-get-type) env::env x::long)
           (vector-ref (-> env ,(symbol-append x '-types)) x))
@@ -140,7 +141,7 @@
 
 (define (data-get-index::long env::env x)
    (get-index (-> env data-table) (-> env ndata) x '(idx-out-range data)
-              '(unknown data) '(expected-idx data)))
+              '(unknown data) '(expected dataidx)))
 
 (define (field-get-index::long env::env t::long f)
    (let ((v (vector-ref (-> env field-names) t)))
@@ -151,7 +152,7 @@
          (raise `((idx-out-of-range field) ,t (length v) ,f))))
     ((ident? f)
      (index v f 0 '(unknown field)))
-    (#t (raise `(expected-fieldidx ,t))))))
+    (else (raise `((expected fieldidx) ,t))))))
 
 (define (fieldidx-get-name env::env x::typeidxp y::fieldidxp)
    (list-ref (vector-ref (-> env field-names) (-> x idx)) (-> y idx)))
@@ -190,7 +191,7 @@
         (raise `(labelidx-out-of-range ,x))))
    ((ident? x)
     (index (-> env label-names) x 0 'unknown-label))
-   (else (raise `((expected-idx label) ,x)))))
+   (else (raise `((expected labelidx) ,x)))))
 
 (define (label-get-type env::env x::long)
    (vector-ref (-> env label-types) (- (-> env nlabel) x 1)))
@@ -209,12 +210,12 @@
 (define (get-struct-fieldtypes env::env x::long)
    (match-case (expand (type-get env x))
       ((struct . ?fldts) fldts)
-      (?t (raise `(expected-struct ,x ,t)))))
+      (?t (raise `((expected struct) ,x ,t)))))
 
 ;; to work, needs to be called after typeidx
 (define (fieldidx::fieldidxp env::env x)
    (unless (vector-ref (-> env field-names) (-> env last-type))
-      (raise `(expected-struct ,(-> env last-type)
+      (raise `((expected struct) ,(-> env last-type)
                ,(expand (type-get env (-> env last-type))))))
    (let* ((idx (field-get-index env (-> env last-type) x))
           (t (list-ref (get-struct-fieldtypes env (-> env last-type)) idx)))
