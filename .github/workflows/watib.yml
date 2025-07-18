@@ -57,4 +57,4 @@ jobs:
 
       - name: Run the tests
         run: |
-          /tmp/wasm-tests/test.sh ./tools/wati-test /tmp/spec/interpreter/wasm
+          ./tmp/wasm-tests/test.sh ./tools/wati-test ./tmp/spec/interpreter/wasm
