@@ -15,6 +15,16 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
+      - name: Install OCaml (for the reference interpreter)
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 4.14.x
+
+      - name: Get and build the interpeter
+        run: |
+          opam install --yes ocamlfind.1.9.5 js_of_ocaml.4.0.0 js_of_ocaml-ppx.4.0.0
+          pushd /tmp && git clone https://github.com/WebAssembly/spec.git && pushd spec/interpreter && opam exec make && popd && popd
+
       - name: Get Bigloo dependencies
         run: |
           sudo apt -qq update
@@ -35,16 +45,6 @@ jobs:
           wget -nv http://www-sop.inria.fr/indes/fp/Bigloo/download/bigloo-unstable.tar.gz -O /tmp/bigloo-unstable.tar.gz > /dev/null
           pushd /tmp && tar xfz /tmp/bigloo-unstable.tar.gz && popd
           pushd /tmp/bigloo-unstable && ./configure --prefix=/usr > /dev/null 2>&1 && make -j 2>&1 > /dev/null && sudo make install > /dev/null && popd
-
-      - name: Install OCaml (for the reference interpreter)
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: 4.14.x
-
-      - name: Get and build the interpeter
-        run: |
-          opam install . --deps-only
-          pushd /tmp && git clone https://github.com/WebAssembly/spec.git && pushd spec/interpreter && opam exec make && popd && popd
 
       - name: Get the test suite
         run: |
