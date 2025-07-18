@@ -197,7 +197,10 @@ the types of values on the stack. They can be \emph{numeric types}
 (\textsf{i32}, \textsf{f64}, etc.), \emph{vector types} (\textsf{v128}) or
 \emph{reference types}. The latter represents pointers to functions, pointers to
 objects allocated on the heap (structures or arrays) or unboxed integers (using
-tagged pointers).
+tagged pointers). These types are ordered by a subtyping relation we detail
+later.
+
+Inference rules are given in the specification to type instructions.
 
 WebAssembly's type system supports \emph{declared and mutually iso-recursive
 subtyping}.
