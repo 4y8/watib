@@ -22,6 +22,7 @@ jobs:
 
       - name: Get and build the interpeter
         run: |
+          opam install --yes ocamlfind.1.9.5 js_of_ocaml.4.0.0 js_of_ocaml-ppx.4.0.0
           mkdir tmp
           pushd tmp && git clone https://github.com/WebAssembly/spec.git && pushd spec/interpreter && opam exec make && popd && popd
 
