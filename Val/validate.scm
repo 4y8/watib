@@ -277,7 +277,7 @@
                      (raise `((expected ident) ,x)))
                     (?x (raise `(expected-typedef ,x)))) l)))
       (define (valid-st st x)
-         (with-default-value env '(sub final (error)) `(at-subtype ,st)
+         (with-default-value env '(sub final (error)) `(at-pos ,(cer st))
                (match-case st
                   ((sub final ?ct) `(sub final ,(valid-ct env ct x)))
                   ((sub final (and ?y (? idx?)) ?ct)
@@ -1014,6 +1014,8 @@
           (error/location "watib" "" msg (cadr pos) (caddr pos)))))
 
    (match-case e
+      ((in-module ?m (at-pos . ?-))
+       (format-exn env (caddr e)))
       ((in-module ?m ?e)
        (rep/pos (error->string env e) (cer m)))
       ((at-pos ?i (or (at-instruction . ?-) (at-pos . ?-)))

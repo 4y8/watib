@@ -473,8 +473,8 @@ their argument when it has no side effect. We try to remove as extra
 computation as possible by inserting as much \textsf{drop} as needed.
 
 \subsubsection{Constant Folding}
-We evaluate some expressions whose value is known at compile time. We also also
-remove conditional branching when the condition is constant.
+We replace some expressions that can be evaluated at compile time by their
+value. We also also remove conditional branching when the condition is constant.
 
 \subsubsection{Unreachable Code Elimination}
 We eliminate some instructions that are known to never execute (after a

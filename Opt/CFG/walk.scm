@@ -55,12 +55,12 @@
 
        ((isa? (car l) if-then)
         (with-access::if-then (car l) (then intype outtype)
-           (let* ((new-st (append outtype (drop st (length intype))))
+           (let* ((new-st (append (reverse outtype) (drop st (length intype))))
                   (n::cfg-node (build-node (cdr l) new-st new-st '() next
                                            labs)))
               (instantiate::cfg-node
                (intype seq-intype)
-               (outtype st)
+               (outtype (reverse st))
                (body (reverse body))
                (end (instantiate::conditional
                      (dst-true
@@ -75,7 +75,7 @@
 
        ;; ((isa? (car l) block)
        ;;  (with-access::block (car l) (intype outtype body)
-       ;;     (let* ((new-st (append outtype (drop st (length intype))))
+       ;;     (let* ((new-st (append (reverse outtype) (drop st (length intype))))
        ;;            (n::cfg-node (build-node (cdr l) new-st new-st '() next
        ;;                                     labs)))
        ;;        (instantiate::cfg-node
