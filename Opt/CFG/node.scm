@@ -17,6 +17,15 @@
            (class terminal::jump
               i::instruction)
 
+           (class switch::jump
+              dsts::pair-nil)
+
+           (class on-cast::jump
+              rt1::pair
+              rt2::pair
+              dst-cast::cfg-node
+              dst-cast-fail::cfg-node)
+
            (class cfg-node::object
               body::pair-nil
               (idx::long (default 1)) ;; we take as indices integers smaller or
@@ -44,3 +53,9 @@
 
 (define-method (get-succs j::terminal)
    '())
+
+(define-method (get-succs j::switch)
+   (-> j dsts))
+
+(define-method (get-succs j::on-cast)
+   (list (-> j dst-cast) (-> j dst-cast-fail)))

@@ -22,15 +22,29 @@
 
 (define-generic (dump-jump j::jump vis?::vector src::cfg-node))
 
+(define (dump-types l::pair-nil)
+   (for-each (lambda (t) (printf " ~a" t)) l))
+
+(define (dump-arc src::cfg-node dst::cfg-node lab::bstring)
+   (printf "\t~a -> ~a [label=\"~a :" src dst lab)
+   (dump-types (-> dst intype))
+   (printf "\"];\n"))
+
 (define-method (dump-jump j::conditional vis?::vector src::cfg-node)
-   (printf "\t~a -> ~a [label=\"true\"];\n" src (-> j dst-true))
-   (printf "\t~a -> ~a [label=\"false\"];\n" src (-> j dst-false))
+   (dump-arc src (-> j dst-true) "true")
+   (dump-arc src (-> j dst-false) "false")
    (dump-node (-> j dst-false) vis?)
    (dump-node (-> j dst-true) vis?))
 
 (define-method (dump-jump j::unconditional vis?::vector src::cfg-node)
-   (printf "\t~a -> ~a;\n" src (-> j dst))
+   (dump-arc src (-> j dst) "")
    (dump-node (-> j dst) vis?))
+
+(define-method (dump-jump j::on-cast vis?::vector src::cfg-node)
+   (dump-arc src (-> j dst-cast) "cast")
+   (dump-arc src (-> j dst-cast-fail) "cast fail")
+   (dump-node (-> j dst-cast) vis?)
+   (dump-node (-> j dst-cast-fail) vis?))
 
 (define-method (dump-jump j::terminal vis?::vector src::cfg-node)
    (printf "\t~a -> return_~a;\n" src src))
@@ -39,6 +53,10 @@
    (unless (vector-ref vis? (-fx 0 (-> n idx)))
       (vector-set! vis? (-fx 0 (-> n idx)) #t)
       (printf "\t~a [shape=box, label=\"" n)
+      (dump-types (-> n intype))
+      (printf " -->")
+      (dump-types (-> n outtype))
+      (printf "\n\n")
       (for-each print (-> n body))
       (printf "\"];\n")
       (dump-jump (-> n end) vis? n)))
