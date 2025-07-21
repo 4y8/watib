@@ -26,6 +26,12 @@
               intype::pair-nil
               outtype::pair-nil
               end::jump)
+
+           (class cfg::object
+              entry::cfg-node
+              size::long
+              rpostorder::pair-nil)
+
            (generic get-succs j::jump)))
 
 (define-generic (get-succs j::jump))
@@ -37,4 +43,4 @@
    (list (-> j dst-true) (-> j dst-false)))
 
 (define-method (get-succs j::terminal)
-   (list '()))
+   '())
