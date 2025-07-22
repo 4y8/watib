@@ -8,9 +8,11 @@
    (from (cfg_node "Opt/CFG/node.scm"))
    (from (ast_node "Ast/node.scm"))
 
-   (import (cfg_order "Opt/CFG/order.scm"))
+   (import (cfg_order     "Opt/CFG/order.scm")
+           (cfg_dominance "Opt/CFG/dominance.scm"))
 
-   (export (func->cfg::cfg f::func))
+   (export (func->cfg::cfg f::func)
+           (cfg->wasm g::cfg))
 
    (static (wide-class node-tree::cfg-node
               tree::pair)))
@@ -167,14 +169,16 @@
          (opcode 'block))
         (list (do-tree (car trees) ctx)))))
 
-(define (cfg->wasm entry::node-tree doms::vector order::pair-nil n::long)
-   (define tree-vect (make-vector n '()))
+(define (cfg->wasm g::cfg)
+   (define tree-vect (make-vector (-> g size) '()))
+   (define doms (dominance g))
+
    (for-each (lambda (n::node-tree)
                (let* ((p::node-tree (vector-ref doms (-fx 0 (-> n idx)))))
                   (vector-set! tree-vect (-> p idx)
                                (cons n (vector-ref tree-vect
                                                    (-fx 0 (-> p idx)))))))
-             order)
+             (-> g rpostorder))
 
    (define (build-tree n::cfg-node)
       (define (node<? x::cfg-node y::cfg-node)
@@ -186,7 +190,7 @@
         (widen!::node-tree n (tree t))
         t))
 
-   (do-tree (build-tree entry) '()))
+   (do-tree (build-tree (-> g entry)) '()))
 
 (define (func->cfg f::func)
    (define (build-node l::pair-nil seq-intype::pair-nil st::pair-nil
@@ -222,6 +226,10 @@
                         (build-node (with-access::sequence else (body) body)
                                     intype intype '() n (cons n labs) outtype))
                      n)))))))
+
+       ;; (block instr*) instr* could be interpreted as instr* end instr* maybe
+       ;; to be able to attach the previous instructions to the body of the
+       ;; block
 
        ((isa? (car l) block)
         (with-access::block (car l) (intype outtype (block-body body))
@@ -308,6 +316,7 @@
                  ret-node
                  (list ret-node)
                  (cadr (-> f type)))))
+
      (multiple-value-bind (-size rpostorder) (reverse-postorder! entry)
         (instantiate::cfg
          (entry entry)

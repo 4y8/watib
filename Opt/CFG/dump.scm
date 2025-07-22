@@ -6,7 +6,8 @@
    (import (ast_node "Ast/node.scm"))
    (from (cfg_node "Opt/CFG/node.scm"))
 
-   (export (print-cfg-as-dot g::cfg)))
+   (export (print-cfg-as-dot g::cfg)
+           (generic dump-instr i::instruction n::long)))
 
 (define-method (object-display obj::cfg-node . op)
    (let ((port (if (pair? op)
@@ -53,7 +54,10 @@
 
 (define-method (dump-instr i::block n::long)
    (display (make-string n #\space))
-   (display "block\\l")
+   (display "block")
+   (dump-types (-> i intype))
+   (dump-types (-> i outtype))
+   (print "\\l")
    (call-next-method)
    (display (make-string n #\space))
    (display "end\\l"))
