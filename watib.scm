@@ -127,7 +127,8 @@
             (print-cfg-as-dot
              (func->cfg (vector-ref funcs (func-get-index env dump-cfg))))
             (with-output-to-port (current-error-port)
-               (dump-instr (cfg->wasm (func->cfg (vector-ref funcs (func-get-index env dump-cfg)))) 0))))
+               (lambda ()
+                 (dump-instr (cfg->wasm (func->cfg (vector-ref funcs (func-get-index env dump-cfg)))) 0)))))
         (else
          (opt-file! p nthreads o-flags)
          (call-with-output-file output-file

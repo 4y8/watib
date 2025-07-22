@@ -39,7 +39,6 @@
                          new_idom)) #f (-> n preds))))
 
       (define (loop)
-         (print (-> g rpostorder))
          (let ((l (map step (-> g rpostorder)))
                (changed #f))
             (for-each (lambda (n::cfg-node p::cfg-node)

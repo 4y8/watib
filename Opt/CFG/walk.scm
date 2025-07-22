@@ -155,7 +155,7 @@
        (append
         (-> n body)
         (branch-after-body (-> n end) n ctx))
-       (append
+       (cons
         (instantiate::block
          (intype '()) ;; to fix
          (outtype '())
@@ -165,19 +165,20 @@
            n
            (cdr trees)
            (cons `(block-followed-by
-                   ,(with-access::node-tree (car trees) (idx) idx)) ctx)))
+                   ,(with-access::node-tree (car (car trees)) (idx) idx)) ctx)))
          (opcode 'block))
-        (list (do-tree (car trees) ctx)))))
+        (with-access::sequence (do-tree (car trees) ctx) (body) body))))
 
 (define (cfg->wasm g::cfg)
    (define tree-vect (make-vector (-> g size) '()))
    (define doms (dominance g))
 
-   (for-each (lambda (n::node-tree)
-               (let* ((p::node-tree (vector-ref doms (-fx 0 (-> n idx)))))
-                  (vector-set! tree-vect (-> p idx)
-                               (cons n (vector-ref tree-vect
-                                                   (-fx 0 (-> p idx)))))))
+   (for-each (lambda (n::cfg-node)
+                (unless (eq? n (-> g entry))
+                   (let* ((p::cfg-node (vector-ref doms (-fx 0 (-> n idx)))))
+                      (vector-set! tree-vect (-fx 0 (-> p idx))
+                                   (cons n (vector-ref tree-vect
+                                                       (-fx 0 (-> p idx))))))))
              (-> g rpostorder))
 
    (define (build-tree n::cfg-node)
@@ -189,6 +190,7 @@
                      (sort node<? (vector-ref tree-vect (-fx 0 (-> n idx))))))))
         (widen!::node-tree n (tree t))
         t))
+
 
    (do-tree (build-tree (-> g entry)) '()))
 
