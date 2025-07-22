@@ -171,7 +171,7 @@
                   (with-access::labelidxp x (idx)
                      (end-current-block (instantiate::on-cast
                                          (dst-cast-fail
-                                          (build-node (cdr l) new-st new-st '()
+                                          (build-node (cdr l) st st '()
                                                       next labs exp-outtype))
                                          (rt-src y)
                                          (rt-dst z)

@@ -25,8 +25,8 @@
               dsts::pair-nil)
 
            (class on-cast::jump
-              rt1::pair
-              rt2::pair
+              rt-dst::pair
+              rt-src::pair
               dst-cast::cfg-node
               dst-cast-fail::cfg-node)
 
