@@ -5,6 +5,7 @@
 \usepackage{microtype}
 %\usepackage{mlmodern}
 \usepackage{Baskervaldx}
+\usepackage{MnSymbol}
 \usepackage{inconsolata}
 \usepackage{xcolor}
 \usepackage[utf8]{inputenc}
@@ -161,7 +162,10 @@ Wasm programs given in textual format\footnote{binary format is planned}.
 Function validation and optimisation can run in parallel. We added the option to
 run them in an arbitrary number of threads using the \textsf{pthreads} library.
 This feature, and thus the dependency on an external library is optional which
-is required for integration with the Bigloo compiler.
+is required for integration with the Bigloo compiler. We have set up continuous
+integration with tests bundled with the specification. As \textsf{watib} does
+not support the whole standard yet, we maintain a repository of tests patched to
+reflect the current state of \textsf{watib}.
 
 The WebAssembly platform is in constant evolution. Long-term maintenance is one
 of our goals. \textsf{Watib} has thus been designed to be able to keep up with
@@ -176,7 +180,7 @@ new kinds of blocks aren't often introduced.
 We now review some differences between \textsf{watib} and already existing
 toolchains (apart from the lack of features and maturity of the former). We
 focus on bynarien (and its assembler \textsf{wasm-as}). It is the toolchain most
-compiler use~\cite{Binaryen} and the one Bigloo used before switching to
+compilers use~\cite{Binaryen} and the one Bigloo used before switching to
 \textsf{watib}.
 \subsubsection{Fault tolerance}
 For the sake of user-friendliness, \textsf{watib} can continue the validation of
@@ -281,41 +285,46 @@ in~\ref{func-aggr}.
 \end{itemize}
 
 \subsubsection{Instruction types}
-Inference rules are given in the specification to give \emph{instruction types}
-to instructions. These types indicate which values on the stack an instruction
+The specification provides inference rules to give \emph{instruction types} to
+instructions. These types indicate which values on the stack an instruction
 pops, which values it pushes and which local variables it sets\footnote{to
 forbid, at the type level, using a variable not initialised yet}. We omit this
-last information in our presentation to stay simple. We write \emph{instruction
-types} as function types: ${t_1}^*\to{t_2}^*$ for an instruction that pops
-${t_1}^*$ and pushes ${t_2}^*$. We have the classical rule of subtyping for
-functions~\cite{cardelli1988semantics} on these types: an instruction can accept
-smaller types as inputs and produce bigger types as outputs. An additional
-subtyping rule is added to reflect the stack-based semantics of Wasm : we can
-add arbitrary value types before the input and output types as long as we add
-the same on both. These rules are formalised in Figure~\ref{subinstr}.
+last information in our presentation to stay simple. We write instruction types
+as function types: ${t_1}^*\twoheadrightarrow{t_2}^*$ for an instruction that
+pops ${t_1}^*$ and pushes ${t_2}^*$\footnote{the WebAssembly standard uses the
+same arrow for instruction and function types, we distinguish them for improved
+readability}. They obey the classical rule of subtyping for
+functions~\cite{cardelli1988semantics}: an instruction can accept smaller types
+as inputs and produce bigger types as outputs.
+%% réécrire la suite ?
+An additional subtyping rule is added to reflect the stack-based semantics of
+Wasm: an instruction can add arbitrary value types before the input and output
+types as long as it adds the same on both. These rules are formalised in
+Figure~\ref{subinstr}.
 
 A sequence of instructions can then be typed by the composition of types derived
 for each of its instruction. For instance, the sequence \texttt{(i32.const~0)
-  (i32.const~0) i32.add} can be typed $()\to(\text{\textsf{i32}})$, by giving
-the type $(\text{\textsf{i32}})\to(\text{\textsf{i32}}\ \text{\textsf{i32}})$ to
-the second \textsf{i32.const} --- which shows the need for the second subtyping
+  (i32.const~0) i32.add} can be typed
+$()\twoheadrightarrow(\text{\textsf{i32}})$, by giving the type
+$(\text{\textsf{i32}})\twoheadrightarrow(\text{\textsf{i32}}\ \text{\textsf{i32}})$ to the
+second \textsf{i32.const} --- which shows the need for the second subtyping
 rule.
 
 \begin{figure}[h]
   \begin{mathpar}
     \inferrule{{\left(C\vdash t_1\leq t_1\right)}^*\\
       {\left(C\vdash t_2\leq t_2\right)}^*}
-              {C\vdash {t_1}^*\to{t_2}^* \leq {t'_1}^*\to{t'_2}^*}\hspace{1in}
-    \inferrule{\\}{C\vdash {t_1}^*\to{t_2}^* \leq t^*{t_1}^*\to t^*{t_2}^*}
+              {C\vdash {t_1}^*\twoheadrightarrow{t_2}^* \leq {t'_1}^*\twoheadrightarrow{t'_2}^*}\hspace{1in}
+    \inferrule{\\}{C\vdash {t_1}^*\twoheadrightarrow{t_2}^* \leq t^*{t_1}^*\twoheadrightarrow t^*{t_2}^*}
   \end{mathpar}
   \caption{Subtyping rules for instruction types}\label{subinstr}
 \end{figure}
 
 \subsubsection{Function and aggregate types}\label{func-aggr}
-We now give details on the definitions and subtyping of \emph{function types}
-and \emph{aggregate types}. As shown in Figure~\ref{tdef}, Wasm allows the
-definition of mutually recursive types. Moreover, it supports \emph{declared and
-mutually iso-recursive subtyping}.
+We now give details on the definitions and subtyping of function types and
+aggregate types. As shown in Figure~\ref{tdef}, Wasm allows the definition of
+mutually recursive types. Moreover, it supports \emph{declared and mutually
+iso-recursive subtyping}.
 
 \begin{figure}[h]
   \begin{lstlisting}
@@ -345,6 +354,11 @@ a subtype of \texttt{\$pair-nil}. If the \texttt{(sub \$pair-nil \dots)} part
 wasn't in the definition, the function's code would be invalid, as it relies on
 this subtyping relation for the type tests and the casts.
 
+Each type definition can then specify a supertype (the current specification
+only allows one). A type cannot be a supertype if it is \emph{final}. Types
+declared in a program are final by default. The \texttt{sub} keyword in the
+definition of \texttt{\$pair-nil} of Figure~\ref{ex} makes it non-final.
+
 \subsubsection{Mutually iso-recursive subtyping}\label{deft}
 We now give the intuition behind \emph{mutually iso-recursive
 subtyping}~---~see~\cite{rossberg2023mutually} for a full discussion. It is a
@@ -364,9 +378,9 @@ Figure~\ref{tdef} will be translated to the following internal representation:
 Each type definition is then replaced with a reference to this block and an
 index (0 for \textsf{\$a}, 1 for \textsf{\$b}, etc.).
 
-Once we have this representation, a defined type $t$ will be a subtype of
-another defined type $t'$ if they are equal or if $t$ is declared as a subtype
-of a subtype of $t'$.
+With this representation, a defined type $t$ will be a subtype of another
+defined type $t'$ if they are equal or if $t$ has been declared as a subtype of
+a subtype of $t'$.
 
 \subsubsection{Unrolling}
 Defined types only give a block of definitions and an index. To retrieve the
@@ -396,20 +410,21 @@ types of the elements present on the stack and then check instruction in order,
 instead of analysing each instruction individually and checking that the types
 compose well.
 
-\subsubsection{Most-general instruction types}
+\subsubsection{Most general instruction types}
 Most instructions have a most general type (i.e.\ a type subtype of all the
 other types we can type the instruction with) or are not exited (like
-unconditional branches). The typing rules for the latter are $i:{t_1}^*t^*\to
-{t_2}^*$ for all $t_1$ and $t_2$. We represent it as ${t_1}^*t^*\to {t_2}^*$,
-where \textsf{poly} is a special symbol indicating that the stack can be
-whatever we need it to be~---~it can be thought as a type variable, on which we
-do not perform explicit unification. When we refer to the type one of those
-instruction, we mean its most general type or the type with the \textsf{poly}
-symbol, these types are contained in the file \texttt{Val/instruction-types.sch}.
-The instructions that do not fall in either category (for instance,
-\textsf{ref.as\_non\_null} has type $\refnullt ht\to \reft ht$ for all heap type
-$ht$) are treated in a separate function, they peek on the stack to compute
-their output type, avoiding the use of type variables.
+unconditional branches). The typing rules for the latter are
+$i:{t_1}^*t^*\twoheadrightarrow {t_2}^*$ for all $t_1$ and $t_2$, but where
+$t^*$ is fixed. We represent it as $t^*\twoheadrightarrow
+(\text{\textsf{poly}})$, where \textsf{poly} is a special symbol indicating that
+the stack can be whatever we need it to be. It can be thought as a type
+variable, on which we do not perform explicit unification. When we refer to the
+type one of those instruction, we mean its most general type or the type with
+the \textsf{poly} symbol, these types are contained in the file
+\texttt{Val/instruction-types.sch}. The instructions that do not fall in either
+category (for instance, \textsf{ref.as\_non\_null} has type $\refnullt ht\to
+\reft ht$ for all heap type $ht$) are treated in a separate function, they peek
+on the stack to compute their output type, avoiding the use of type variables.
 
 \subsubsection{The algorithm}
 We describe how one instruction $i$ modifies the state of this stack. Either the
@@ -417,7 +432,7 @@ instruction is treated in an ad-hoc way (function \texttt{adhoc-instr}), or we
 apply the following procedure (function \texttt{valid-instr}):
 
 \begin{itemize}
-\item Let ${t_n\ldots t_1}^*\to{t'}^*$ be the type of $i$.
+\item Let ${t_n\ldots t_1}^*\twoheadrightarrow{t'}^*$ be the type of $i$.
 \item Check that the $i^{\text{th}}$ type on the stack is a subtype of $t_i$ and
   pop it, for $i$ from $1$ to $n$. If the stack is equal to \textsf{(poly)}, we
   consider that for all $i$, the $i^{\text{th}}$ type on the stack is

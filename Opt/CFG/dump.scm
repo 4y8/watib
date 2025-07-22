@@ -14,12 +14,6 @@
                    (current-output-port))))
       (fprintf port "node_~a" (-fx 0 (-> obj idx)))))
 
-(define-method (object-display obj::instruction . op)
-   (let ((port (if (pair? op)
-                   (car op)
-                   (current-output-port))))
-      (display (-> obj opcode))))
-
 (define-generic (dump-jump j::jump vis?::vector src::cfg-node))
 
 (define (dump-types l::pair-nil)
@@ -49,6 +43,45 @@
 (define-method (dump-jump j::terminal vis?::vector src::cfg-node)
    (printf "\t~a -> return_~a;\n" src src))
 
+(define-generic (dump-instr i::instruction n::long)
+   (display (make-string n #\space))
+   (display (-> i opcode))
+   (display "\\l"))
+
+(define-method (dump-instr i::sequence n::long)
+   (for-each (lambda (i) (dump-instr i (+fx 2 n))) (-> i body)))
+
+(define-method (dump-instr i::block n::long)
+   (display (make-string n #\space))
+   (display "block\\l")
+   (call-next-method)
+   (display (make-string n #\space))
+   (display "end\\l"))
+
+(define-method (dump-instr i::loop n::long)
+   (display (make-string n #\space))
+   (display "loop\\l")
+   (call-next-method)
+   (display (make-string n #\space))
+   (display "end\\l"))
+
+(define-method (dump-instr i::if-then n::long)
+   (display (make-string n #\space))
+   (display "if\\l")
+   (dump-instr (-> i then) n)
+   (display (make-string n #\space))
+   (display "end\\l"))
+
+(define-method (dump-instr i::if-else n::long)
+   (display (make-string n #\space))
+   (display "if\\l")
+   (dump-instr (-> i then) n)
+   (display (make-string n #\space))
+   (display "else\\l")
+   (dump-instr (-> i else) n)
+   (display (make-string n #\space))
+   (display "end\\l"))
+
 (define (dump-node n::cfg-node vis?::vector)
    (unless (vector-ref vis? (-fx 0 (-> n idx)))
       (vector-set! vis? (-fx 0 (-> n idx)) #t)
@@ -56,8 +89,8 @@
       (dump-types (-> n intype))
       (printf " -->")
       (dump-types (-> n outtype))
-      (printf "\n\n")
-      (for-each print (-> n body))
+      (printf "\\l\\l")
+      (for-each (lambda (i) (dump-instr i 1)) (-> n body))
       (printf "\"];\n")
       (dump-jump (-> n end) vis? n)))
 
