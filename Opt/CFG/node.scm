@@ -1,6 +1,10 @@
 ;; Copyright (c) 2025 Aghilas Y. Boussaa, see COPYING file
 
 ;; Definitions of the data structures representing CFGs.
+;;
+;; We consider typed CFGs. Each basic block has an input and an output type.
+;; They correpsond to the type of the basic block as a sequence of instructions.
+;; Each edge is implicitly typed with the input type of its destination.
 
 (module cfg_node
    (from (ast_node "Ast/node.scm"))

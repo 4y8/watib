@@ -8,7 +8,6 @@
 \usepackage{inconsolata}
 \usepackage{xcolor}
 \usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
 \usepackage[english]{babel}
 \usepackage[a4paper, left=1.1in, right=1.1in]{geometry}
 \usepackage{calc}
@@ -61,11 +60,12 @@
 
 \title{\textsf{watib}: An optimising toolchain for modern WebAssembly}
 \begin{document}
+\sloppy
 \maketitle
 \begin{abstract}
   WebAssembly (Wasm) is a code format aiming at providing efficient execution.
   It now offers the features needed to be a compilation target for functional
-  programming languages such as Scheme. Such a backend has been developped in
+  programming languages such as Scheme. Such a backend has been developed in
   the Bigloo compiler, relying on an external toolchain.
 
   We present \textsf{watib}, a WebAssembly Toolchain written In Bigloo. It has
@@ -75,9 +75,9 @@
 \end{abstract}
 
 \section{Introduction}
-In 2024, a Wasm backend was added to the Bigloo~\cite{Bigloo} Scheme compiler.
+In 2024, a Wasm backend was added to the Bigloo Scheme compiler~\cite{Bigloo}.
 It generated textual Wasm and relied on an external tool for the assembly.
-\textsf{Watib} was developped as a replacement for this tool and has been
+\textsf{Watib} has been developed as a replacement for this tool and has been
 directly integrated in the Bigloo compiler. It is also available as a standalone
 tool with a command-line
 interface\footnote{\url{https://www.normalesup.org/~boussaa/watib/}}.
@@ -93,39 +93,40 @@ transcription of the specification.
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
 language endowed with a portable and efficient representation. New compilers
-targetting Wasm are developped~\cite{emscripten, kotlin, ocaml}.
+targeting Wasm are developed~\cite{emscripten, kotlin, ocaml}.
 
 \subsubsection{Syntaxes}
 The WebAssembly standard~\cite{WebAssemblyCoreSpecification3} specifies typing
-rules (validation), semantics, an abstract syntax and two concrete syntaxes
-(formats) for the language. The binary format represents WebAssembly modules as
-a sequence of bytes. It is taken as input by Wasm virtual machines such as
+rules (called validation rules), opertational semantics, an abstract syntax and
+two concrete syntaxes (formats) for the language. The binary format represents
+WebAssembly modules as a sequence of bytes. Wasm virtual machines such as
 V8~\cite{V8} or SpiderMonkey~\cite{SpiderMonkey} and manipulated by toolchains
-such as binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools}. The textual
-format represents WebAssembly modules as S-expressions. It is taken as input by
-toolchains or written by humans (and compilers such as Bigloo).
+such as binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools} recieve this
+format. The textual format represents WebAssembly modules as S-expressions.
+Toolchains receive this format and humans (and compilers such as Bigloo) write
+it.
 
 \subsubsection{New features}
 The third version of the standard the standard adds features facilitating
 compiling from functional languages. Wasm has now a garbage collector,
 instructions for tail-calls (they are needed because the language doesn't
-support goto) and exceptions. This version is still in draft, but the mentionned
+support goto) and exceptions. This version is still in draft, but the mentioned
 features are stable and already implemented by the major Wasm engines. Bigloo's
 Wasm backend relies on these features.
 
 \subsubsection{An Example}
 The example of Figure~\ref{ex} demonstrates the features evoked earlier. For a
 more detailed introduction to WebAssembly,
-see~\cite[Section~2.1]{phipps2023continuing}. This program starts by defining a
-type of integer lists (\texttt{\$pair-nil}) which is a super-type of non-empty
-lists (\texttt{\$pair}). A non-empty list has a head (field \texttt{\$car})
-which is a 32-bit integer and a tail which is a list. The function
-\texttt{\$has-zero} checks wether or not a given list contains 0. It returns a
-\textsf{i32} as Wasm has no boolean. The emptiness of the list is checked by
-checking that the argument of type \texttt{\$pair} using the instruction
-\textsf{ref.test}. The head and tail of the list can then be accessed after it
-has been cast to the type \texttt{\$pair} using the instruction
-\textsf{ref.cast}. Otherwise, the program wouldn't be well-typed.
+see~\cite[Section~2.1]{phipps2023continuing} or~\cite{haas2017bringing}. This
+program starts by defining a type of integer lists (\texttt{\$pair-nil}) which
+is a super-type of non-empty integer lists (\texttt{\$pair}). A non-empty list
+has a head (field \texttt{\$car}) which is a 32-bit integer and a tail which is
+a list. The function \texttt{\$has-zero} checks whether or not a given list
+contains 0. It returns a \textsf{i32} as Wasm has no boolean. The emptiness of
+the list is checked by checking that the argument of type \texttt{\$pair} using
+the instruction \textsf{ref.test}. The head and tail of the list can then be
+accessed after it has been cast to the type \texttt{\$pair} using the
+instruction \textsf{ref.cast}. Otherwise, the program wouldn't be well-typed.
 
 \begin{figure}[h]
   \begin{minipage}{\widthof{(type \$pair (sub \$pair-nil (struct (field \$cdr (ref \$pair-nil))}}
@@ -156,11 +157,11 @@ has been cast to the type \texttt{\$pair} using the instruction
 \subsection{Watib}
 \textsf{Watib} handles type checking (the \texttt{Val} folder of the sources),
 optimisation (the \texttt{Opt} folder) and assembly (the \texttt{Asm} folder) of
-Wasm programs given in textual format\footnote{binary format support as input is
-planned}. Function validation and optimisation is parallelisable. We added the
-option to run them in an arbitrary number of threads using the \textsf{pthreads}
-library. This feature, and thus the dependency on an external library is
-optional which is requiered for integration with the Bigloo compiler.
+Wasm programs given in textual format\footnote{binary format is planned}.
+Function validation and optimisation can run in parallel. We added the option to
+run them in an arbitrary number of threads using the \textsf{pthreads} library.
+This feature, and thus the dependency on an external library is optional which
+is required for integration with the Bigloo compiler.
 
 The WebAssembly platform is in constant evolution. Long-term maintenance is one
 of our goals. \textsf{Watib} has thus been designed to be able to keep up with
@@ -178,14 +179,15 @@ focus on bynarien (and its assembler \textsf{wasm-as}). It is the toolchain most
 compiler use~\cite{Binaryen} and the one Bigloo used before switching to
 \textsf{watib}.
 \subsubsection{Fault tolerance}
-For the sake of user-friendliness, \textsf{watib} can recover from most
-validation errors (and some syntax errors). It avoids having to correct errors
-one by one which can be tedious for big files, as parsing alone can be time
-consuming. The Bigloo Wasm backend produced a file of 1,6 million lines. Running
-\textsf{wasm-as} to find a single error would take a noticeable amount of time.
-We, also, try to give informative error messages. The benefits of these choices
-become apparent when using our toolchain to correct code written by hand, which
-happens often when developping a runtime.
+For the sake of user-friendliness, \textsf{watib} can continue the validation of
+a file after reporting an error. It allows to report multiple errors in one
+pass, and it avoids having to correct errors one by one, which can be tedious
+for big files, as parsing alone can be time consuming. The Bigloo Wasm backend
+produced a file of 1,6 million lines. Running \textsf{wasm-as} to find a single
+error would take a noticeable amount of time. We, also, try to give informative
+error messages. The benefits of these choices become apparent when using our
+toolchain to correct code written by hand, which happens often when developing a
+runtime.
 
 \subsubsection{{Zealous\protect\footnotemark} respect of the spec}
 Binaryen's assembler, \textsf{wasm-as}, accepts files that do not conform to the
@@ -211,9 +213,9 @@ stack based and features such as multiple return values or block parameters
 weren't adopted. These features remain second class citizens in
 binaryen\footnote{for instance, code using block parameters is assembled to code
 using local variables instead by binaryen's \textsf{wasm-as}}, as these new
-features can create a data flow not representable by classic ASTs. For instance,
-in Figure~\ref{data-flow} the results of same function is shared by two nodes
-and a node takes its two inputs from a single node.
+features can create a data flow that cannot be reflected by classic ASTs. For
+instance, in Figure~\ref{data-flow} the results of same function is shared by
+two nodes and a node takes its two inputs from a single node.
 
 \begin{figure}[h]
   \centering
@@ -245,31 +247,38 @@ our implementation of type checker for it. The abstract syntax of types is
 presented in Section~2 of the specification and the rules of typing and
 subtyping are presented in Section~3. We focus on the subtyping relation and the
 typing of instructions as the rest of the validation is straightforward
-(checking some names don't appear twice, globals initial values are constant,
-etc.).
+(checking some names don't appear twice, global variables' initial values are
+constant, etc.).
 \subsection{WebAssembly's type system}
 We present the types used in WebAssembly and some declarative rules for
-subtyping and typing of instructions. They are all stated in an implicit context
-which we will refer as $C$ when needed. We omit its full definition. The only
-relevant field in the following is \textsf{types} which maps type indices to
-\emph{defined types} as defined in~\ref{deft}.
+subtyping and typing of instructions.
+\subsubsection{Contexts}
+We state all the following rules in an implicit \emph{context}. We will refer to
+it as $C$ in the formal rules. Contexts are records; the only relevant field in
+the following is \textsf{types} which maps type indices to \emph{defined types}
+as defined in~\ref{deft}.
+
 \subsubsection{Value Types}
 WebAssembly is statically typed. Its main types are \emph{value types}, which
 will be noted $t, t_1, t_2, \ldots$. They are the types of values on the stack.
 They can be \emph{numeric types} (\textsf{i32}, \textsf{f64}, etc.),
 \emph{vector types} (\textsf{v128}) or \emph{reference types}. The latter
 represents pointers to functions, pointers to objects allocated on the heap
-(structures or arrays, called aggregates) or unboxed integers (using tagged
-pointers). Each reference type is either nullable ($\refnullt ht$) or not
+(structures or arrays, called \emph{aggregates}) or unboxed integers (using
+tagged pointers). Each reference type is either nullable ($\refnullt ht$) or not
 ($\reft ht$), where $ht$ is a \emph{heap type}. Such a type is either an
-\emph{abstract heap type} which we do not detail here or a type indix refering
-to one of the three following possibilities. \emph{Function types} are written
+\emph{abstract heap type} which we do not detail here or a type index referring
+to one of the three following possibilities.
+\begin{itemize}
+  \item \emph{Function types} are written
 $\funt{t_1}^*\to{t_2}^*$ (recall a function can have multiple outputs).
-\emph{Array types} are written $\arrt mut\ t$, where $mut$ denotes the
+  \item \emph{Array types} are written $\arrt mut\ t$, where $mut$ denotes the
 mutability of the array. It is \textsf{var} for a mutable array and
-$\textsf{const}$ otherwise. \emph{Structure types} are written $\strt
-{(mut\ t)}^*$. All these types are ordered by a subtyping relation we detail
+$\textsf{const}$ otherwise.
+\item \emph{Structure types} are written $\strt
+  {(mut\ t)}^*$. All these types are ordered by a subtyping relation we detail
 in~\ref{func-aggr}.
+\end{itemize}
 
 \subsubsection{Instruction types}
 Inference rules are given in the specification to give \emph{instruction types}
@@ -286,7 +295,7 @@ add arbitrary value types before the input and output types as long as we add
 the same on both. These rules are formalised in Figure~\ref{subinstr}.
 
 A sequence of instructions can then be typed by the composition of types derived
-for each of its instrution. For instance, the sequence \texttt{(i32.const~0)
+for each of its instruction. For instance, the sequence \texttt{(i32.const~0)
   (i32.const~0) i32.add} can be typed $()\to(\text{\textsf{i32}})$, by giving
 the type $(\text{\textsf{i32}})\to(\text{\textsf{i32}}\ \text{\textsf{i32}})$ to
 the second \textsf{i32.const} --- which shows the need for the second subtyping
@@ -329,7 +338,7 @@ all $1\leq i\leq n$.
 
 \subsubsection{Declared subtyping}
 Wasm's subtyping is \emph{declared} as the subtyping relations between the
-defined types have to be specified as part of the type defintion to be used.
+defined types have to be specified as part of the type definition to be used.
 Their validity can be checked with the type definition's validation. For
 example, the definition of \texttt{\$pair} in Figure~\ref{ex} states that it is
 a subtype of \texttt{\$pair-nil}. If the \texttt{(sub \$pair-nil \dots)} part
@@ -341,10 +350,10 @@ We now give the intuition behind \emph{mutually iso-recursive
 subtyping}~---~see~\cite{rossberg2023mutually} for a full discussion. It is a
 way to support subtyping in presence of mutually recursive type definitions,
 while avoiding size blowups. When checking a block of mutually recursive type
-definitions, we build an internal representation where indices refering to types
-of the block have been replaced by special indices of the form $\rect i$ where
-$i$ is the position of the corresponding index in the block. The concrete
-defintions of the types are then replaced by \emph{defined types} consisting of
+definitions, we build an internal representation where indices referring to
+types of the block have been replaced by special indices of the form $\rect i$
+where $i$ is the position of the corresponding index in the block. The concrete
+definitions of the types are then replaced by \emph{defined types} consisting of
 the block of type definitions and an index. For instance, the block of
 Figure~\ref{tdef} will be translated to the following internal representation:
 \begin{align*}
@@ -396,7 +405,7 @@ where \textsf{poly} is a special symbol indicating that the stack can be
 whatever we need it to be~---~it can be thought as a type variable, on which we
 do not perform explicit unification. When we refer to the type one of those
 instruction, we mean its most general type or the type with the \textsf{poly}
-symbol, these types are contined in the file \texttt{Val/instruction-types.sch}.
+symbol, these types are contained in the file \texttt{Val/instruction-types.sch}.
 The instructions that do not fall in either category (for instance,
 \textsf{ref.as\_non\_null} has type $\refnullt ht\to \reft ht$ for all heap type
 $ht$) are treated in a separate function, they peek on the stack to compute
@@ -437,11 +446,11 @@ compilers~\cite{muchnick1997advanced}.
 
 \subsubsection{Copy Propagation}
 When a variable $x$ is assigned the value of another variable $y$, we replace
-references to $x$ with references to $y$, until the next assignement to $x$ or
+references to $x$ with references to $y$, until the next assignment to $x$ or
 $y$. We were inspired by~\cite[Section~12.5]{muchnick1997advanced} approach to
 local copy propagation.
 
-We travrese a sequence of instruction while maintaining a table which indicates
+We traverse a sequence of instruction while maintaining a table which indicates
 if a variable has been assigned to another one and each enclosing label is
 associated to a list of such tables. We then apply the following procedure when
 encountering an instruction $i$:
@@ -462,7 +471,8 @@ encountering an instruction $i$:
     assignments as we may jump to the beginning of the loop from later in the
     block\footnote{this is suboptimal for global copy propagation, but it is
     sufficient for the code we get and this optimisation could be replaced by
-    SBBV we mention in~\ref{cfg}}.
+    Static Basic Block Versioning~\cite{melanccon2024static} which we are trying
+    to adapt to Wasm}.
   \item[try] When protecting a block with some \textsf{catch} clauses, the table
     indicating no assignment is appended to all the labels these clauses can
     jump to. Once again this is coarse.
@@ -518,10 +528,12 @@ For casts, we only check against the static type as the cast can be necessary to
 maintain well-typedness.
 
 \subsubsection{Type-Dependent Control Flow Rewriting}
-A common pattern in the Wasm code generated by the Bigloo compiler is a
-branching on a type test, and the use of casts in case the test is successful,
-like in Figure~\ref{ex}. If Wasm wasn't statically typed, these casts could be
-removed by an optimising compiler that would determine that they are redundant.
+A common pattern in the Wasm code generated during the compilation of
+dynamically typed programming languages, such as Bigloo, is a branching on a
+type test followed by the use of casts in the branch where the test is
+successful, like in Figure~\ref{ex}. If Wasm wasn't statically typed, these
+casts could be removed by an optimising compiler that would determine that they
+are redundant.
 
 To avoid useless type tests, we introduce $\broncast l\ rt_1\ rt_2$ where $l$ is
 a label expecting a value of type $rt_2$ as parameter and $rt_1\geq rt_2$ are
@@ -535,7 +547,7 @@ We have an optimisation pass replacing \textsf{if} instructions which branch on
 a $(\reftest rt\ (\localget x))$ by calls to \textsf{br\_on\_cast}. We add a
 local variable $y$ of type $rt$ and create a new block labelled $l$ with a
 parameter of type $rt$. The else branch follows the \textsf{br\_on\_cast} which
-branches to $l$. The block labelled by $l$ puts its parameter in the local
+branches to $l$. The block labeled by $l$ puts its parameter in the local
 variable $y$, assigns the value of $y$ to $x$ and contains the then branch. This
 last assignment will allow Copy Propagation to replace $x$ by $y$ when
 appropriate. Cast Elimination then removes useless tests. This whole code in
@@ -579,40 +591,40 @@ transformation is showcased in Figure~\ref{br}.
 While the code after the transformation is bigger, some instructions \texttt{(br
   \$end)} can be removed on real examples.
 
-\subsection{Control-Flow Graph transformation}
-\subsubsection{Control-Flow Graphs}\label{cfg}
-Many optimisations and code transformations are expressed well on
-\emph{Control-Flow Graph} (CFG). It is a graph whose nodes are \emph{basic
-blocks} (sequences of instructions that do not affect the control flow, here
-Wasm instructions) and arcs represent potential jumps. To reflect the typing
-discipline of Wasm, we consider CFGs whose basic blocks have instruction types.
+%% \subsection{Control-Flow Graph transformation}
+%% \subsubsection{Control-Flow Graphs}\label{cfg}
+%% Many optimisations and code transformations are expressed well on
+%% \emph{Control-Flow Graph} (CFG). It is a graph whose nodes are \emph{basic
+%% blocks} (sequences of instructions that do not affect the control flow, here
+%% Wasm instructions) and arcs represent potential jumps. To reflect the typing
+%% discipline of Wasm, we consider CFGs whose basic blocks have instruction types.
 
-We are working to adapt Static Basic Block Versioning or SBBV~\cite{melanccon2024static}
-(which requires CFGs) to WebAssembly. It could subsume many of our passes and
-remove type tests.
-\subsubsection{Construction of a control-flow graph}
-Constructing a CFG from a Wasm program is straightforward except for exceptions
-which we don't support yet. One only needs to follow the programs control flow.
-While instruction sequences are explored, a current state of the types on the
-stack is recorded and used to put type annotation on the basic blocks.
-\subsubsection{Reconstruction of Wasm}
-As we don't have a general goto instruction, some work has to be done to recover
-a valid Wasm program from a CFG. To do it, we implement the algorithm described
-in~\cite{ramsey2022beyond}. This algorithm relies on the \emph{dominance tree}
-of the CFG, which we compute using the algorithm of~\cite{cooper2001simple}.
+%% We are working to adapt Static Basic Block Versioning or SBBV~\cite{melanccon2024static}
+%% (which requires CFGs) to WebAssembly. It could subsume many of our passes and
+%% remove type tests.
+%% \subsubsection{Construction of a control-flow graph}
+%% Constructing a CFG from a Wasm program is straightforward except for exceptions
+%% which we don't support yet. One only needs to follow the programs control flow.
+%% While instruction sequences are explored, a current state of the types on the
+%% stack is recorded and used to put type annotation on the basic blocks.
+%% \subsubsection{Reconstruction of Wasm}
+%% As we don't have a general goto instruction, some work has to be done to recover
+%% a valid Wasm program from a CFG. To do it, we implement the algorithm described
+%% in~\cite{ramsey2022beyond}. This algorithm relies on the \emph{dominance tree}
+%% of the CFG, which we compute using the algorithm of~\cite{cooper2001simple}.
 
-Ramsey's algorithm works on \emph{reducible} CFGs. Intuitively, a CFG is
-reducible when each loop has a single entry point\footnote{this is actually a
-formal definition of reducibility if we define loops and their entry points}.
-WebAssembly's structured control flow only produce such CFGs. But the SBBV we
-work on can modify the CFG of a program with no guaranty on reducibility, at
-least in its current formulation.
+%% Ramsey's algorithm works on \emph{reducible} CFGs. Intuitively, a CFG is
+%% reducible when each loop has a single entry point\footnote{this is actually a
+%% formal definition of reducibility if we define loops and their entry points}.
+%% WebAssembly's structured control flow only produce such CFGs. But the SBBV we
+%% work on can modify the CFG of a program with no guaranty on reducibility, at
+%% least in its current formulation.
 
-A irreducible CFG can be transformed in a reducible one using a technique
-\emph{node splitting}~\cite[Appendix~A]{ramsey2022beyond}. It works by copying
-some basic blocks until the resulting CFG is reducible. We plan on implementing
-controlled node splitting as described in~\cite{janssen1997making} to obtain a
-reducible CFG.
+%% A irreducible CFG can be transformed in a reducible one using a technique
+%% \emph{node splitting}~\cite[Appendix~A]{ramsey2022beyond}. It works by copying
+%% some basic blocks until the resulting CFG is reducible. We plan on implementing
+%% controlled node splitting as described in~\cite{janssen1997making} to obtain a
+%% reducible CFG.
 \section{Benchmarks}\label{bench}
 \section{Conclusion}
 We reviewed and motivated some of \textsf{watib}'s design choices and we
@@ -623,7 +635,65 @@ and the optimisation passes.
 \newpage
 \appendix
 \section{Wasm-as' extensions to the specification}\label{wasmasex}
-\section{Matching rules for \emph{heap types}}\label{subtyping}
+We try to list wasm-as' extensions to the spec, i.e. code modification made by
+wasm-as silently that do not appear specification. To our knowledge, this
+behaviours are not documented. The list is non-exhaustive. Feel free to contact
+us if you find anything missing.
+\subsection{\textsf{Unreachable} insertion}
+Wasm-as tend to replace dead code code by \textsf{unreachable} and add
+\textsf{unreachable} after blocks that don't exit. While semantically
+preserving, this transformation can transform invalid code in valid code. For
+instance, the following function is not well-typed according to the spec. But
+wasm-as inserts an \textsf{unreachable} at the end, making it well-typed.
+\begin{lstlisting}
+(func (result i32)
+  (if (i32.const 0)
+    (then (return (i32.const 0)))
+    (else (return (i32.const 0)))))
+\end{lstlisting}
+
+In the following piece of code, the \textsf{br} is not well-typed but wasm-as accepts
+it:
+\begin{lstlisting}
+(func
+  (result i32)
+  (block $main (result i32)
+    (i32.const 0)
+    (if
+      (then (return (i32.const 0)))
+      (else (return (i32.const 0))))
+    (br $main)))
+\end{lstlisting}
+\subsection{Automatic function reference declaration}
+According to the specification, functions appearing in a \textsf{ref.func} have to
+appear outside the function bodies (in a global or in an elem section). Wasm-as
+puts all the undeclared function reference in an \textsf{elem declare func} section.
+
+\subsection{Sign extension insertion for packed get}
+According to the specification, when using \textsf{array.get} or
+\textsf{struct.get} on a packed field (\textsf{i8} or \textsf{i16}), a sign
+extension has to be specified. It means that either \textsf{.get\_u} or
+\textsf{.get\_s} has to be used. Wasm-as allows \textsf{.get} instructions on
+packed types, defaulting to unsigned.
+
+\subsection{Replacement of block input values by locals}
+Binaryen's README mentions that block input values are represented in the IR by
+\textsf{pop} subexpressions for \textsf{catch} blocks and not supported for the
+others. It is not mentionned that code using block input values will be replaced
+by the use local variables. For instance, the following code:
+\begin{lstlisting}
+(i32.const 0)
+(block (param i32)
+  (drop))
+\end{lstlisting}
+is assembled to:
+\begin{lstlisting}
+(i32.const 0)
+(local.set 0)
+(local.get 0)
+(drop)
+\end{lstlisting}
+\section{Matching rules for heap types}\label{subtyping}
 \begin{mathpar}
   \inferrule{t_1 = t_2}{C\vdash t_1\leq t_2}\hfill
   \inferrule{\\}{C\vdash \bot\leq t}\hfill
@@ -643,9 +713,8 @@ and the optimisation passes.
   \inferrule{\\}{C\vdash\text{\textsf{struct}}\leq\text{\textsf{eq}}}\hfill
   \inferrule{\\}{C\vdash\text{\textsf{array}}\leq\text{\textsf{eq}}}\\
   \inferrule{\text{\textsf{unroll}} (deftype)= (symbol\ldots)}
-            {C\vdash deftype\leq\text{symbol}}\hfill
+            {C\vdash deftype\leq symbol}\hfill
 \inferrule{\text{\textsf{unroll}} (deftype)= (symbol\ldots)\\ C\vdash symbol\leq\text{\textsf{eq}}}
             {C\vdash deftype\leq\text{\textsf{eq}}}
 \end{mathpar}
-\tableofcontents
 \end{document}

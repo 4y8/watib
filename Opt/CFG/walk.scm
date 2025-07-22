@@ -42,15 +42,15 @@
               (intype intype)
               (body body)
               (parent (instantiate::modulefield))
-              (outtype outtype)))
+              (outtype '()))) ;; what should really be outtype
           (multiple-value-bind (body outtype)
              (node-within (car tree) (filter merge-head? (cdr tree)) ctx)
              (instantiate::sequence
               (opcode 'nop)
               (body body)
               (intype intype)
-              (parent (instantiate::modulefield))
-              (outtype outtype))))))
+              (outtype '())
+              (parent (instantiate::modulefield)))))))
 
 (define (do-branch src::cfg-node dst::cfg-node ctx::pair-nil)
    #f)
@@ -165,6 +165,17 @@
                       (body (reverse body))
                       (end (instantiate::unconditional
                             (dst (list-ref labs idx))))))))
+
+              (br_on_cast
+               (with-access::three-args (car l) (x y z)
+                  (with-access::labelidxp x (idx)
+                     (end-current-block (instantiate::on-cast
+                                         (dst-cast-fail
+                                          (build-node (cdr l) new-st new-st '()
+                                                      next labs exp-outtype))
+                                         (rt-src y)
+                                         (rt-dst z)
+                                         (dst-cast (list-ref labs idx)))))))
 
               (else
                (let ((new-st (append (reverse outtype)

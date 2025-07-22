@@ -9,7 +9,7 @@ Wasm-as tend to replace dead code code by `unreachable` and add `unreachable`
 after blocks that don't exit. While semantically preserving, this transformation
 can transform invalid code in valid code. For instance, the following function
 is not well-typed according to the spec. But wasm-as inserts an `unreachable` at
-the end, making it well type.
+the end, making it well-typed.
 
 ```wasm
 (func (result i32)
