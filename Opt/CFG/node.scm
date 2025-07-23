@@ -42,7 +42,8 @@
            (class cfg::object
               entry::cfg-node
               size::long
-              rpostorder::pair-nil)
+              rpostorder::pair-nil
+              func::func)
 
            (generic get-succs j::jump)))
 

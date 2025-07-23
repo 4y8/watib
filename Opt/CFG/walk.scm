@@ -47,85 +47,93 @@
    (filter merge-head? (cdr tree)))
 
 (define-method (children-to-access j::on-cast tree::pair)
-   (list (-> j dst-cast)))
+   (filter (lambda (n) (or (eq? (-> j dst-cast) n) (merge-head? n))) (cdr tree)))
 
 (define-method (children-to-access j::switch tree::pair)
-   (-> j dsts))
+   (cdr tree))
 
-(define (do-tree::sequence tree::pair ctx::pair-nil)
+(define (do-tree::sequence tree::pair ctx::pair-nil outtype::pair-nil)
    (with-access::node-tree (car tree) (idx intype end)
       (if (loop-header? (car tree))
           (let ((body (node-within (car tree) (filter merge-head? (cdr tree))
-                                   (cons `(loop-headed-by ,idx) ctx))))
+                                   (cons `(loop-headed-by ,idx) ctx) intype)))
              (instruction->sequence (instantiate::loop
                                      (opcode 'loop)
                                      (intype intype)
                                      (body body)
                                      (parent (instantiate::modulefield))
                                      ;; what should really be outtype
-                                     (outtype '()))))
+                                     (outtype outtype))))
           (let ((body (node-within (car tree) (children-to-access end tree)
-                                   ctx)))
+                                   ctx outtype)))
              (instantiate::sequence
               (opcode 'nop)
               (body body)
               (intype intype)
-              (outtype '()) ;; to fix
+              (outtype outtype) ;; to fix
               (parent (instantiate::modulefield)))))))
 
 (define (instruction->sequence::sequence i::instruction)
    (duplicate::sequence i (body (list i)) (opcode 'nop)))
 
-(define (do-branch::sequence src::node-tree dst::node-tree ctx::pair-nil)
+(define (do-branch::sequence src::node-tree dst::node-tree ctx::pair-nil outtype::pair-nil)
    (cond ((merge-node? dst)
-          (instruction->sequence
-           (instantiate::one-arg
-            (opcode 'br)
-            (intype '()) ;; to fix
-            (outtype '())
-            (parent (instantiate::modulefield))
-            (x (instantiate::labelidxp
-                (idx (label-index (-> dst idx) ctx))
-                (type (-> dst intype))))
-            )))
+          (instantiate::sequence
+           (opcode 'nop)
+           (intype '()) ;; to fix
+           (outtype outtype)
+           (parent (instantiate::modulefield))
+           (body
+            (list (instantiate::one-arg
+                   (opcode 'br)
+                   (intype '())
+                   (outtype '(poly))
+                   (parent (instantiate::modulefield))
+                   (x (instantiate::labelidxp
+                       (idx (label-index (-> dst idx) ctx))
+                       (type (-> dst intype))))
+                   )))))
          ((back-inedge? src dst)
           (instruction->sequence
            (instantiate::one-arg
             (opcode 'br)
-            (intype '()) ;; to fix
-            (outtype '())
+            (intype '())
+            (outtype '(poly))
             (parent (instantiate::modulefield))
             (x (instantiate::labelidxp
                 (idx (label-index (-> dst idx) ctx))
                 (type (-> dst intype)))))))
          (else (with-access::node-tree dst (tree)
-                  (do-tree tree ctx)))))
+                  (do-tree tree ctx outtype)))))
 
 (define-generic (branch-after-body::pair-nil j::jump src::node-tree
-                                             ctx::pair-nil))
+                                             ctx::pair-nil outtype::pair-nil))
 
 (define-method (branch-after-body::pair-nil j::unconditional src::node-tree
-                                            ctx::pair-nil)
-   (with-access::sequence (do-branch src (-> j dst) ctx) (body)
+                                            ctx::pair-nil outtype::pair-nil)
+   (with-access::sequence (do-branch src (-> j dst) ctx outtype) (body)
       body))
 
 (define-method (branch-after-body::pair-nil j::conditional src::node-tree
-                                            ctx::pair-nil)
+                                            ctx::pair-nil outtype::pair-nil)
    (list (instantiate::if-else
           (intype '()) ;; to fix
-          (outtype '())
+          (outtype outtype)
           (parent (instantiate::modulefield))
           (opcode 'if)
-          (then (do-branch src (-> j dst-true) (cons 'if-then-else ctx)))
-          (else (do-branch src (-> j dst-false) (cons 'if-then-else ctx))))))
+          (then
+           (do-branch src (-> j dst-true) (cons 'if-then-else ctx) outtype))
+          (else
+           (do-branch src (-> j dst-false) (cons 'if-then-else ctx) outtype)))))
 
 (define-method (branch-after-body::pair-nil j::terminal src::node-tree
-                                            ctx::pair-nil)
+                                            ctx::pair-nil outtype::pair-nil)
    (list (-> j i)))
 
 (define-method (branch-after-body::pair-nil j::on-cast src::node-tree
-                                            ctx::pair-nil)
-   (with-access::sequence (do-branch src (-> j dst-cast-fail) ctx) (body)
+                                            ctx::pair-nil outtype::pair-nil)
+   (with-access::sequence (do-branch src (-> j dst-cast-fail) ctx outtype)
+                          (body)
       (with-access::node-tree (-> j dst-cast) (intype idx)
          (cons
           (instantiate::three-args
@@ -141,7 +149,7 @@
           body))))
 
 (define-method (branch-after-body::pair-nil j::switch src::node-tree
-                                            ctx::pair-nil)
+                                            ctx::pair-nil outtype::pair-nil)
    (list (instantiate::br_table
           (opcode 'br_table)
           (labels (map (lambda (n::node-tree) (label-index (-> n idx) ctx))
@@ -150,24 +158,28 @@
           (outtype '())
           (parent (instantiate::modulefield)))))
 
-(define (node-within n::node-tree trees::pair-nil ctx::pair-nil)
+(define (node-within n::node-tree trees::pair-nil ctx::pair-nil
+                     outtype::pair-nil)
    (if (null? trees)
        (append
         (-> n body)
-        (branch-after-body (-> n end) n ctx))
-       (cons
-        (instantiate::block
-         (intype '()) ;; to fix
-         (outtype '())
-         (parent (instantiate::modulefield))
-         (body
-          (node-within
-           n
-           (cdr trees)
-           (cons `(block-followed-by
-                   ,(with-access::node-tree (car (car trees)) (idx) idx)) ctx)))
-         (opcode 'block))
-        (with-access::sequence (do-tree (car trees) ctx) (body) body))))
+        (branch-after-body (-> n end) n ctx outtype))
+       (with-access::sequence (do-tree (car trees) ctx outtype) (body intype)
+          (cons
+           (instantiate::block
+            (opcode 'block)
+            (intype (-> n intype)) ;; to fix
+            (outtype intype)
+            (parent (instantiate::modulefield))
+            (body
+             (node-within
+              n
+              (cdr trees)
+              (cons `(block-followed-by
+                      ,(with-access::node-tree (car (car trees)) (idx) idx))
+                    ctx)
+              intype)))
+           body))))
 
 (define (cfg->wasm g::cfg)
    (define tree-vect (make-vector (-> g size) '()))
@@ -192,7 +204,8 @@
         t))
 
 
-   (do-tree (build-tree (-> g entry)) '()))
+   (do-tree (build-tree (-> g entry)) '()
+            (with-access::func (-> g func) (type) (cadr type))))
 
 (define (func->cfg f::func)
    (define (build-node l::pair-nil seq-intype::pair-nil st::pair-nil
@@ -291,7 +304,7 @@
               (else
                (let ((new-st (append (reverse outtype)
                                      (drop st (length intype)))))
-                  (build-node (cdr l) new-st new-st (cons (car l) body)
+                  (build-node (cdr l) seq-intype new-st (cons (car l) body)
                               next labs))))))))
 
    (let* ((ret-node (instantiate::cfg-node
@@ -315,4 +328,5 @@
         (instantiate::cfg
          (entry entry)
          (size (-fx 0 -size))
-         (rpostorder rpostorder)))))
+         (rpostorder rpostorder)
+         (func f)))))
