@@ -2,9 +2,11 @@
 
 ;; Definitions of the data structures representing CFGs.
 ;;
-;; We consider typed CFGs. Each basic block has an input. They do not have
-;; output type as their output type as a wasm block will be determined during
-;; relooping (it depends on the following block if it ends with a branch).
+;; We consider typed CFGs. Each basic block has an input type and an output
+;; type. This output type corresponds to the output type of the sequence of
+;; instruction in the block. The output type as a wasm block will be determined
+;; during relooping (it depends on the following block if it ends with a
+;; branch).
 
 (module cfg_node
    (from (ast_node "Ast/node.scm"))
@@ -37,6 +39,7 @@
                                       ;; one yet
               (preds::pair-nil (default '()))
               intype::pair-nil
+              outtype::pair-nil
               end::jump)
 
            (class cfg::object

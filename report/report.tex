@@ -4,13 +4,13 @@
 \usepackage[T1]{fontenc}
 \usepackage{microtype}
 %\usepackage{mlmodern}
-\usepackage{baskervald}
+\usepackage{Baskervaldx}
 \usepackage{MnSymbol}
 \usepackage{inconsolata}
 \usepackage{xcolor}
 \usepackage[utf8]{inputenc}
 \usepackage[english]{babel}
-\usepackage[a4paper, left=1.3in, right=1.3in]{geometry}
+\usepackage[a4paper, left=1.4in, right=1.4in]{geometry}
 \usepackage{calc}
 
 \usepackage{titlesec}
@@ -22,7 +22,7 @@
   [.]
 
 \titlespacing*{\subsubsection}
-  {0pt}{1.7ex}{\wordsep}  % left, before, after spacing
+  {0pt}{6pt}{\wordsep}  % left, before, after spacing
 
 \usepackage{mathpartir}
 \usepackage{amsmath}
@@ -64,7 +64,7 @@
 \sloppy
 \maketitle
 \begin{abstract}
-  WebAssembly (Wasm) is a code format aiming at providing efficient execution.
+  WebAssembly (Wasm) is a code format providing efficient and safe execution.
   It now offers the features needed to be a compilation target for functional
   programming languages such as Scheme. Such a backend has been developed in
   the Bigloo compiler, relying on an external toolchain.
@@ -79,8 +79,8 @@
 In 2024, a Wasm backend was added to the Bigloo Scheme compiler~\cite{Bigloo}.
 It generated textual Wasm and relied on an external tool for the assembly.
 \textsf{Watib} has been developed as a replacement for this tool and has been
-directly integrated in the Bigloo compiler. It is also available as a standalone
-tool with a command-line
+integrated in the Bigloo compiler. It is also available as a standalone tool
+with a command-line
 interface\footnote{\url{https://www.normalesup.org/~boussaa/watib/}}.
 
 The rest of this section gives a high-level overview of WebAssembly and
@@ -93,27 +93,27 @@ transcription of the specification.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
-language endowed with a portable and efficient representation. New compilers
-targeting Wasm are developed~\cite{emscripten, kotlin, ocaml}.
+language endowed with a portable and efficient representation. Wasm support in
+existing compilers is increasing~\cite{emscripten, kotlin, ocaml}.
 
-\subsubsection{Syntaxes}
-The WebAssembly standard~\cite{WebAssemblyCoreSpecification3} specifies typing
-rules (called validation rules), opertational semantics, an abstract syntax and
-two concrete syntaxes (formats) for the language. The binary format represents
-WebAssembly modules as a sequence of bytes. Wasm virtual machines such as
-V8~\cite{V8} or SpiderMonkey~\cite{SpiderMonkey} and manipulated by toolchains
-such as binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools} recieve this
-format. The textual format represents WebAssembly modules as S-expressions.
-Toolchains receive this format and humans (and compilers such as Bigloo) write
-it.
+\subsubsection{The standard}
+The WebAssembly specification~\cite{WebAssemblyCoreSpecification3} specifies
+typing rules (called validation rules), opertational semantics, an abstract
+representation of Wasm modules, on which the previous rules are stated, and two
+grammars for concrete formats. The binary format represents WebAssembly modules
+as a sequence of bytes. Wasm virtual machines such as V8~\cite{V8} or
+SpiderMonkey~\cite{SpiderMonkey} and manipulated by toolchains such as
+binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools} recieve this format. The
+textual format represents WebAssembly modules as S-expressions. Toolchains
+receive this format and humans (and compilers such as Bigloo) write it.
 
 \subsubsection{New features}
-The third version of the standard the standard adds features facilitating
-compiling from functional languages. Wasm has now a garbage collector,
-instructions for tail-calls (they are needed because the language doesn't
-support goto) and exceptions. This version is still in draft, but the mentioned
-features are stable and already implemented by the major Wasm engines. Bigloo's
-Wasm backend relies on these features.
+The third version of the standard adds features facilitating compiling from
+functional languages. Wasm has now a garbage collector, instructions for
+tail-calls (they are needed because the language doesn't support goto) and
+exceptions. This version is still in draft, but the mentioned features are
+stable and already implemented by the major Wasm engines. Bigloo's Wasm backend
+relies on these features.
 
 \subsubsection{An Example}
 The example of Figure~\ref{ex} demonstrates the features evoked earlier. For a
@@ -123,11 +123,12 @@ program starts by defining a type of integer lists (\texttt{\$pair-nil}) which
 is a super-type of non-empty integer lists (\texttt{\$pair}). A non-empty list
 has a head (field \texttt{\$car}) which is a 32-bit integer and a tail which is
 a list. The function \texttt{\$has-zero} checks whether or not a given list
-contains 0. It returns a \textsf{i32} as Wasm has no boolean. The emptiness of
-the list is checked by checking that the argument of type \texttt{\$pair} using
-the instruction \textsf{ref.test}. The head and tail of the list can then be
-accessed after it has been cast to the type \texttt{\$pair} using the
-instruction \textsf{ref.cast}. Otherwise, the program wouldn't be well-typed.
+contains 0. It returns a \textsf{i32} as Wasm has no boolean. The function
+starts by testing the non-emptiness of its argument by checking that it is of
+type \texttt{\$pair} using the instruction \textsf{ref.test}. Before accessing
+the head or the tail of the non-empty list, the function casts it to the
+\texttt{\$pair}, using the instruction \textsf{ref.cast}. The program would be
+ill-typed without these two casts.
 
 \begin{figure}[h]
   \begin{minipage}{\widthof{(type \$pair (sub \$pair-nil (struct (field \$cdr (ref \$pair-nil))}}
@@ -159,23 +160,24 @@ instruction \textsf{ref.cast}. Otherwise, the program wouldn't be well-typed.
 \textsf{Watib} handles type checking (the \texttt{Val} folder of the sources),
 optimisation (the \texttt{Opt} folder) and assembly (the \texttt{Asm} folder) of
 Wasm programs given in textual format\footnote{binary format is planned}.
-Function validation and optimisation can run in parallel. We added the option to
-run them in an arbitrary number of threads using the \textsf{pthreads} library.
-This feature, and thus the dependency on an external library is optional which
-is required for integration with the Bigloo compiler. We have set up continuous
-integration with tests bundled with the specification. As \textsf{watib} does
-not support the whole standard yet, we maintain a repository of tests patched to
-reflect the current state of \textsf{watib}.
+Function validation and optimisation can run in parallel. Our tool supports
+using an arbitrary number of threads for these passes using the
+\textsf{pthreads} library. This feature, and thus the dependency on an external
+library is optional which is mandatory for integration with the Bigloo compiler.
+We have set up continuous integration against tests bundled with the
+specification. As \textsf{watib} does not support the whole standard yet, we
+maintain a repository of tests patched to reflect the current coverage of the
+specification.
 
 The WebAssembly platform is in constant evolution. Long-term maintenance is one
 of our goals. \textsf{Watib} has thus been designed to be able to keep up with
-the additions made to the language. Adding a instruction that isn't a block can
-be done by putting a new entry in the list of opcodes (\texttt{Asm/opcodes.sch})
-and in the list of validation rules (\texttt{Val/instruction-types.sch}). The
-case of block instructions is more involved as they have syntaxes different from
-the other ones. The optimisation passes also have to be modified to take into
-account the new control flow possibilities. It should not be a problem because
-new kinds of blocks aren't often introduced.
+the additions made to the language. To add an instruction that isn't a block,
+one puts a new entry in the list of opcodes (\texttt{Asm/opcodes.sch}) and in
+the list of validation rules (\texttt{Val/instruction-types.sch}). The case of
+block instructions is more involved as they have syntaxes different from the
+other ones. One also has to modify the optimisation passes to take into account
+the new control flow possibilities. It should not be a problem because the
+introduction of new kinds of blocks is rare.
 
 We now review some differences between \textsf{watib} and already existing
 toolchains (apart from the lack of features and maturity of the former). We
@@ -184,18 +186,18 @@ compilers use~\cite{Binaryen} and the one Bigloo used before switching to
 \textsf{watib}.
 \subsubsection{Fault tolerance}
 For the sake of user-friendliness, \textsf{watib} can continue the validation of
-a file after reporting an error. It allows to report multiple errors in one
-pass, and it avoids having to correct errors one by one, which can be tedious
-for big files, as parsing alone can be time consuming. The Bigloo Wasm backend
+a file after reporting an error. It allows to signal multiple errors in one
+pass, it avoids having to correct errors one by one, which can be tedious
+for big files, as parsing alone is time consuming. The Bigloo Wasm backend
 produced a file of 1,6 million lines. Running \textsf{wasm-as} to find a single
-error would take a noticeable amount of time. We, also, try to give informative
+error would take a noticeable amount of time. We also try to give informative
 error messages. The benefits of these choices become apparent when using our
 toolchain to correct code written by hand, which happens often when developing a
 runtime.
 
 \subsubsection{{Zealous\protect\footnotemark} respect of the spec}
 Binaryen's assembler, \textsf{wasm-as}, accepts files that do not conform to the
-specification and outputs file that are more or less semantically equivalent. We
+specification and outputs files that have more or less the same semantics. We
 compiled in \textsf{watib}'s internal documentation a list of the modifications
 made by \textsf{wasm-as} we witnessed~\cite{WasmAsExtension}. It is reproduced
 in Appendix~\ref{wasmasex}. For the sake of portability, \textsf{watib} follows
@@ -208,7 +210,7 @@ Before the introduction of \textsf{watib}, Bigloo's Wasm backend was generating
 code ill-typed according to the standard but which was still accepted by
 \textsf{wasm-as} without any warning. In fact, the original implementation of
 exceptions was incorrect and a validation following the specification would have
-pointed a problem.
+pointed a problem. The integration of \textsf{watib} in Bigloo revealed the bug.
 
 \subsubsection{Linear IR}
 Binaryen's \textsf{wasm-opt}, has a tree like IR, in part for historical
@@ -240,8 +242,8 @@ two nodes and a node takes its two inputs from a single node.
   \caption{Non classical data flow with multiple return values}\label{data-flow}
 \end{figure}
 
-\textsf{Watib}'s IR is closer to modern Wasm. We represent the instructions in a
-linear way. It allows to output code that use block parameters without
+\textsf{Watib}'s IR is closer to modern Wasm by representing the instructions in
+a linear way. It allows to output code that use block parameters without
 additional burden for instance. We hope that will enable different optimisations
 and a better treatment of code written using WebAssembly's new features.
 
@@ -550,23 +552,24 @@ successful, like in Figure~\ref{ex}. If Wasm wasn't statically typed, these
 casts could be removed by an optimising compiler that would determine that they
 are redundant.
 
-To avoid useless type tests, we introduce $\broncast l\ rt_1\ rt_2$ where $l$ is
-a label expecting a value of type $rt_2$ as parameter and $rt_1\geq rt_2$ are
-reference types. It combines branching and casting. A call to this instruction
-with a value of type $rt_1$ on top of the stack checks it against the type
-$rt_2$. If it's of type $rt_2$ then it branches to label $l$ with the value on
-top of the stack cast to $rt_2$ as a parameter, otherwise the execution
-continues with no modification to the stack.
+The instruction $\broncast l\ rt_1\ rt_2$, where $l$ is a label expecting a
+value of type $rt_2$ as parameter and $rt_1\geq rt_2$ are reference types, can
+avoid useless type tests. It combines branching and casting: while
+\textsf{ref.cast} traps when the type test fails, \textsf{br\_on\_cast} allows
+arbitrary (structured) control flow. A call to this instruction with a value of
+type $rt_1$ on top of the stack checks it against the type $rt_2$. If it's of
+type $rt_2$ then it branches to label $l$ with the value on top of the stack
+cast to $rt_2$ as a parameter, otherwise the execution continues with no
+modification to the stack.
 
 We have an optimisation pass replacing \textsf{if} instructions which branch on
 a $(\reftest rt\ (\localget x))$ by calls to \textsf{br\_on\_cast}. We add a
 local variable $y$ of type $rt$ and create a new block labelled $l$ with a
 parameter of type $rt$. The else branch follows the \textsf{br\_on\_cast} which
 branches to $l$. The block labeled by $l$ puts its parameter in the local
-variable $y$, assigns the value of $y$ to $x$ and contains the then branch. This
-last assignment will allow Copy Propagation to replace $x$ by $y$ when
-appropriate. Cast Elimination then removes useless tests. This whole code in
-contained in a block which the else branch goes to at the end. The
+variable $y$ and replaces $x$ by $y$ in the then branch following the same
+procedure as Copy Propagation. Cast Elimination then removes useless tests. This
+whole code in contained in a block which the else branch goes to at the end. The
 transformation is showcased in Figure~\ref{br}.
 
 \begin{figure}[h]
@@ -594,9 +597,8 @@ transformation is showcased in Figure~\ref{br}.
     (drop)
     B2
     (br $end))
-  (local.tee $y)
-  (local.set $x)
-  B1)
+  (local.set $y)
+  B1[$x:=$y])
 \end{verbatim}
 \end{minipage}
   \end{tabular}

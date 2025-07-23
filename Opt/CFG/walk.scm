@@ -29,7 +29,7 @@
    (any (lambda (src::node-tree) (back-inedge? src n)) (-> n preds)))
 
 (define (merge-node? n::node-tree)
-   (let* ((forward-pred? (lambda (src::node-tree) (back-inedge? n src)))
+   (let* ((forward-pred? (lambda (src::node-tree) (not (back-inedge? src n))))
           (tl (find-tail forward-pred? (-> n preds))))
       (and tl (any forward-pred? (cdr tl)))))
 
@@ -76,11 +76,12 @@
 (define (instruction->sequence::sequence i::instruction)
    (duplicate::sequence i (body (list i)) (opcode 'nop)))
 
-(define (do-branch::sequence src::node-tree dst::node-tree ctx::pair-nil outtype::pair-nil)
+(define (do-branch::sequence src::node-tree dst::node-tree ctx::pair-nil
+                             outtype::pair-nil)
    (cond ((merge-node? dst)
           (instantiate::sequence
            (opcode 'nop)
-           (intype '()) ;; to fix
+           (intype (-> src outtype)) ;; to fix
            (outtype outtype)
            (parent (instantiate::modulefield))
            (body
@@ -91,18 +92,24 @@
                    (parent (instantiate::modulefield))
                    (x (instantiate::labelidxp
                        (idx (label-index (-> dst idx) ctx))
-                       (type (-> dst intype))))
-                   )))))
+                       (type (-> dst intype)))))))))
+
          ((back-inedge? src dst)
-          (instruction->sequence
-           (instantiate::one-arg
-            (opcode 'br)
-            (intype '())
-            (outtype '(poly))
-            (parent (instantiate::modulefield))
-            (x (instantiate::labelidxp
-                (idx (label-index (-> dst idx) ctx))
-                (type (-> dst intype)))))))
+          (instantiate::sequence
+           (opcode 'nop)
+           (intype (-> src outtype)) ;; to fix
+           (outtype outtype)
+           (parent (instantiate::modulefield))
+           (body
+            (list (instantiate::one-arg
+                   (opcode 'br)
+                   (intype '())
+                   (outtype '(poly))
+                   (parent (instantiate::modulefield))
+                   (x (instantiate::labelidxp
+                       (idx (label-index (-> dst idx) ctx))
+                       (type (-> dst intype)))))))))
+
          (else (with-access::node-tree dst (tree)
                   (do-tree tree ctx outtype)))))
 
@@ -117,7 +124,7 @@
 (define-method (branch-after-body::pair-nil j::conditional src::node-tree
                                             ctx::pair-nil outtype::pair-nil)
    (list (instantiate::if-else
-          (intype '()) ;; to fix
+          (intype `(,@(-> src outtype) i32)) ;; to fix
           (outtype outtype)
           (parent (instantiate::modulefield))
           (opcode 'if)
@@ -155,7 +162,7 @@
           (labels (map (lambda (n::node-tree) (label-index (-> n idx) ctx))
                        (-> j dsts)))
           (intype '()) ;; to fix
-          (outtype '())
+          (outtype '(poly))
           (parent (instantiate::modulefield)))))
 
 (define (node-within n::node-tree trees::pair-nil ctx::pair-nil
@@ -215,6 +222,7 @@
              (with-access::unconditional end (dst) dst)
              (instantiate::cfg-node
               (intype seq-intype)
+              (outtype (reverse st))
               (body (reverse body))
               (end end))))
 
@@ -269,6 +277,7 @@
                   (dummy-node::cfg-node (instantiate::cfg-node
                                          (body '())
                                          (intype '())
+                                         (outtype '())
                                          (end (instantiate::unconditional
                                                (dst n)))))
                   (loop-head::cfg-node
@@ -277,6 +286,7 @@
 
               (set! (-> dummy-node body) (-> loop-head body))
               (set! (-> dummy-node intype) (-> loop-head intype))
+              (set! (-> dummy-node outtype) (-> loop-head outtype))
               (set! (-> dummy-node end) (-> loop-head end))
 
               (end-current-block
@@ -293,6 +303,7 @@
                   (with-access::labelidxp x (idx)
                      (instantiate::cfg-node
                       (intype seq-intype)
+                      (outtype (reverse st))
                       (body (reverse body))
                       (end (instantiate::unconditional
                             (dst (list-ref labs idx))))))))
@@ -316,6 +327,7 @@
 
    (let* ((ret-node (instantiate::cfg-node
                      (intype (cadr (-> f type)))
+                     (outtype (cadr (-> f type)))
                      (body '())
                      (end (instantiate::terminal
                            (i (instantiate::instruction
