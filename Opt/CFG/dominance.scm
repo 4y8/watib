@@ -21,31 +21,30 @@
       (define (intersect::cfg-node n1::cfg-node n2::cfg-node)
         (cond
          ((=fx (-> n1 idx) (-> n2 idx)) n1)
-         ;; the algorithm from the paper uses postorder here, not reverse postorder
+         ;; the algorithm from the paper uses postorder here, not reverse
+         ;; postorder
          ((>fx (-> n1 idx) (-> n2 idx)) (intersect (dom n1) n2))
          (else (intersect n1 (dom n2)))))
 
       (define (dom n::cfg-node)
          (vector-ref doms (-fx 0 (-> n idx))))
-
-      (define (step n::cfg-node)
-         (if (eq? n entry)
-             entry
-             (fold (lambda (p new_idom)
-                     (if (dom p)
-                         (if new_idom
-                             (intersect new_idom p)
-                             p)
-                         new_idom)) #f (-> n preds))))
-
       (define (loop)
-         (let ((l (map step (-> g rpostorder)))
-               (changed #f))
-            (for-each (lambda (n::cfg-node p::cfg-node)
-                        (unless (eq? p (dom n))
-                           (set! changed #t)
-                           (vector-set! doms (-fx 0 (-> n idx)) p)))
-                      (-> g rpostorder) l)
-            (if changed (loop))))
+         (define (step n::cfg-node)
+            (let ((new_idom (if (eq? n entry)
+                                entry
+                                (fold (lambda (p new_idom)
+                                        (if (dom p)
+                                            (if new_idom
+                                                (intersect new_idom p)
+                                                p)
+                                            new_idom)) #f (-> n preds)))))
+              (if (eq? new_idom (dom n))
+                  #f
+                  (begin
+                     (vector-set! doms (-fx 0 (-> n idx)) new_idom)
+                     #t))))
+
+         (when (any (lambda (x) x) (map-in-order step (-> g rpostorder)))
+            (loop)))
       (loop)
       doms))

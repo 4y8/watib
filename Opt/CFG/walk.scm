@@ -227,17 +227,24 @@
         (with-access::if-then (car l) (then intype outtype)
            (let* ((new-st (append (reverse outtype) (drop st (length intype))))
                   (n::cfg-node (build-node (cdr l) new-st new-st '() next
-                                           labs)))
+                                           labs))
+                 ;; (cdr intype) to remove the condition on top of the stack
+                  (bintype (cdr (reverse intype))))
               (end-current-block
                (instantiate::conditional
                 (dst-true
                  (build-node (with-access::sequence then (body) body)
-                             intype intype '() n (cons n labs)))
+                             bintype
+                             bintype
+                             '() n (cons n labs)))
                 (dst-false
                  (if (isa? (car l) if-else)
                      (with-access::if-else (car l) (else)
                         (build-node (with-access::sequence else (body) body)
-                                    intype intype '() n (cons n labs)))
+                                    bintype
+                                    bintype
+                                    '() n
+                                    (cons n labs)))
                      n)))))))
 
        ;; (block instr*) instr* could be interpreted as instr* end instr* maybe
