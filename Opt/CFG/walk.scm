@@ -196,14 +196,12 @@
 
 (define (func->cfg f::func)
    (define (build-node l::pair-nil seq-intype::pair-nil st::pair-nil
-                       body::pair-nil next::cfg-node labs::pair-nil
-                       exp-outtype::pair-nil)
+                       body::pair-nil next::cfg-node labs::pair-nil)
       (define (end-current-block end::jump)
          (if (and (null? body) (isa? end unconditional))
              (with-access::unconditional end (dst) dst)
              (instantiate::cfg-node
               (intype seq-intype)
-              (outtype st)
               (body (reverse body))
               (end end))))
 
@@ -216,17 +214,17 @@
         (with-access::if-then (car l) (then intype outtype)
            (let* ((new-st (append (reverse outtype) (drop st (length intype))))
                   (n::cfg-node (build-node (cdr l) new-st new-st '() next
-                                           labs exp-outtype)))
+                                           labs)))
               (end-current-block
                (instantiate::conditional
                 (dst-true
                  (build-node (with-access::sequence then (body) body)
-                             intype intype '() n (cons n labs) outtype))
+                             intype intype '() n (cons n labs)))
                 (dst-false
                  (if (isa? (car l) if-else)
                      (with-access::if-else (car l) (else)
                         (build-node (with-access::sequence else (body) body)
-                                    intype intype '() n (cons n labs) outtype))
+                                    intype intype '() n (cons n labs)))
                      n)))))))
 
        ;; (block instr*) instr* could be interpreted as instr* end instr* maybe
@@ -237,31 +235,28 @@
         (with-access::block (car l) (intype outtype (block-body body))
            (let* ((new-st (append (reverse outtype) (drop st (length intype))))
                   (n::cfg-node (build-node (cdr l) new-st new-st '() next
-                                           labs exp-outtype)))
+                                           labs)))
               (end-current-block
                (instantiate::unconditional
                 (dst (build-node block-body intype intype '() n
-                                 (cons n labs) outtype)))))))
+                                 (cons n labs))))))))
 
        ((isa? (car l) loop)
         (with-access::loop (car l) (intype outtype (loop-body body))
            (let* ((new-st (append (reverse outtype) (drop st (length intype))))
-                  (n::cfg-node (build-node (cdr l) new-st new-st '() next
-                                           labs exp-outtype))
+                  (n::cfg-node (build-node (cdr l) new-st new-st '() next labs))
                   ;; created to break cyclicity
                   (dummy-node::cfg-node (instantiate::cfg-node
                                          (body '())
                                          (intype '())
-                                         (outtype '())
                                          (end (instantiate::unconditional
                                                (dst n)))))
                   (loop-head::cfg-node
                    (build-node loop-body intype intype '() n
-                               (cons dummy-node labs) outtype)))
+                               (cons dummy-node labs))))
 
               (set! (-> dummy-node body) (-> loop-head body))
               (set! (-> dummy-node intype) (-> loop-head intype))
-              (set! (-> dummy-node outtype) (-> loop-head outtype))
               (set! (-> dummy-node end) (-> loop-head end))
 
               (end-current-block
@@ -278,7 +273,6 @@
                   (with-access::labelidxp x (idx)
                      (instantiate::cfg-node
                       (intype seq-intype)
-                      (outtype exp-outtype)
                       (body (reverse body))
                       (end (instantiate::unconditional
                             (dst (list-ref labs idx))))))))
@@ -289,7 +283,7 @@
                      (end-current-block (instantiate::on-cast
                                          (dst-cast-fail
                                           (build-node (cdr l) st st '()
-                                                      next labs exp-outtype))
+                                                      next labs))
                                          (rt-src y)
                                          (rt-dst z)
                                          (dst-cast (list-ref labs idx)))))))
@@ -298,17 +292,16 @@
                (let ((new-st (append (reverse outtype)
                                      (drop st (length intype)))))
                   (build-node (cdr l) new-st new-st (cons (car l) body)
-                              next labs exp-outtype))))))))
+                              next labs))))))))
 
    (let* ((ret-node (instantiate::cfg-node
                      (intype (cadr (-> f type)))
-                     (outtype '())
                      (body '())
                      (end (instantiate::terminal
                            (i (instantiate::instruction
                                (opcode 'return)
-                               (outtype '())
                                (intype (cadr (-> f type)))
+                               (outtype '())
                                (parent f)))))))
           (entry (build-node
                  (with-access::sequence (-> f body) (body) body)
@@ -316,8 +309,7 @@
                  '()
                  '()
                  ret-node
-                 (list ret-node)
-                 (cadr (-> f type)))))
+                 (list ret-node))))
 
      (multiple-value-bind (-size rpostorder) (reverse-postorder! entry)
         (instantiate::cfg
