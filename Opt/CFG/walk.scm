@@ -124,7 +124,7 @@
 (define-method (branch-after-body::pair-nil j::conditional src::node-tree
                                             ctx::pair-nil outtype::pair-nil)
    (list (instantiate::if-else
-          (intype `(,@(-> src outtype) i32)) ;; to fix
+          (intype (-> src outtype))
           (outtype outtype)
           (parent (instantiate::modulefield))
           (opcode 'if)
@@ -161,7 +161,7 @@
           (opcode 'br_table)
           (labels (map (lambda (n::node-tree) (label-index (-> n idx) ctx))
                        (-> j dsts)))
-          (intype '()) ;; to fix
+          (intype '())
           (outtype '(poly))
           (parent (instantiate::modulefield)))))
 
