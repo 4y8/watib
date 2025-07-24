@@ -19,11 +19,13 @@
 ;;
 ;; The prelude is of the form (prelude <module-decl>*), where <module-decl>
 ;; refers to the usual Wasm module declaration. It can be used to declare types
-;; for instance. The type declaration of the CFG is of the form form:
+;; for instance. The type declaration of the CFG is of the form:
 ;; (cfg (param <name> <vt>)*
 ;;      (result <vt>*)*
 ;;      (local <name> <vt>)*
 ;;      (entry <name>)).
+;; Parameters, results and local variables can be specified like in a Wasm
+;; function.
 ;;
 ;; Warning: we it does handle yet all the necessary checks for reducibility and
 ;; type compatibility
@@ -115,7 +117,10 @@
                    (((entry ?name))
                     (set! (-> env local-names) (append formals locals))
                     (set! (-> env local-types)
-                          (list->vector (append (car tu) lts)))
+                          (list->vector (map (lambda (t) (instantiate::local-var
+                                                          (type t)
+                                                          (init? #t)))
+                                             (append (car tu) lts))))
                     (set! (-> env return) (cadr tu))
                     (set! entry-name name)
                     (set! f (instantiate::func
@@ -131,7 +136,7 @@
               (unfold eof-object?
                       (match-lambda
                          ((and (node ?name . ?tl) ?n)
-                          (hashtable-put! nodes name (dummy-node))
+                          (hashtable-put! nodes name (make-dummy-node))
                           n)
                          (?x (error "watib" "expected node got" x)))
                           (lambda (-) (read ip #t)) (read ip #t))))

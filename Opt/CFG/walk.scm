@@ -47,7 +47,8 @@
    (filter merge-head? (cdr tree)))
 
 (define-method (children-to-access j::on-cast tree::pair)
-   (filter (lambda (n) (or (eq? (-> j dst-cast) n) (merge-head? n))) (cdr tree)))
+   (filter (lambda (n) (or (eq? (-> j dst-cast) (car n)) (merge-head? n)))
+           (cdr tree)))
 
 (define-method (children-to-access j::switch tree::pair)
    (cdr tree))
@@ -151,8 +152,10 @@
            (x (instantiate::labelidxp
                (idx (label-index idx ctx))
                (type intype)))
-           (y (-> j rt-src))
-           (z (-> j rt-dst)))
+           (y (instantiate::typep
+               (type (-> j rt-src))))
+           (z (instantiate::typep
+               (type (-> j rt-dst)))))
           body))))
 
 (define-method (branch-after-body::pair-nil j::switch src::node-tree
@@ -274,12 +277,7 @@
            (let* ((new-st (append (reverse outtype) (drop st (length intype))))
                   (n::cfg-node (build-node (cdr l) new-st new-st '() next labs))
                   ;; created to break cyclicity
-                  (dummy-node::cfg-node (instantiate::cfg-node
-                                         (body '())
-                                         (intype '())
-                                         (outtype '())
-                                         (end (instantiate::unconditional
-                                               (dst n)))))
+                  (dummy-node::cfg-node (make-dummy-node))
                   (loop-head::cfg-node
                    (build-node loop-body intype intype '() n
                                (cons dummy-node labs))))

@@ -50,7 +50,7 @@
               func::func)
 
            (generic get-succs j::jump)
-           (dummy-node::cfg-node)))
+           (make-dummy-node::cfg-node)))
 
 (define-generic (get-succs j::jump))
 
@@ -69,7 +69,7 @@
 (define-method (get-succs j::on-cast)
    (list (-> j dst-cast) (-> j dst-cast-fail)))
 
-(define (dummy-node::cfg-node)
+(define (make-dummy-node::cfg-node)
    (instantiate::cfg-node
     (body '())
     (outtype '())
