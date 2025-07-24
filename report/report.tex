@@ -374,9 +374,8 @@ way to support subtyping in presence of mutually recursive type definitions,
 while avoiding size blowups. When checking a block of mutually recursive type
 definitions, we build an internal representation where indices referring to
 types of the block have been replaced by special indices of the form $\rect i$
-where $i$ is the position of the corresponding index in the block. The concrete
-definitions of the types are then replaced by \emph{defined types} consisting of
-the block of type definitions and an index. For instance, the block of
+where $i$ is the position of the corresponding index in the block. A type is,
+then, a block of type definitions and an index. For instance, the block of
 Figure~\ref{tdef} will be translated to the following internal representation:
 \begin{align*}
 \rect\ (& (\arrt \cstt\reft \rect 1)\\
@@ -660,7 +659,11 @@ work on can modify the CFG of a program with no guaranty on reducibility, at
 least in its current formulation.
 
 \subsubsection{Fixing irreducibility}
-We are exploring the different ways to obtain a reducible CFG after this pass.
+We are considering two different ways to obtain a reducible CFG after this pass.
+\begin{itemize}
+  \item Node splitting.
+  \item Dispatch nodes.
+\end{itemize}
 
 %% \subsection{More optimisations}
 %% \subsubsection{SSA form}

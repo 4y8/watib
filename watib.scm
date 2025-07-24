@@ -38,6 +38,7 @@
    (define validate-only #f)
    (define o-flags::opt-flags (instantiate::opt-flags))
    (define dump-cfg #f)
+   (define dump-cfg-wat #f)
    (define cfg-file #f)
 
    (define (parse-args args)
@@ -109,6 +110,9 @@
          (("--dump-cfg" ?func (help "Prints the CFG on FUNC in graphviz DOT format"))
           (set! dump-cfg (string->symbol func)))
 
+         (("--dump-cfg-wat" ?func (help "Prints the CFG on FUNC in CFGWAT format"))
+          (set! dump-cfg-wat (string->symbol func)))
+
          (("--read-cfg" ?file (help "Reads the CFG in FILE and dumps it"))
           (set! cfg-file file))
 
@@ -132,6 +136,14 @@
           (let ((cfg (func->cfg
                       (vector-ref funcs (func-get-index env dump-cfg)))))
              (print-cfg-as-dot cfg)
+             (with-output-to-port (open-output-file "out.wat")
+                (lambda ()
+                   (dump-instr (cfg->wasm cfg) 0))))))
+      (dump-cfg-wat
+       (with-access::prog p (funcs env)
+          (let ((cfg (func->cfg
+                      (vector-ref funcs (func-get-index env dump-cfg-wat)))))
+             (print-cfg-as-cfgwat cfg)
              (with-output-to-port (open-output-file "out.wat")
                 (lambda ()
                    (dump-instr (cfg->wasm cfg) 0))))))
