@@ -135,14 +135,6 @@
              (with-output-to-port (open-output-file "out.wat")
                 (lambda ()
                    (dump-instr (cfg->wasm cfg) 0))))))
-        (cfg-file
-         (with-input-from-file cfg-file
-            (lambda (p)
-               (let ((cfg (read-cfg p)))
-                  (print-cfg-as-dot cfg)
-                  (with-output-to-port (open-output-file "out.wat")
-                     (lambda ()
-                        (dump-instr (cfg->wasm cfg) 0)))))))
         (else
          (opt-file! p nthreads o-flags)
          (call-with-output-file output-file
@@ -150,6 +142,17 @@
 
    (parse-args (cdr argv))
 
-   (if (null? input-files)
-       (watib (read (current-input-port) #t))
-       (watib `(module ,@(merge-files input-files)))))
+   (cond
+    (cfg-file
+     (call-with-input-file cfg-file
+        (lambda (p)
+           (let ((cfg (read-cfg p)))
+              (print-cfg-as-dot cfg)
+              (call-with-output-file "out.wat"
+                 (lambda (op)
+                    (with-output-to-port op
+                       (lambda ()
+                          (dump-instr (cfg->wasm cfg) 0)))))))))
+    ((null? input-files)
+     (watib (read (current-input-port) #t)))
+    (else (watib `(module ,@(merge-files input-files))))))

@@ -21,7 +21,7 @@
 ;; refers to the usual Wasm module declaration. It can be used to declare types
 ;; for instance. The type declaration of the CFG is of the form form:
 ;; (cfg (param <name> <vt>)*
-;;      (result <vt>*)
+;;      (result <vt>*)*
 ;;      (local <name> <vt>)*
 ;;      (entry <name>)).
 ;;
@@ -86,7 +86,7 @@
    (match-case n
       ((node ?- (param . ?vts)
          (body . ?instrs)
-         (end . ?j))
+         (end ?j))
        (let ((intype (map (lambda (t) (valid-vt env t)) vts)))
           (multiple-value-bind (outtype i) (valid-instrs env instrs intype)
              (instantiate::cfg-node
@@ -110,7 +110,7 @@
              (multiple-value-bind (locals lts entry)
                 (valid-names/local/get-tl env tl)
                 (match-case entry
-                   ((entry ?name)
+                   (((entry ?name))
                     (set! (-> env local-names) (append formals locals))
                     (set! (-> env local-types)
                           (list->vector (append (car tu) lts)))
@@ -126,13 +126,13 @@
          (?x (error "watib" "expected cfg declaration got" x)))
       (let* ((nodes (make-hashtable))
              (nodes-list::pair-nil
-              (cdr (unfold eof-object?
-                           (match-lambda
-                              ((and (node ?name . ?tl) ?n)
-                               (hashtable-put! nodes name (dummy-node))
-                               n)
-                              (?x (error "watib" "expected node got" x)))
-                          (lambda (-) (read ip #t)) (read ip #t)))))
+              (unfold eof-object?
+                      (match-lambda
+                         ((and (node ?name . ?tl) ?n)
+                          (hashtable-put! nodes name (dummy-node))
+                          n)
+                         (?x (error "watib" "expected node got" x)))
+                          (lambda (-) (read ip #t)) (read ip #t))))
          (for-each (lambda (name n::cfg-node)
                      (let ((dummy::cfg-node (hashtable-get nodes name)))
                         (set! (-> dummy intype) (-> n intype))

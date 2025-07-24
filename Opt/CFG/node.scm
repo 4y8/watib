@@ -74,4 +74,4 @@
     (body '())
     (outtype '())
     (intype '())
-    (end (instantiate::switch (dsts '())))))
+    (end (instantiate::switch (dsts '(#f))))))
