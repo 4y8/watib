@@ -12,6 +12,7 @@
            (asm_binary   "Asm/binary.scm")
            (cfg_dump     "Opt/CFG/dump.scm")
            (cfg_walk     "Opt/CFG/walk.scm")
+           (cfg_read     "Opt/CFG/read.scm")
            (env_env      "Env/env.scm")
            ))
 
@@ -37,6 +38,7 @@
    (define validate-only #f)
    (define o-flags::opt-flags (instantiate::opt-flags))
    (define dump-cfg #f)
+   (define cfg-file #f)
 
    (define (parse-args args)
       (args-parse args
@@ -107,6 +109,9 @@
          (("--dump-cfg" ?func (help "Prints the CFG on FUNC in graphviz DOT format"))
           (set! dump-cfg (string->symbol func)))
 
+         (("--read-cfg" ?file (help "Reads the CFG in FILE and dumps it"))
+          (set! cfg-file file))
+
          (else
           (set! input-files (cons else input-files)))))
 
@@ -118,17 +123,26 @@
              (raise e))
           (valid-file m nthreads keep-going silent))))
      (cond
-        ((not p)
-         (exit 1))
-        (validate-only
-         (exit 0))
-        (dump-cfg
-         (with-access::prog p (funcs env)
-            (print-cfg-as-dot
-             (func->cfg (vector-ref funcs (func-get-index env dump-cfg))))
-            (with-output-to-port (current-error-port)
-               (lambda ()
-                 (dump-instr (cfg->wasm (func->cfg (vector-ref funcs (func-get-index env dump-cfg)))) 0)))))
+      ((not p)
+       (exit 1))
+      (validate-only
+       (exit 0))
+      (dump-cfg
+       (with-access::prog p (funcs env)
+          (let ((cfg (func->cfg
+                      (vector-ref funcs (func-get-index env dump-cfg)))))
+             (print-cfg-as-dot cfg)
+             (with-output-to-port (open-output-file "out.wat")
+                (lambda ()
+                   (dump-instr (cfg->wasm cfg) 0))))))
+        (cfg-file
+         (with-input-from-file cfg-file
+            (lambda (p)
+               (let ((cfg (read-cfg p)))
+                  (print-cfg-as-dot cfg)
+                  (with-output-to-port (open-output-file "out.wat")
+                     (lambda ()
+                        (dump-instr (cfg->wasm cfg) 0)))))))
         (else
          (opt-file! p nthreads o-flags)
          (call-with-output-file output-file
