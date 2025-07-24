@@ -4,16 +4,22 @@
 \usepackage[T1]{fontenc}
 \usepackage{microtype}
 %\usepackage{mlmodern}
-\usepackage{Baskervaldx}
-\usepackage{MnSymbol}
+%\usepackage{Baskervaldx}
+%\usepackage[garamond]{mathdesign}
+\usepackage[charter]{mathdesign}
+
+\renewcommand{\baselinestretch}{1.1}
+%\usepackage{MnSymbol}
 \usepackage{inconsolata}
+\usepackage{sourcesanspro}
 \usepackage{xcolor}
 \usepackage[utf8]{inputenc}
 \usepackage[english]{babel}
-\usepackage[a4paper, left=1.4in, right=1.4in]{geometry}
+\usepackage[a4paper, left=1.3in, right=1.3in]{geometry}
 \usepackage{calc}
 
 \usepackage{titlesec}
+
 \titleformat{\subsubsection}[runin]
   {\normalfont\itshape}
   {\normalfont\bfseries(\thesubsubsection)}
@@ -84,7 +90,7 @@ with a command-line
 interface\footnote{\url{https://www.normalesup.org/~boussaa/watib/}}.
 
 The rest of this section gives a high-level overview of WebAssembly and
-\textsf{watib}. Section~\ref{val} details \textsf{watib}'s typechecker.
+\textsf{watib}. Section~\ref{val} details \textsf{watib}'s type checker.
 Section~\ref{opt} describes the design of the different optimisation passes and
 the overall design of the optimiser. Section~\ref{bench} compares
 \textsf{watib}'s and existing tools' performances. We omit the assembly phase
@@ -121,14 +127,14 @@ more detailed introduction to WebAssembly,
 see~\cite[Section~2.1]{phipps2023continuing} or~\cite{haas2017bringing}. This
 program starts by defining a type of integer lists (\texttt{\$pair-nil}) which
 is a super-type of non-empty integer lists (\texttt{\$pair}). A non-empty list
-has a head (field \texttt{\$car}) which is a 32-bit integer and a tail which is
-a list. The function \texttt{\$has-zero} checks whether or not a given list
-contains 0. It returns a \textsf{i32} as Wasm has no boolean. The function
-starts by testing the non-emptiness of its argument by checking that it is of
-type \texttt{\$pair} using the instruction \textsf{ref.test}. Before accessing
-the head or the tail of the non-empty list, the function casts it to the
-\texttt{\$pair}, using the instruction \textsf{ref.cast}. The program would be
-ill-typed without these two casts.
+has a head (field \texttt{\$car}) which is a 32-bit integer and a tail (field
+\texttt{\$cdr}) which is a list. The function \texttt{\$has-zero} checks whether
+or not a given list contains 0. It returns a \textsf{i32} as Wasm has no
+boolean. The function starts by testing the non-emptiness of its argument by
+checking that it is of type \texttt{\$pair} using the instruction
+\textsf{ref.test}. Before accessing the head or the tail of the non-empty list,
+the function casts it to the \texttt{\$pair}, using the instruction
+\textsf{ref.cast}. The program would be ill-typed without these two casts.
 
 \begin{figure}[h]
   \begin{minipage}{\widthof{(type \$pair (sub \$pair-nil (struct (field \$cdr (ref \$pair-nil))}}
@@ -249,7 +255,7 @@ and a better treatment of code written using WebAssembly's new features.
 
 \section{Validation}\label{val}
 We start by giving an overview of WebAssembly's type system, and then describe
-our implementation of type checker for it. The abstract syntax of types is
+our implementation of a type checker for it. The abstract syntax of types is
 presented in Section~2 of the specification and the rules of typing and
 subtyping are presented in Section~3. We focus on the subtyping relation and the
 typing of instructions as the rest of the validation is straightforward
@@ -400,21 +406,21 @@ type to compare it to $t_1$ and $t_2$, which complicates subtyping. We, thus,
 needed to adapt them to implement a type checker.
 
 \subsubsection{Our solution}
-Our type-checker is similar to the one shipped with the specification. For the
+Our type checker is similar to the one shipped with the specification. For the
 subtyping of \emph{value types}, we rewrote the rules to have equivalent ones
 without the transitivity rules\footnote{they are implemented by the function
 \texttt{<ht=} of the \texttt{Type/match.scm} and reproduced in
 Appendix~\ref{subtyping}} and for \emph{instruction types}, we rely on a stack
-and most general types, as explained in the next paragraph.
+and most general types, as explained in~\ref{mgt}.
 
 To check a sequence of instructions we maintain an internal state recording the
 types of the elements present on the stack and then check instruction in order,
 instead of analysing each instruction individually and checking that the types
 compose well.
 
-\subsubsection{Most general instruction types}
-Most instructions have a most general type (i.e.\ a type subtype of all the
-other types we can type the instruction with) or are not exited (like
+\subsubsection{Most general instruction types}\label{mgt}
+Most instructions have a most general type (i.e.\ an admissible type for the
+instruction that is subtype of all the others types) or are not exited (like
 unconditional branches). The typing rules for the latter are
 $i:{t_1}^*t^*\twoheadrightarrow {t_2}^*$ for all $t_1$ and $t_2$, but where
 $t^*$ is fixed. We represent it as $t^*\twoheadrightarrow
@@ -457,7 +463,7 @@ execution-wise but needs to be kept to maintain well-typedness.
 
 \subsection{Generic optimisations}
 We start by reviewing optimisations which benefit the others, by giving more
-precise information or removing generated useless code. They are generic, in the
+precise information or removing generated useless code. They are generic in the
 sense that they are applied in most optimising
 compilers~\cite{muchnick1997advanced}.
 
@@ -472,54 +478,55 @@ if a variable has been assigned to another one and each enclosing label is
 associated to a list of such tables. We then apply the following procedure when
 encountering an instruction $i$:
 \begin{description}
-  \item[assignment] When $x$ is assigned a variable's $y$ value, the table is
-    updated with $x$ pointing to $y$. Otherwise all the assignments concerning
-    $x$ are removed from the table.
+  \item[assignment] When $x$ is assigned a variable's $y$ value, update the
+    table with $x$ pointing to $y$. Otherwise all the assignments concerning $x$
+    are removed from the table.
   \item[access] When accessing a variable that is bound to another one in the
-    table, the instruction is modified to access the latter.
-  \item[branch] When branching to a label $l$, the current table is appended to
+    table, modify the instruction to access the latter.
+  \item[branch] When branching to a label $l$, append the current table to
     the list associated to $l$.
-  \item[block] When entering a block, an empty list is associated with its
+  \item[block] When entering a block, associate an empty list with the block's
     label. The table after the block corresponds to the upper-bound of all the
     tables in the label's list and the table at the end of the block. The
-    upper-bound of list of tables assigns $y$ to the $x$ if all tables do and
+    upper-bound of a list of tables assigns $y$ to the $x$ if all tables do and
     gives no information on $x$ otherwise.
-  \item[loop] When entering a loop, the table is reset to remove all the
+  \item[loop] When entering a loop, reset the table to remove all the
     assignments as we may jump to the beginning of the loop from later in the
     block\footnote{this is suboptimal for global copy propagation, but it is
     sufficient for the code we get and this optimisation could be replaced by
     Static Basic Block Versioning~\cite{melanccon2024static} which we are trying
     to adapt to Wasm}.
-  \item[try] When protecting a block with some \textsf{catch} clauses, the table
-    indicating no assignment is appended to all the labels these clauses can
-    jump to. Once again this is coarse.
+  \item[try] When protecting a block with some \textsf{catch} clauses, append
+    the table indicating no assignment to all the labels these clauses can jump
+    to. Once again this is coarse.
 \end{description}
 \subsubsection{Pure Drops Elimination}
-We eliminate \textsf{drop} instructions and
-their argument when it has no side effect. We try to remove as extra
-computation as possible by inserting as much \textsf{drop} as needed.
+This pass \textsf{drop} instructions and their argument when it has no side
+effect. It tries to remove as extra computation as possible by inserting as much
+\textsf{drop} as needed.
 
 \subsubsection{Constant Folding}
-We replace some expressions that can be evaluated at compile time by their
-value. We also also remove conditional branching when the condition is constant.
+This pass replaces some expressions that can be evaluated at compile time by
+their value. It also removes conditional branching when the condition is
+constant.
 
 \subsubsection{Unreachable Code Elimination}
-We eliminate some instructions that are known to never execute (after a
-\textsf{return} for instance). However, some dead code may be needed for
-validation, even though it can't be executed. For instance, removing the
-\textsf{unreachable} instruction at the end of the function of Figure~\ref{ex}
-makes it ill-typed. The \textsf{if} instruction puts nothing on the stack while
-the function expects an \textsf{i32} on top of the stack as it is its declared
-return type. An \textsf{unreachable} instruction is inserted instead of the
-unreachable code, when it isn't preceded by an instruction of polymorphic return
-type such as a \textsf{return}.
+This pass eliminates some instructions that are known to never execute (after a
+\textsf{return} for instance). However, some dead code is needed for validation.
+For instance, removing the \textsf{unreachable} instruction at the end of the
+function of Figure~\ref{ex} makes it ill-typed, even though both branches of the
+if return. The \textsf{if} instruction puts nothing on the stack while the
+function expects an \textsf{i32} on top of the stack as it is its declared
+return type. An \textsf{unreachable} instruction replaces the unreachable code
+when it isn't preceded by an instruction of polymorphic return type. The
+unreachable code can be deleted otherwise.
 
 \subsubsection{Peephole optimisation}
-We recognise small patterns in Wasm code and replace them with equivalent code
-that is smaller or faster. For instance a sequence of \textsf{local.set} and
-\textsf{local.get} with the same variable can be replaced by a
-\textsf{local.tee} which assigns to a variable the value on top of the stack
-without popping it.
+Some small patterns in Wasm code is equivalent to code that is smaller or
+faster. For instance a sequence of \textsf{local.set} and \textsf{local.get}
+with the same variable is equivalent to a \textsf{local.tee} which assigns to a
+variable the value on top of the stack without popping it. This pass recognises
+such patterns and replaces them.
 
 %% \subsubsection{Type propagation}
 %% This one is not an optimisation \emph{per se}. It only refines type annotations
@@ -534,7 +541,7 @@ the previous ones.
 We eliminate redundant casts and replace type tests by constants if their result
 can be determined. Such casts and tests could be introduced by copy-propagation
 as when we may replace a variable with another one of a smaller type or by the
-next optimisation. To stay conservative about side-effects eliminated tests are
+next optimisation. To stay conservative about side-effects, eliminated tests are
 replaced by a \textsf{drop} and the result of the test, which is a constant.
 Pure Drop Elimination will remove some useless computation. Constant folding
 will propagate the result of the test.
@@ -556,11 +563,11 @@ The instruction $\broncast l\ rt_1\ rt_2$, where $l$ is a label expecting a
 value of type $rt_2$ as parameter and $rt_1\geq rt_2$ are reference types, can
 avoid useless type tests. It combines branching and casting: while
 \textsf{ref.cast} traps when the type test fails, \textsf{br\_on\_cast} allows
-arbitrary (structured) control flow. A call to this instruction with a value of
-type $rt_1$ on top of the stack checks it against the type $rt_2$. If it's of
-type $rt_2$ then it branches to label $l$ with the value on top of the stack
-cast to $rt_2$ as a parameter, otherwise the execution continues with no
-modification to the stack.
+arbitrary (structured) jumps. A call to this instruction with a value of type
+$rt_1$ on top of the stack checks it against the type $rt_2$. If it's of type
+$rt_2$ then it branches to label $l$ with the value on top of the stack cast to
+$rt_2$ as a parameter, otherwise the execution continues with no modification to
+the stack.
 
 We have an optimisation pass replacing \textsf{if} instructions which branch on
 a $(\reftest rt\ (\localget x))$ by calls to \textsf{br\_on\_cast}. We add a
@@ -608,41 +615,62 @@ transformation is showcased in Figure~\ref{br}.
 While the code after the transformation is bigger, some instructions \texttt{(br
   \$end)} can be removed on real examples.
 
-%% \subsection{Control-Flow Graph transformation}
-%% \subsubsection{Control-Flow Graphs}\label{cfg}
-%% Many optimisations and code transformations are expressed well on
-%% \emph{Control-Flow Graph} (CFG). It is a graph whose nodes are \emph{basic
-%% blocks} (sequences of instructions that do not affect the control flow, here
-%% Wasm instructions) and arcs represent potential jumps. To reflect the typing
-%% discipline of Wasm, we consider CFGs whose basic blocks have instruction types.
-
-%% We are working to adapt Static Basic Block Versioning or SBBV~\cite{melanccon2024static}
-%% (which requires CFGs) to WebAssembly. It could subsume many of our passes and
-%% remove type tests.
-%% \subsubsection{Construction of a control-flow graph}
-%% Constructing a CFG from a Wasm program is straightforward except for exceptions
-%% which we don't support yet. One only needs to follow the programs control flow.
-%% While instruction sequences are explored, a current state of the types on the
-%% stack is recorded and used to put type annotation on the basic blocks.
-%% \subsubsection{Reconstruction of Wasm}
-%% As we don't have a general goto instruction, some work has to be done to recover
-%% a valid Wasm program from a CFG. To do it, we implement the algorithm described
-%% in~\cite{ramsey2022beyond}. This algorithm relies on the \emph{dominance tree}
-%% of the CFG, which we compute using the algorithm of~\cite{cooper2001simple}.
-
-%% Ramsey's algorithm works on \emph{reducible} CFGs. Intuitively, a CFG is
-%% reducible when each loop has a single entry point\footnote{this is actually a
-%% formal definition of reducibility if we define loops and their entry points}.
-%% WebAssembly's structured control flow only produce such CFGs. But the SBBV we
-%% work on can modify the CFG of a program with no guaranty on reducibility, at
-%% least in its current formulation.
-
-%% A irreducible CFG can be transformed in a reducible one using a technique
-%% \emph{node splitting}~\cite[Appendix~A]{ramsey2022beyond}. It works by copying
-%% some basic blocks until the resulting CFG is reducible. We plan on implementing
-%% controlled node splitting as described in~\cite{janssen1997making} to obtain a
-%% reducible CFG.
 \section{Benchmarks}\label{bench}
+\section{Static Basic Block Versioning}
+We present here a new pass we are working on. \textsf{Watib} does not support
+this pass yet, but we implemented the necessary machinery to test it on small
+examples where work has been done by hand.
+\subsubsection{Control-Flow Graphs}\label{cfg}
+Some optimisations and code transformations manipulate a \emph{Control-Flow
+Graph} (CFG). It is a graph whose nodes are \emph{basic blocks} (sequences of
+instructions that do not affect the control flow, here Wasm instructions) and
+arcs represent potential jumps. To reflect the typing discipline of Wasm, we
+consider CFGs whose basic blocks have instruction types.
+
+\subsubsection{The optimisation}
+We are working to adapt Static Basic Block Versioning or
+SBBV~\cite{melanccon2024static} (which works on CFGs) to WebAssembly. This
+optimisation produces different versions of a same basic block. Each version has
+more precise information about local variables and can specialise its
+instructions to reflect that. In \textsf{watib}, SSBV could subsume Copy
+Propagation and Cast Elimination.
+
+\subsubsection{Construction of a control-flow graph}
+Constructing a CFG from a Wasm program is straightforward except for exceptions
+which we don't support yet. One only needs to follow the programs control flow.
+While instruction sequences are explored, a current state of the types on the
+stack is recorded and used to put type annotation on the basic blocks.
+
+\subsubsection{Reconstruction of Wasm}
+As we don't have a general goto instruction, some work has to be done to recover
+a valid Wasm program from a CFG. To do it, we implement the algorithm described
+in~\cite{ramsey2022beyond}. This algorithm relies on the \emph{dominance tree}
+of the CFG, which we compute using the algorithm of~\cite{cooper2001simple}. We
+adaptated Ramsey's algorithm to support \textsf{br\_on\_cast} as a way to jump
+out of a block and to use the type annotations a on the CFG to type the Wasm
+blocks. The latter modification allows to preserve block parameters and output
+values in the input program.
+
+\subsubsection{Reducibility}
+Ramsey's algorithm works on \emph{reducible} CFGs. Intuitively, a CFG is
+reducible when each loop has a single entry point\footnote{this is actually a
+formal definition of reducibility if we define loops and their entry points}.
+WebAssembly's structured control flow only produce such CFGs. But the SBBV we
+work on can modify the CFG of a program with no guaranty on reducibility, at
+least in its current formulation.
+
+\subsubsection{Fixing irreducibility}
+We are exploring the different ways to obtain a reducible CFG after this pass.
+
+%% \subsection{More optimisations}
+%% \subsubsection{SSA form}
+%% As we have a Control-Flow Graph, we can transform a given Wasm function to
+%% \emph{Single Static Assignment} form~\cite[Section~1.1]{rastello2022ssa}. In
+%% this form, each variable is assign exactly once.
+%% \subsubsection{Non-function optimisations}
+%% The passes described in Section~\ref{opt} all target functions. \textsf{Watib}
+%% can reduce a program's size by eliminating duplicate type or data definitions.
+
 \section{Conclusion}
 We reviewed and motivated some of \textsf{watib}'s design choices and we
 compared it to existing toolchains. We also detailed the type checking algorithm
