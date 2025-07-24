@@ -13,7 +13,7 @@
 ;; And a jump is of the form:
 ;; | (goto <name>)
 ;; | (if <name> <name>)
-;; | (return <instr>)
+;; | (terminal <instr>)
 ;; | (on-cast <name> <name> <rt1> <rt2>)
 ;; | (switch <name>+) --- the last is the default label
 ;;
@@ -49,12 +49,14 @@
 
       ((if ?t ?f)
        (instantiate::conditional (dst-true (hashtable-get nodes t))
-                                 (dst-false (hashtable-get nodes t))))
+                                 (dst-false (hashtable-get nodes f))))
 
-      ((return ?i)
-       (multiple-value-bind (st i)
+      ((terminal ?i)
+       (multiple-value-bind (i st)
           (valid-instrs env (econs i '() (cer j)) src-outtype)
           (unless (and (null? (cdr i)) (equal? st '(poly)))
+             (print (cdr i))
+             (print st)
              (error/location "watib" "invalid return" j
                              (cadr (cer j)) (caddr (cer j))))
           (instantiate::terminal (i (car i)))))
@@ -88,7 +90,7 @@
          (body . ?instrs)
          (end ?j))
        (let ((intype (map (lambda (t) (valid-vt env t)) vts)))
-          (multiple-value-bind (outtype i) (valid-instrs env instrs intype)
+          (multiple-value-bind (i outtype) (valid-instrs env instrs intype)
              (instantiate::cfg-node
               (intype intype)
               (outtype outtype)
