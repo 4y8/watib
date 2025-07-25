@@ -4,6 +4,8 @@
 ;;
 ;; The copy propagation is mostly local for now. When entering a loop we forget
 ;; everything we know because we could come from anywhere in the loop.
+;;
+;;
 
 (module opt_copyprop
    (static (class acp-state::object
