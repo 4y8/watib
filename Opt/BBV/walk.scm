@@ -2,18 +2,19 @@
    (from (cfg_node "Opt/CFG/node.scm"))
 
    (import (cfg_order "Opt/CFG/order.scm"))
+   (import (type_type "Type/type.scm"))
 
    (static (class context
-      map::obj))
+      registers::vector
+      stack::pair-nil))
 
    (static (class types
-      isnull::bool
-      notnull::bool))
+      set::pair-nil))
 
    (static (class specialization
       origin::cfg-node
       id::bint
-      version
+      version::cfg-node
       context::context))
 
    (static (class bbv-state
@@ -25,6 +26,46 @@
       reachability::obj))
 
    (export (bbv::cfg g::cfg version-limit::bint)))
+
+;; SET
+(define (make-set . elements) elements)
+(define (set-union . ss)
+  (let loop ((lst ss) (result '()))
+    (if (null? lst)
+        result
+        (loop (cdr lst)
+              (set-union2 result (car lst))))))
+(define (set-union2 s1 s2)
+  (cond ((null? s1)
+         s2)
+        ((member (car s1) s2)
+         (set-union2 (cdr s1) s2))
+        (else
+         (cons (car s1)
+               (set-union2 (cdr s1) s2)))))
+(define (set-intersect s1 s2)
+  (cond ((null? s1)
+         '())
+        ((member (car s1) s2)
+         (cons (car s1)
+               (set-intersect (cdr s1) s2)))
+        (else
+         (set-intersect (cdr s1) s2))))
+(define (set-difference s1 s2)
+  (cond ((null? s1)
+         '())
+        ((member (car s1) s2)
+         (set-difference (cdr s1) s2))
+        (else
+         (cons (car s1)
+               (set-difference (cdr s1) s2)))))
+(define (set-equal? s1 s2)
+  (and (null? (set-difference s1 s2))
+       (null? (set-difference s2 s1))))
+(define (set-filter f lst)
+  (cond ((null? lst)   '())
+        ((f (car lst)) (cons (car lst) (set-filter f (cdr lst))))
+        (else          (set-filter f (cdr lst)))))
 
 ;; QUEUE
 (define (make-queue) (cons '() '()))
@@ -44,17 +85,20 @@
 (define (queue-peek queue) (if (queue-empty? queue) #f (caar queue)))
 
 ;; CONTEXT
-(define (make-context locals::pair-nil)
-   (let ((table (make-hashtable)))
-      (for-each
-         (lambda (id) (hashtable-put! table id (instantiate::types (isnull #t) (notnull #t))))
-         locals)
-      (instantiate::context (map table))))
+(define (make-empty-context nregisters::bint)
+   (instantiate::context (registers (make-vector nregisters #f)) (stack '())))
 
 (define (context-equal? ctx1 ctx) #t)
 
 ;; HELPERS
 (define (***NotImplemented*** name::symbol) (error "NotImplemented" name '?))
+
+(define (hashtable-copy table)
+   (let ((new-table (make-hashtable)))
+      (hashtable-for-each
+         table
+         (lambda (k v) (hashtable-put! new-table k v)))
+      new-table))
 
 (define (make-init-state::bbv-state cfg::cfg)
    (let ((init (instantiate::bbv-state
@@ -127,7 +171,62 @@
       (with-access::specialization specialization (id)
          (ssr-connected? reachability id))))
 
-(define (walk state::bbv-state specialization::specialization) (***NotImplemented*** 'walk))
+(define-generic (walk-jump instr::jump state::bbv-state context::context specialization::specialization))
+
+(define-method (walk-jump instr::unconditional state::bbv-state context::context specialization::specialization)
+   (with-access::unconditional instr (dst)
+      (let ((jump-target (reach state dst context specialization)))
+         (instantiate::unconditional jump-target))))
+
+(define-generic (walk-instr instr::instruction state::bbv-state context::context))
+
+(define-method (walk-instr instr::one-arg state::bbv-state context::context)
+   (with-access::context context (stack registers)
+   (with-access::one-arg instr (opcode x intype outtype)
+   
+      (match-case opcode
+         (local.set
+            (with-access::localidxp x (idx)
+               (let* ((type (car stack))
+                     (new-registers (vector-copy registers))
+                     (new-stack (cdr stack)))
+                  (vector-set! new-registers idx type)
+                  (values
+                     instr
+                     (instantiate::context (registers new-registers) (stack new-stack))))))
+         (i32.const
+            (let ((type 'i32))
+               (values
+                  instr
+                  (duplicate::context context (stack (cons type new-stack))))))
+         (i64.const
+            (let ((type 'i64))
+               (values
+                  instr
+                  (duplicate::context context (stack (cons type new-stack))))))
+         (ref.null
+            (let ((type '(ref null none)))
+               (values
+                  instr
+                  (duplicate::context context (stack (cons type new-stack))))))
+         (struct.new
+            (with-access::typeidxp x (idx)
+               (let ((type `(ref ,idx)))
+                  (values
+                     instr
+                     (duplicate::context context (stack (append outtype (drop stack (length intype)))))))))))))
+
+(define (walk state::bbv-state specialization::specialization)
+   (with-access::specialization specialization (origin context version id)
+   (with-access::cfg-node origin (body end)
+      (with-access::cfg-node version (idx) (set! idx id))
+      (let loop ((body body) (context context) (specialized-body '()))
+         (if (null? body)
+            (with-access::cfg-node version ((version-body body) (version-end end))
+               (set! version-body (reverse specialized-body))
+               (set! version-end (walk-jump end state context specialization)))
+            (multiple-value-bind (instr next-context) (walk-instr (car body) state context)
+               (loop (cdr body) next-context (cons instr specialized-body))))))))
 
 (define (reach::specialization state::bbv-state origin::cfg-node context::context from::specialization)
    (with-access::bbv-state state (reachability)
@@ -138,7 +237,7 @@
                         (instantiate::specialization
                            (origin origin)
                            (id (new-id! state))
-                           (version #f)
+                           (version (duplicate::cfg-node origin (body '()) (idx 'dummy)))
                            (context context))))
                      (add-specialization! state specialization)
                      new-specialization))))
@@ -160,14 +259,15 @@
    (let ((state (make-init-state cfg)))
       (with-access::bbv-state state (queue)
       (with-access::cfg g (entry func)
-         (let ((new-entry (reach state entry (make-context (iota (length (-> func locals)))) #f)))
+         (let ((new-entry (reach state entry (make-empty-context (length (-> func locals))) #f)))
             (let loop ()
                (when (not (queue-empty? queue))
                   (let ((specialization (queue-get! queue)))
                      (merge? state specialization version-limit)
                      (with-access::specialization specialization (version)
-                        (if (and (reachable? state specialization) (not version))
-                            (walk state specialization)))
+                     (with-access::cfg-node version (idx)
+                        (if (and (reachable? state specialization) (eq? idx 'dummy))
+                            (walk state specialization))))
                      (loop))))
             (multiple-value-bind (-size rpostorder) (reverse-postorder! entry)
                (let ((new-cfg (instantiate::cfg
