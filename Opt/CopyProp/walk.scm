@@ -90,9 +90,10 @@
    (for-each (lambda (l) (update-lab-acp! l cur-acp lab-acp)) (-> i labels)))
 
 (define-method (local-copyprop! i::block cur-acp::vector lab-acp::acp-state)
-   (enter-frame lab-acp)
-   (call-next-method)
-   (apply unify-acps cur-acp (exit-frame lab-acp)))
+   (let ((save-acp (vector-copy cur-acp 0 (vector-length cur-acp))))
+      (enter-frame lab-acp)
+      (call-next-method)
+      (apply unify-acps cur-acp save-acp (exit-frame lab-acp))))
 
 (define-method (local-copyprop! i::loop cur-acp::vector lab-acp::acp-state)
    (vector-fill! cur-acp #f)
@@ -103,29 +104,31 @@
 
 (define-method (local-copyprop! i::try_table cur-acp::vector
                                 lab-acp::acp-state)
-   (for-each (lambda (c::catch-branch)
-                (update-lab-acp! (-> c label)
-                                 (make-vector (vector-length cur-acp) #f)
-                                 lab-acp))
-             (-> i catches))
-   (enter-frame lab-acp)
-   (call-next-method)
-   (apply unify-acps cur-acp (exit-frame lab-acp)))
+   (let ((save-acp (vector-copy cur-acp 0 (vector-length cur-acp))))
+      (for-each (lambda (c::catch-branch)
+                  (update-lab-acp! (-> c label)
+                                   (make-vector (vector-length cur-acp) #f)
+                                   lab-acp))
+                (-> i catches))
+      (enter-frame lab-acp)
+      (call-next-method)
+      (apply unify-acps cur-acp save-acp (exit-frame lab-acp))))
 
 (define-method (local-copyprop! i::if-then cur-acp::vector
                                 lab-acp::acp-state)
    (let ((acp (vector-copy cur-acp)))
       (enter-frame lab-acp)
       (local-copyprop! (-> i then) cur-acp lab-acp)
-      (apply unify-acps cur-acp (cons acp (exit-frame lab-acp)))))
+      (apply unify-acps cur-acp acp (exit-frame lab-acp))))
 
 (define-method (local-copyprop! i::if-else cur-acp::vector
                                 lab-acp::acp-state)
-   (let ((acp (vector-copy cur-acp)))
+   (let ((acp (vector-copy cur-acp 0 (vector-length cur-acp)))
+         (save-acp (vector-copy cur-acp 0 (vector-length cur-acp))))
       (enter-frame lab-acp)
       (local-copyprop! (-> i then) cur-acp lab-acp)
       (local-copyprop! (-> i else) acp lab-acp)
-      (apply unify-acps cur-acp (cons acp (exit-frame lab-acp)))))
+      (apply unify-acps cur-acp acp save-acp (exit-frame lab-acp))))
 
 (define (isa-local.get? i::instruction)
    (eq? (-> i opcode) 'local.get))
