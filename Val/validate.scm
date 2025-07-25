@@ -523,11 +523,11 @@
           (multiple-value-bind (giv-args tl) (split-at (cdr i) k)
              (let* ((args (map (lambda (f x) (f env x)) exp-args giv-args))
                     (t (if (procedure? t) (apply t env args) t))
-                    (i (instantiate::instruction
-                        (intype (car t))
-                        (outtype (cadr t))
-                        (parent (-> env parent))
-                        (opcode (car i)))))
+                    (i::instruction (instantiate::instruction
+                                     (intype (car t))
+                                     (outtype (cadr t))
+                                     (parent (-> env parent))
+                                     (opcode (car i)))))
                 (match-case args
                    (()
                     (values t i tl))

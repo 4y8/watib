@@ -50,7 +50,8 @@
               func::func)
 
            (generic get-succs j::jump)
-           (make-dummy-node::cfg-node)))
+           (make-dummy-node::cfg-node)
+           (generic remove-top-outtype j::jump outtype::pair-nil)))
 
 (define-generic (get-succs j::jump))
 
@@ -75,3 +76,16 @@
     (outtype '())
     (intype '())
     (end (instantiate::switch (dsts '(#f))))))
+
+
+(define-generic (remove-top-outtype j::jump outtype::pair-nil)
+   outtype)
+
+(define-method (remove-top-outtype j::conditional outtype::pair-nil)
+   (cdr outtype))
+
+(define-method (remove-top-outtype j::switch outtype::pair-nil)
+   (cdr outtype))
+
+(define-method (remove-top-outtype j::on-cast outtype::pair-nil)
+   (cdr outtype))

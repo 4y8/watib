@@ -148,7 +148,7 @@
       (cond
        ((number? f)
         (if (<fx f (length v))
-         t
+         f
          (raise `((idx-out-of-range field) ,t (length v) ,f))))
     ((ident? f)
      (index v f 0 '(unknown field)))

@@ -38,11 +38,12 @@
            (val_validate  "Val/validate.scm")
            (type_match    "Type/match.scm")
            (cfg_order     "Opt/CFG/order.scm")
+           (cfg_walk      "Opt/CFG/walk.scm")
            (cfg_dominance "Opt/CFG/dominance.scm"))
 
    (from (cfg_node "Opt/CFG/node.scm"))
 
-   (export (read-cfg::cfg ip::input-port)))
+   (export (read-cfg/prog ip::input-port)))
 
 (define (read-jump::jump j nodes env::env src-outtype::pair-nil)
    (match-case j
@@ -57,8 +58,6 @@
        (multiple-value-bind (i st)
           (valid-instrs env (econs i '() (cer j)) src-outtype)
           (unless (and (null? (cdr i)) (equal? st '(poly)))
-             (print (cdr i))
-             (print st)
              (error/location "watib" "invalid return" j
                              (cadr (cer j)) (caddr (cer j))))
           (instantiate::terminal (i (car i)))))
@@ -93,15 +92,15 @@
          (end ?j))
        (let ((intype (map (lambda (t) (valid-vt env t)) vts)))
           (multiple-value-bind (i outtype) (valid-instrs env instrs intype)
-             (instantiate::cfg-node
-              (intype intype)
-              (outtype outtype)
-              (body i)
-              (end (read-jump j nodes env outtype))))))
-
+             (let ((end (read-jump j nodes env outtype)))
+                (instantiate::cfg-node
+                 (intype intype)
+                 (outtype (reverse (remove-top-outtype end outtype)))
+                 (body i)
+                 (end end))))))
       (else (error "watib" "expected node got" n))))
 
-(define (read-cfg::cfg ip::input-port)
+(define (read-cfg/prog ip::input-port)
    (let* ((p::prog (match-case (read ip #t)
                       ((prelude . ?m) (valid-file `(module ,@m) 1 #f #f))
                       (?x (error "watib" "expected prelude got" x))))
@@ -111,23 +110,30 @@
       (match-case (read ip #t)
          ((cfg . ?l)
           (multiple-value-bind (formals tu tl) (valid-tu/get-tl env l)
-             (multiple-value-bind (locals lts entry)
+             (multiple-value-bind (lnames lts entry)
                 (valid-names/local/get-tl env tl)
                 (match-case entry
                    (((entry ?name))
-                    (set! (-> env local-names) (append formals locals))
+                    (set! (-> env local-names) (append formals lnames))
                     (set! (-> env local-types)
-                          (list->vector (map (lambda (t) (instantiate::local-var
-                                                          (type t)
-                                                          (init? #t)))
-                                             (append (car tu) lts))))
+                          (list->vector
+                           (map (lambda (t) (instantiate::local-var
+                                             (type t)
+                                             (init? #t)))
+                                (append (car tu)
+                                        (map (lambda (x::local-var)
+                                               (-> x type)) lts)))))
                     (set! (-> env return) (cadr tu))
                     (set! entry-name name)
+                    (let ((t (econs 'deftype
+                                    (list `((sub final (func ,@tu))) 0) -1)))
+                      (func-add! env t))
                     (set! f (instantiate::func
                              (body #f)
                              (formals formals)
                              (type tu)
-                             (locals locals)
+                             (locals (map (lambda (x::local-var)
+                                               (-> x type)) lts))
                              (pos '(cfg)))))
                    (?x (error "watib" "expected entry got" x))))))
          (?x (error "watib" "expected cfg declaration got" x)))
@@ -151,8 +157,19 @@
 
          (let ((entry (hashtable-get nodes entry-name)))
             (multiple-value-bind (-size rpostorder) (reverse-postorder! entry)
-               (instantiate::cfg
-                (entry entry)
-                (size (-fx 0 -size))
-                (rpostorder rpostorder)
-                (func f)))))))
+               (let ((g::cfg (instantiate::cfg
+                              (entry entry)
+                              (size (-fx 0 -size))
+                              (rpostorder rpostorder)
+                              (func f))))
+                  (with-access::func f (body)
+                     (set! body (cfg->wasm g))
+                     (vector-set! (-> p funcs) (-fx (-> env nfunc) 1) f)
+                     (set! (-> p exports)
+                           (cons (instantiate::export
+                                  (name "cfg")
+                                  (idx (instantiate::funcidxp
+                                        (idx (-fx (-> env nfunc) 1))
+                                        (type '(useless)))))
+                                 (-> p exports)))
+                     (values g p))))))))

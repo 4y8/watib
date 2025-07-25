@@ -661,7 +661,13 @@ least in its current formulation.
 \subsubsection{Fixing irreducibility}
 We are considering two different ways to obtain a reducible CFG after this pass.
 \begin{itemize}
-  \item Node splitting.
+  \item The GHC compiler, which uses Ramsey's algorithm, makes CFGs reducible
+    through \emph{node-splitting}. It duplicates problematic nodes such that
+    each copy has a unique incoming arc. With this method, the reducible graph
+    obtained executes exactly the same instructions as the original one, at the
+    cost of size, which can be exponential~\ref{carter2003folklore}. GHC
+    implements node splitting~\cite[Appendix~A]{ramsey2022beyond} with a greedy
+    algorithm. A more elaborate method obtains better results~\cite{janssen1997making}.
   \item Dispatch nodes.
 \end{itemize}
 

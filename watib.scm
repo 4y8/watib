@@ -136,17 +136,21 @@
           (let ((cfg (func->cfg
                       (vector-ref funcs (func-get-index env dump-cfg)))))
              (print-cfg-as-dot cfg)
-             (with-output-to-port (open-output-file "out.wat")
-                (lambda ()
-                   (dump-instr (cfg->wasm cfg) 0))))))
+             (call-with-output-file "out.wat"
+                (lambda (op)
+                   (with-output-to-port op
+                      (lambda ()
+                        (dump-instr (cfg->wasm cfg) 0))))))))
       (dump-cfg-wat
        (with-access::prog p (funcs env)
           (let ((cfg (func->cfg
                       (vector-ref funcs (func-get-index env dump-cfg-wat)))))
              (print-cfg-as-cfgwat cfg)
-             (with-output-to-port (open-output-file "out.wat")
-                (lambda ()
-                   (dump-instr (cfg->wasm cfg) 0))))))
+             (call-with-output-file "out.wat"
+                (lambda (op)
+                   (with-output-to-port op
+                      (lambda ()
+                        (dump-instr (cfg->wasm cfg) 0))))))))
         (else
          (opt-file! p nthreads o-flags)
          (call-with-output-file output-file
@@ -157,14 +161,16 @@
    (cond
     (cfg-file
      (call-with-input-file cfg-file
-        (lambda (p)
-           (let ((cfg (read-cfg p)))
-              (print-cfg-as-dot cfg)
+        (lambda (ip)
+           (multiple-value-bind (g::cfg p) (read-cfg/prog ip)
+              (print-cfg-as-dot g)
               (call-with-output-file "out.wat"
                  (lambda (op)
                     (with-output-to-port op
                        (lambda ()
-                          (dump-instr (cfg->wasm cfg) 0)))))))))
+                          (dump-instr (cfg->wasm g) 0)
+                          (call-with-output-file output-file
+                             (lambda (op) (asm-file! p op)))))))))))
     ((null? input-files)
      (watib (read (current-input-port) #t)))
     (else (watib `(module ,@(merge-files input-files))))))
