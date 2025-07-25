@@ -21,7 +21,7 @@
 (define-generic (dump-jump j::jump vis?::vector src::cfg-node))
 
 (define (dump-types l::pair-nil)
-   (for-each (lambda (t) (printf " ~a" t)) l))
+   (for-each (lambda (t) (printf " ") (display-type-as-cfgwat t)) l))
 
 (define (dump-arc src::cfg-node dst::cfg-node lab::bstring)
    (printf "\t~a -> ~a [label=\"~a :" src dst lab)

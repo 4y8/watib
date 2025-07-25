@@ -72,8 +72,6 @@
                                       (-> p __actouttype))))
                           read-only)
               parent::modulefield
-              ; default will have to be removed
-              (sources::pair-nil (default '()))
               opcode::symbol)
 
            (abstract-class parameter)
