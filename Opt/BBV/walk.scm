@@ -1,6 +1,8 @@
 (module opt_bbv
    (from (cfg_node "Opt/CFG/node.scm"))
 
+   (import (cfg_order "Opt/CFG/order.scm"))
+
    (static (class context
       map::obj))
 
@@ -11,7 +13,7 @@
    (static (class specialization
       origin::cfg-node
       id::bint
-      version::cfg-node
+      version
       context::context))
 
    (static (class bbv-state
@@ -167,10 +169,11 @@
                         (if (and (reachable? state specialization) (not version))
                             (walk state specialization)))
                      (loop))))
-            (let ((new-cfg (instantiate::cfg
-                              (entry (get-most-recent-merge state new-entry))
-                              (size 999)
-                              (rpostorder '())
-                              (func func)))) ;; func is probably wrong
-               ;; probably have to tweak that a bit...
-               new-cfg))))))
+            (multiple-value-bind (-size rpostorder) (reverse-postorder! entry)
+               (let ((new-cfg (instantiate::cfg
+                                 (entry (get-most-recent-merge state new-entry))
+                                 (size (-fx 0 -size))
+                                 (rpostorder rpostorder)
+                                 (func func))))
+            
+                  new-cfg)))))))
