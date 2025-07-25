@@ -7,7 +7,7 @@ SRCS = Misc/let-if.scm Opt/optimise.scm Val/validate.scm \
        Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm \
        Misc/parse.scm Asm/leb128.scm Val/instructions.scm Opt/CFG/node.scm \
        Opt/CFG/order.scm Opt/CFG/dominance.scm Opt/CFG/walk.scm \
-       Opt/CFG/dump.scm Opt/CFG/read.scm
+       Opt/CFG/dump.scm Opt/CFG/read.scm Opt/BBV/walk.scm
 
 OBJS = $(SRCS:.scm=.o)
 
