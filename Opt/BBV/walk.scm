@@ -3,6 +3,7 @@
 
    (library srfi1)
    (import (cfg_order "Opt/CFG/order.scm"))
+   (import (ast_node "Ast/node.scm"))
    (import (type_type "Type/type.scm"))
 
    (static (abstract-class location
@@ -515,7 +516,20 @@
    (let ((state (make-init-state cfg)))
       (with-access::bbv-state state (queue)
       (with-access::cfg g (entry func)
-         (let ((new-entry (reach state entry (make-empty-context (length (-> func locals))) #f)))
+      (with-access::func func (locals formals type)
+         (let* ((init-context (make-empty-context (+ (length formals) (length locals))))
+                (func-context
+                  (let loop ((func-context init-context) (i 0) (args-types (car type)))
+                     (if (null? args-types)
+                         func-context
+                         (loop
+                           (context-type-set
+                              func-context 
+                              (instantiate::register (pos i))
+                              (car args-types))
+                           (+ i 1)
+                           (cdr args-types)))))
+                (new-entry (reach state entry func-context #f)))
             (let loop ()
                (when (not (queue-empty? queue))
                   (let ((specialization (queue-get! queue)))
@@ -532,4 +546,4 @@
                                  (rpostorder rpostorder)
                                  (func func))))
             
-                  new-cfg)))))))
+                  new-cfg))))))))
