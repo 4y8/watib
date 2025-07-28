@@ -54,6 +54,9 @@
    (apply make-set (map f lst)))
 (define (set-empty? s) (null? s))
 
+(define (make-types::types . elements)
+   (instantiate::types (set (apply make-set elements))))
+
 ;; QUEUE
 (define (make-queue) (cons '() '()))
 (define (queue-empty? queue) (null? (car queue)))
@@ -195,7 +198,6 @@
                   (-> context equivalences)))))))
 
 (define (context-type-set::context context::context location::location type::types)
-   
    (let ((equivalence-class (context-get-equivalence-class context location)))
       (define (location-in-equiv? loc)
          (let loop ((equiv equivalence-class))
@@ -205,7 +207,7 @@
 
       (define (update-type loc-type)
          (if (location-in-equiv? (car loc-type)) (cons (car loc-type) type) loc-type))
-   
+
       (duplicate::context context
          (registers (map update-type (-> context registers)))
          (stack (map update-type (-> context stack))))))
@@ -513,7 +515,7 @@
 
 ;; BBV CORE ALGO
 (define (bbv::cfg g::cfg version-limit::bint)
-   (let ((state (make-init-state cfg)))
+   (let ((state (make-init-state g)))
       (with-access::bbv-state state (queue)
       (with-access::cfg g (entry func)
       (with-access::func func (locals formals type)
@@ -524,9 +526,9 @@
                          func-context
                          (loop
                            (context-type-set
-                              func-context 
+                              func-context
                               (instantiate::register (pos i))
-                              (car args-types))
+                              (make-types (car args-types)))
                            (+ i 1)
                            (cdr args-types)))))
                 (new-entry (reach state entry func-context #f)))
@@ -545,5 +547,4 @@
                                  (size (-fx 0 -size))
                                  (rpostorder rpostorder)
                                  (func func))))
-            
                   new-cfg))))))))

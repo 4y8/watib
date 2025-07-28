@@ -90,9 +90,6 @@
 (define (do-branch::sequence src::node-tree dst::node-tree ctx::pair-nil
                              outtype::pair-nil)
    (cond ((merge-node? dst)
-          (print ctx)
-          (print (-> dst idx))
-          (print (label-index (-> dst idx) ctx))
           (instantiate::sequence
            (opcode 'nop)
            (intype (-> src outtype)) ;; to fix
