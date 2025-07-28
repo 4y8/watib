@@ -493,7 +493,7 @@
             (multiple-value-bind (instr next-context) (walk-instr (car body) state context)
                (loop (cdr body) next-context (cons instr specialized-body))))))))
 
-(define (reach::specialization state::bbv-state origin::cfg-node context::context from::specialization)
+(define (reach::specialization state::bbv-state origin::cfg-node context::context from)
    (with-access::bbv-state state (reachability)
       (let ((target
                (or
@@ -508,7 +508,7 @@
                      new-specialization))))
          (with-access::specialization target (id)
             (if from
-               (ssr-add-edge! reachability (-> from id) id
+               (ssr-add-edge! reachability (with-access::specialization from (id) id) id
                   :onconnect (lambda (reachable)
                                  (queue-put!
                                     (-> state queue)
