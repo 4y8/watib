@@ -216,6 +216,8 @@
          (multiple-value-bind (context type) (context-pop context) context)
          (- n 1))))
 
+(define (context-drop context::context) (context-dropn context 1))
+
 (define (context-stack-ref::types context::context location::onstack)
    (cdr (list-ref (-> context stack) (-> location pos))))
 
@@ -355,10 +357,24 @@
 (define-method (walk-jump instr::unconditional state::bbv-state context::context specialization::specialization)
    (with-access::unconditional instr (dst)
       (let ((jump-target (reach state dst context specialization)))
-         (instantiate::unconditional (dst jump-target)))))
+         (duplicate::unconditional instr (dst jump-target)))))
 
-(define-generic (walk-jump instr::on-null state::bbv-state context::context specialization::specialization)
-   (***NotImplemented*** 'walk-jump@instr::on-null))
+(define-method (walk-jump instr::on-null state::bbv-state context::context specialization::specialization)
+   (with-access::on-null instr (dst-null dst-non-null)
+      (multiple-value-bind
+         (context-non-null context-null)
+         (context-narrow-null context (instantiate::onstack (pos 0)))
+         (let ((spec-dest-non-null (and context-non-null (reach state dst-non-null context-non-null specialization)))
+               (spec-dest-null (and context-null (reach state dst-null context-null specialization))))
+            (cond
+               ((and spec-dest-non-null spec-dest-null)
+                  (duplicate::on-null
+                     instr
+                     (dst-non-null spec-dest-non-null)
+                     (dst-null (spec-dest-null))))
+               (spec-dest-non-null (instantiate::unconditional (dst spec-dest-non-null)))
+               (spec-dest-null (instantiate::unconditional (dst spec-dest-null)))
+               (else (error 'walk-jump "no valid jump" instr)))))))
 
 (define-generic (walk-instr instr::instruction state::bbv-state context::context)
    (error 'walk-instr "unknown instruction" (-> instr opcode)))
