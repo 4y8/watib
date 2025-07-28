@@ -33,6 +33,11 @@
               dst-cast::cfg-node
               dst-cast-fail::cfg-node)
 
+            (class on-null::jump
+              ht
+              dst-null::cfg-node
+              dst-non-null::cfg-node)
+
            (final-class cfg-node::object
               body::pair-nil
               (idx::long (default 1)) ;; we take as indices integers smaller or

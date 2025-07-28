@@ -357,6 +357,9 @@
       (let ((jump-target (reach state dst context specialization)))
          (instantiate::unconditional (dst jump-target)))))
 
+(define-generic (walk-jump instr::on-null state::bbv-state context::context specialization::specialization)
+   (***NotImplemented*** 'walk-jump@instr::on-null))
+
 (define-generic (walk-instr instr::instruction state::bbv-state context::context)
    (error 'walk-instr "unknown instruction" (-> instr opcode)))
 
