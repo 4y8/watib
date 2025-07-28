@@ -93,7 +93,13 @@
    (and (isa? loc2 register) (= (-> loc1 pos) (-> loc2 pos))))
 
 (define (make-empty-context nregisters::bint)
-   (instantiate::context (registers '()) (stack '()) (equivalences '())))
+   (instantiate::context
+      (registers '())
+      (stack '())
+      (equivalences
+         (map
+            (lambda (pos) (list (instantiate::register (pos pos))))
+            (iota nregisters)))))
 
 ;; TODO
 (define (types-equal?::bool types1::types types2::types)
