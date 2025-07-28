@@ -92,7 +92,43 @@
    (instantiate::context (registers '()) (stack '()) (equivalences '())))
 
 ;; TODO
-(define (context-equal? ctx1 ctx) #t)
+(define (types-equal?::bool types1::types types2::types)
+   (set-equal? types1 types2))
+
+(define (stack-equal? stk1::pair-nil stk2::pair-nil)
+   (and
+      (= (length stk1) (length stk2))
+      (let loop ((stk1 stk1) (stk2 stk2))
+         (cond
+            ((null? stk1) #t)
+            ((types-equal? (cdar stk1) (cdar stk2)) (loop (cdr stk1) (cdr stk2)))
+            (else #f)))))
+
+(define (registers-equal? regs1::pair-nil regs2::pair-nil)
+   (define (reg-order reg1::register reg2::register)
+      (< (-> reg1 pos) (-> reg2 pos)))
+
+   (define (order reg-type1 reg-type2) (reg-order (car reg-type1) (car reg-type2)))
+
+   (let ((regs1 (sort order regs1))
+         (regs2 (sort order regs2)))
+      (and
+         (= (length regs1) (length regs2))
+         (let loop ((regs1 regs1) (regs2 regs2))
+            (cond
+               ((null? regs1) #t)
+               ((and
+                  (location-equal? (caar regs1) (caar regs2))
+                  (types-equal? (cdar regs1) (cdar regs2))) (loop (cdr regs1) (cdr regs2)))
+               (else #f))))))
+
+(define (context-equal? ctx1::context ctx2::context)
+   (with-access::context ctx1 ((registers1 registers) (stack1 stack) (equivalences1 equivalences))
+   (with-access::context ctx2 ((registers2 registers) (stack2 stack) (equivalences2 equivalences))
+      (and
+         (equivalence-class-equal? equivalences1 equivalences2)
+         (registers-equal? registers1 registers2)
+         (stack-equal? stack1 stack2)))))
 
 (define (context-register-set::context context::context reg::bint type::types)
    (let ((register-location (instantiate::register (pos reg))))
@@ -129,6 +165,15 @@
       (and
          (pair? equiv)
          (or (location-equal? (car equiv) loc) (loop (cdr equiv))))))
+
+(define (equivalence-class-equal?::bool equiv1::pair-nil equiv2::pair-nil)
+   (and
+      (= (length equiv1) (length equiv2))
+      (let loop ((equiv1 equiv1))
+         (cond
+            ((null? equiv1) #t)
+            ((equivalence-class-has? equiv2 (car equiv1)) (loop (cdr equiv1)))
+            (else #f)))))
 
 (define (context-get-equivalence-class::pair-nil context::context loc::location)
    (let loop ((classes (-> context equivalences)))
@@ -215,6 +260,8 @@
        (context-dropn
          (multiple-value-bind (context type) (context-pop context) context)
          (- n 1))))
+
+(define (context-drop context::context) (context-dropn context 1))
 
 (define (context-stack-ref::types context::context location::onstack)
    (cdr (list-ref (-> context stack) (-> location pos))))
@@ -355,10 +402,24 @@
 (define-method (walk-jump instr::unconditional state::bbv-state context::context specialization::specialization)
    (with-access::unconditional instr (dst)
       (let ((jump-target (reach state dst context specialization)))
-         (instantiate::unconditional (dst jump-target)))))
+         (duplicate::unconditional instr (dst jump-target)))))
 
-(define-generic (walk-jump instr::on-null state::bbv-state context::context specialization::specialization)
-   (***NotImplemented*** 'walk-jump@instr::on-null))
+(define-method (walk-jump instr::on-null state::bbv-state context::context specialization::specialization)
+   (with-access::on-null instr (dst-null dst-non-null)
+      (multiple-value-bind
+         (context-non-null context-null)
+         (context-narrow-null context (instantiate::onstack (pos 0)))
+         (let ((spec-dest-non-null (and context-non-null (reach state dst-non-null context-non-null specialization)))
+               (spec-dest-null (and context-null (reach state dst-null context-null specialization))))
+            (cond
+               ((and spec-dest-non-null spec-dest-null)
+                  (duplicate::on-null
+                     instr
+                     (dst-non-null spec-dest-non-null)
+                     (dst-null (spec-dest-null))))
+               (spec-dest-non-null (instantiate::unconditional (dst spec-dest-non-null)))
+               (spec-dest-null (instantiate::unconditional (dst spec-dest-null)))
+               (else (error 'walk-jump "no valid jump" instr)))))))
 
 (define-generic (walk-instr instr::instruction state::bbv-state context::context)
    (error 'walk-instr "unknown instruction" (-> instr opcode)))
