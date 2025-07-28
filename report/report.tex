@@ -592,17 +592,6 @@ $rt_1$ on top of the stack applies the following procedure:
     the stack as a parameter.
   \item Else, continue the execution without modifying the stack.
 \end{itemize}
-
-This pass replaces \textsf{if} instructions which branch on a $(\reftest
-rt\ (\localget x))$ by calls to \textsf{br\_on\_cast}, as Figure~\ref{br} shows
-it. It adds a local variable $y$ of type $rt$ and creates a new block labelled
-$l$ with a parameter of type $rt$. The else branch follows the
-\textsf{br\_on\_cast} which branches to $l$. The block labeled by $l$ puts its
-parameter in the local variable $y$ and replaces $x$ by $y$ in the then branch
-following the same procedure as Copy Propagation. This whole code is contained
-in a block which the else branch goes to at the end. Cast Elimination can then
-removes useless tests.
-
 \begin{figure}[h!]
   \centering
   \begin{tabular}{c c c}
@@ -636,19 +625,32 @@ removes useless tests.
   \caption{General form of type-dependent control flow rewriting.}\label{br}
 \end{figure}
 
+
+This pass replaces \textsf{if} instructions which branch on a $(\reftest
+rt\ (\localget x))$ by calls to \textsf{br\_on\_cast}, as Figure~\ref{br} shows
+it. It adds a local variable $y$ of type $rt$ and creates a new block labelled
+$l$ with a parameter of type $rt$. The else branch follows the
+\textsf{br\_on\_cast} which branches to $l$. The block labeled by $l$ puts its
+parameter in the local variable $y$ and replaces $x$ by $y$ in the then branch
+following the same procedure as Copy Propagation. This whole code is contained
+in a block which the else branch goes to at the end. Cast Elimination can then
+removes useless tests.
+
 While the code after the transformation is bigger, some instructions \texttt{(br
   \$end)} can be removed on real examples.
 
 \section{Benchmarks}\label{bench}
+\subsubsection{The methodology}
+We tested our toolchain by running, on Bigloo's Wasm backend, a subset of the
+R7RS benchmarks~\cite{r7rsbench}, the standard benchmark suite for Scheme. We
+compare the execution time using \textsf{watib} with all of its optimisation
+passes enabled with the previous backend using \textsf{wasm-as} with no
+optimisation enabled.
 \begin{figure}[h!]
   %\centering
   \includegraphics[width=1\textwidth]{report/bench.pdf}
   \caption{Benchmarks against the a subset of the R7RS benchmarks suite.}\label{r7rs}
 \end{figure}
-\subsubsection{The methodology}
-We tested our toolchain by running on Bigloo's Wasm backend a subset of the R7RS
-benchmarks~\cite{r7rsbench}, the standard Scheme benchmark suite. We run each
-test using \textsf{wasm-as} and \textsf{watib}.
 \subsubsection{The results}
 Figure~\ref{r7rs} shows the results of our benchmarks. The red line indicates
 the performance when all \textsf{watib} are enabled, and the blue bars indicates
@@ -658,6 +660,9 @@ running time of most benchmarks. There is a noticeable negative impact on only
 benefit from the optimisations: \texttt{early} and \texttt{fib} with a
 respective speedup of 17\% and 10\%.
 
+We are investigating the reasons of the slowdown on \texttt{conform}. Disabling
+the Type-Dependent Control Flow Rewriting pass removes the performance penalty.
+We are looking for heuristics to guide the application of transformation.
 \section{Static Basic Block Versioning}\label{sbbv}
 We present here a new pass we are working on. \textsf{Watib} does not support
 this pass yet, but we implemented the necessary machinery to experiment with
