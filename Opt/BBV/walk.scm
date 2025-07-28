@@ -379,7 +379,7 @@
                (get-specialization-by-id state id)
                (loop merged-to)))))))
 
-(define (get-specialization::specialization state::bbv-state origin::cfg-node target-context::context)
+(define (get-specialization state::bbv-state origin::cfg-node target-context::context)
    (with-access::bbv-state state (all-specializations)
       (let loop ((versions (hashtable-get all-specializations (-> origin idx))))
          (if (null? versions)
