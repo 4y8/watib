@@ -83,6 +83,12 @@
        (instantiate::switch
         (dsts (map (lambda (l) (hashtable-get nodes l)) labels))))
 
+      ((on-null ?null ?null-fail ?ht)
+       (instantiate::on-null
+        (dst-null (hashtable-get nodes null))
+        (dst-non-null (hashtable-get nodes null-fail))
+        (ht (valid-ht env ht))))
+
       (else (error "watib" "expected jump got" j))))
 
 (define (read-node::cfg-node n nodes env::env)

@@ -21,6 +21,7 @@
        (valid-instrs env::env l::pair-nil st::pair-nil)
        (valid-rt::pair env::env t)
        (valid-vt env::env t)
+       (valid-ht env::env t)
        (valid-tu/get-tl env::env l::pair-nil)
        (valid-names/local/get-tl env::env l::pair-nil)))
 

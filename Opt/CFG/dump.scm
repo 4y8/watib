@@ -44,6 +44,12 @@
    (dump-node (-> j dst-cast) vis?)
    (dump-node (-> j dst-cast-fail) vis?))
 
+(define-method (dump-jump j::on-null vis?::vector src::cfg-node)
+   (dump-arc src (-> j dst-null) "null")
+   (dump-arc src (-> j dst-non-null) "non null")
+   (dump-node (-> j dst-null) vis?)
+   (dump-node (-> j dst-non-null) vis?))
+
 (define-method (dump-jump j::terminal vis?::vector src::cfg-node)
    (printf "\t~a -> return_~a [label=\"" src src)
    (display-instr-as-cfgwat (-> j i))
@@ -219,6 +225,11 @@
    (display-type-as-cfgwat (-> j rt-src))
    (display " ")
    (display-type-as-cfgwat (-> j rt-dst))
+   (display ")"))
+
+(define-method (display-end-as-cfgwat j::on-null)
+   (printf "(on-null ~a ~a " (-> j dst-null) (-> j dst-non-null))
+   (display-type-as-cfgwat (-> j ht))
    (display ")"))
 
 (define-method (display-end-as-cfgwat j::terminal)

@@ -75,6 +75,9 @@
 (define-method (get-succs j::on-cast)
    (list (-> j dst-cast) (-> j dst-cast-fail)))
 
+(define-method (get-succs j::on-null)
+   (list (-> j dst-null) (-> j dst-non-null)))
+
 (define (make-dummy-node::cfg-node)
    (instantiate::cfg-node
     (body '())
@@ -93,4 +96,7 @@
    (cdr outtype))
 
 (define-method (remove-top-outtype j::on-cast outtype::pair-nil)
-   (cdr outtype))
+   outtype)
+
+(define-method (remove-top-outtype j::on-null outtype::pair-nil)
+  outtype)

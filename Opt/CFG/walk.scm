@@ -9,7 +9,9 @@
    (from (ast_node "Ast/node.scm"))
 
    (import (cfg_order     "Opt/CFG/order.scm")
-           (cfg_dominance "Opt/CFG/dominance.scm"))
+           (cfg_dominance "Opt/CFG/dominance.scm")
+
+           (type_type "Type/type.scm"))
 
    (export (func->cfg::cfg f::func)
            (cfg->wasm g::cfg))
@@ -52,6 +54,10 @@
 
 (define-method (children-to-access j::on-cast tree::pair)
    (filter (lambda (n) (or (eq? (-> j dst-cast) (car n)) (merge-head? n)))
+           (cdr tree)))
+
+(define-method (children-to-access j::on-null tree::pair)
+   (filter (lambda (n) (or (eq? (-> j dst-null) (car n)) (merge-head? n)))
            (cdr tree)))
 
 (define-method (children-to-access j::switch tree::pair)
@@ -163,6 +169,22 @@
                (type (-> j rt-src))))
            (z (instantiate::typep
                (type (-> j rt-dst)))))
+          body))))
+
+(define-method (branch-after-body::pair-nil j::on-null src::node-tree
+                                            ctx::pair-nil outtype::pair-nil)
+   (with-access::sequence (do-branch src (-> j dst-non-null) ctx outtype)
+                          (body)
+      (with-access::node-tree (-> j dst-null) (intype idx)
+         (cons
+          (instantiate::one-arg
+           (opcode 'br_on_null)
+           (intype `((ref null ,(-> j ht))))
+           (outtype `((ref (-> j ht))))
+           (parent (instantiate::modulefield)) ;; to fix
+           (x (instantiate::labelidxp
+               (idx (label-index idx ctx))
+               (type intype))))
           body))))
 
 (define-method (branch-after-body::pair-nil j::switch src::node-tree
@@ -342,6 +364,16 @@
                                       (rt-src y)
                                       (rt-dst z)
                                       (dst-cast (list-ref labs idx)))))))
+
+           (br_on_null
+            (with-access::one-arg (car l) (x outtype)
+               (with-access::labelidxp x (idx)
+                  (end-current-block (instantiate::on-null
+                                      (ht (reftype->heaptype (last outtype)))
+                                      (dst-non-null
+                                       (build-node (cdr l) st st '()
+                                                   next labs))
+                                      (dst-null (list-ref labs idx)))))))
 
            (else
             (let ((new-st (append (reverse outtype)
