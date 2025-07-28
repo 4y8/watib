@@ -1,6 +1,7 @@
 (module opt_bbv
    (from (cfg_node "Opt/CFG/node.scm"))
 
+   (library srfi1)
    (import (cfg_order "Opt/CFG/order.scm"))
    (import (type_type "Type/type.scm"))
 
@@ -36,44 +37,21 @@
    (export (bbv::cfg g::cfg version-limit::bint)))
 
 ;; SET
-(define (make-set . elements) elements)
+(define (make-set . elements)
+   (lset-union equal? '() elements))
 (define (set-union . ss)
-  (let loop ((lst ss) (result '()))
-    (if (null? lst)
-        result
-        (loop (cdr lst)
-              (set-union2 result (car lst))))))
-(define (set-union2 s1 s2)
-  (cond ((null? s1)
-         s2)
-        ((member (car s1) s2)
-         (set-union2 (cdr s1) s2))
-        (else
-         (cons (car s1)
-               (set-union2 (cdr s1) s2)))))
+  (apply lset-union equal? ss))
 (define (set-intersect s1 s2)
-  (cond ((null? s1)
-         '())
-        ((member (car s1) s2)
-         (cons (car s1)
-               (set-intersect (cdr s1) s2)))
-        (else
-         (set-intersect (cdr s1) s2))))
+  (lset-intersection equal? s1 s2))
 (define (set-difference s1 s2)
-  (cond ((null? s1)
-         '())
-        ((member (car s1) s2)
-         (set-difference (cdr s1) s2))
-        (else
-         (cons (car s1)
-               (set-difference (cdr s1) s2)))))
+  (lset-difference equal? s1 s2))
 (define (set-equal? s1 s2)
-  (and (null? (set-difference s1 s2))
-       (null? (set-difference s2 s1))))
+  (lset= equal? s1 s2))
 (define (set-filter f lst)
-  (cond ((null? lst)   '())
-        ((f (car lst)) (cons (car lst) (set-filter f (cdr lst))))
-        (else          (set-filter f (cdr lst)))))
+   (filter f lst))
+(define (set-map f lst)
+   (apply make-set (map f lst)))
+(define (set-empty? s) (null? s))
 
 ;; QUEUE
 (define (make-queue) (cons '() '()))
@@ -170,6 +148,22 @@
                   (lambda (equiv) (not (or (eq? equiv equiv1) (eq? equiv equiv2))))
                   (-> context equivalences)))))))
 
+(define (context-type-set::context context::context location::location type::types)
+   
+   (let ((equivalence-class (context-get-equivalence-class context location)))
+      (define (location-in-equiv? loc)
+         (let loop ((equiv equivalence-class))
+            (if (null? equiv)
+                #f
+               (or (location-equal? loc (car equiv)) (loop (cdr equiv))))))
+
+      (define (update-type loc-type)
+         (if (location-in-equiv? (car loc-type)) (cons (car loc-type) type) loc-type))
+   
+      (duplicate::context context
+         (registers (map update-type (-> context registers)))
+         (stack (map update-type (-> context stack))))))
+
 (define (context-push::context context::context type::types)
    (duplicate::context
       context
@@ -214,6 +208,66 @@
    (values
       (context-pop* context)
       (cdar (-> context stack))))
+
+(define (context-dropn context::context n::bint)
+   (if (= n 0)
+       context
+       (context-dropn
+         (multiple-value-bind (context type) (context-pop context) context)
+         (- n 1))))
+
+(define (context-stack-ref::types context::context location::onstack)
+   (cdr (list-ref (-> context stack) (-> location pos))))
+
+(define (context-register-ref::types context::context location::register)
+   (cdr
+      (let loop ((registers (-> context registers)))
+         (cond
+            ((null? registers) (error 'context-register-ref "not found" location))
+            ((= (with-access::register (caar registers) (pos) pos)
+                (-> location pos))
+               (cdar registers))
+            (else (loop (cdr registers)))))))
+
+(define (context-ref::types context::context location::location)
+   (cond
+      ((isa? location register) (context-register-ref context location))
+      ((isa? location onstack) (context-stack-ref context location))
+      (else (error 'context-ref "unknown location" location))))
+
+(define (context-mov::context context::context from::location to::register)
+   (let ((from-type
+            (cond
+               ((isa? from register) (context-register-ref context from))
+               ((isa? from onstack) (context-stack-ref context from)))))
+      (context-add-equivalence
+         (context-register-set context to from-type)
+         from
+         to)))
+
+(define (context-mov-pop::context context::context to::register)
+   (context-pop (context-mov context (instantiate::onstack (pos 0)) to)))
+
+(define (context-push-from-register::context context::context register::register)
+   (context-add-equivalence
+      (context-push context (context-register-ref context register))
+      register
+      (instantiate::onstack (pos 0))))
+
+(define (context-narrow-null context::context location::location)
+   (let* ((can-be-null? #f)
+          (non-null
+             (set-filter
+                (lambda (x) x)
+                (set-map
+                   (match-lambda
+                      ((ref null none) (set! can-be-null? #t) #f)
+                      ((ref null ?ht) (set! can-be-null? #t) `(ref ,ht))
+                      (?type type))
+                   (context-ref context location)))))
+      (values
+         (if (set-empty? non-null) #f (context-type-set context location non-null))
+         (if can-be-null? (context-type-set context location (make-set '(ref null none))) #f))))    
       
 ;; HELPERS
 (define (***NotImplemented*** name::symbol) (error "NotImplemented" name '?))
@@ -303,43 +357,56 @@
       (let ((jump-target (reach state dst context specialization)))
          (instantiate::unconditional (dst jump-target)))))
 
-(define-generic (walk-instr instr::instruction state::bbv-state context::context))
+(define-generic (walk-instr instr::instruction state::bbv-state context::context)
+   (error 'walk-instr "unknown instruction" (-> instr opcode)))
 
 (define-method (walk-instr instr::one-arg state::bbv-state context::context)
    (with-access::context context (stack registers)
    (with-access::one-arg instr (opcode x intype outtype)
-   
       (match-case opcode
          (local.set
             (with-access::localidxp x (idx)
-               (let* ((type (car stack))
-                     (new-registers (vector-copy registers))
-                     (new-stack (cdr stack)))
-                  (vector-set! new-registers idx type)
-                  (values
-                     instr
-                     (instantiate::context (registers new-registers) (stack new-stack) (equivalences '()))))))
+               (values
+                  instr
+                  (context-mov-pop context (instantiate::register (pos idx))))))
+         (local.get
+            (with-access::localidxp x (idx)
+               (values
+                  instr
+                  (context-push-from-register context (instantiate::register (pos idx))))))
          (i32.const
-            (let ((type 'i32))
-               (values
-                  instr
-                  (duplicate::context context (stack (cons type new-stack))))))
+            (values
+               instr
+               (context-push context (make-set (car outtype)))))
          (i64.const
-            (let ((type 'i64))
-               (values
-                  instr
-                  (duplicate::context context (stack (cons type new-stack))))))
+            (values
+               instr
+               (context-push context (make-set (car outtype)))))
          (ref.null
-            (let ((type '(ref null none)))
-               (values
-                  instr
-                  (duplicate::context context (stack (cons type new-stack))))))
+            (values
+               instr
+               (context-push context (make-set '(ref null none)))))
          (struct.new
             (with-access::typeidxp x (idx)
-               (let ((type `(ref ,idx)))
-                  (values
-                     instr
-                     (duplicate::context context (stack (append outtype (drop stack (length intype)))))))))))))
+               (values
+                  instr
+                  (context-push (context-dropn context (length intype)) (make-set (car outtype))))))
+         (array.new
+            (with-access::typeidxp x (idx)
+               (values
+                  instr
+                  (context-push (context-dropn context 2) (make-set (car outtype))))))
+         (array.get
+            (with-access::typeidxp x (idx)
+               (values
+                  instr
+                  (context-push
+                     (context-dropn
+                        (multiple-value-bind (non-null _)
+                           (context-narrow-null context (instantiate::onstack (pos 1)))
+                           non-null)
+                        2)
+                     (make-set (car outtype))))))))))
 
 (define (walk state::bbv-state specialization::specialization)
    (with-access::specialization specialization (origin context version id)
