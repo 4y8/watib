@@ -27,7 +27,7 @@ watib: watib.o $(OBJS)
 %.o : %.scm
 	bigloo -srfi multijob -c $(FLAGS) $< -o $@
 
-report.pdf: report/report.tex report/report.bib
+report.pdf: report/report.tex report/report.bib report/bench.pdf
 	latexmk -pdf report/report.tex
 
 slides.pdf: report/slides.tex
