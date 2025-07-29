@@ -660,9 +660,15 @@ running time of most benchmarks. There is a noticeable negative impact on only
 benefit from the optimisations: \texttt{early} and \texttt{fib} with a
 respective speedup of 17\% and 10\%.
 
-We are investigating the reasons of the slowdown on \texttt{conform}. Disabling
-the Type-Dependent Control Flow Rewriting pass removes the performance penalty.
-We are looking for heuristics to guide the application of transformation.
+We are investigating the reasons of the slowdown on \texttt{conform}; we found
+that:
+\begin{itemize}
+  \item Disabling the Cast Elimination pass solves the issue.
+  \item The SpiderMonkey engine doesn't suffer from the same performance
+    penalty.
+  \item V8's TurboFan, a multi-pass compiler, doesn't suffer either from the
+    same performance penalty.
+\end{itemize}
 \section{Static Basic Block Versioning}\label{sbbv}
 We present here a new pass we are working on. \textsf{Watib} does not support
 this pass yet, but we implemented the necessary machinery to experiment with
