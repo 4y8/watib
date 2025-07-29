@@ -13,6 +13,7 @@
 (define (clean! n::cfg-node)
    (unless (eq? (-> n idx) 'unvisited)
       (set! (-> n idx) 'unvisited)
+      (set! (-> n preds) '())
       (for-each clean! (get-succs (-> n end)))))
 
 (define (dfs! n::cfg-node i::long l::pair-nil)

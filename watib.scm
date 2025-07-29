@@ -167,16 +167,20 @@
     (cfg-file
      (call-with-input-file cfg-file
         (lambda (ip)
-           (multiple-value-bind (g::cfg p) (read-cfg/prog ip)
-              (let ((g (if bbv? (bbv g 10) g)))
+           (multiple-value-bind (g::cfg p::prog) (read-cfg/prog ip)
+              (let ((g::cfg (if bbv? (bbv g 3) g)))
                 (print-cfg-as-dot g)
                 (call-with-output-file "out.wat"
                  (lambda (op)
-                    (with-output-to-port op
+                    (with-output-to-port (current-output-port)
                        (lambda ()
-                          (dump-instr (cfg->wasm g) 0)
+                          ;;(dump-instr (cfg->wasm g) 0)
+                          (with-access::func (-> g func) (body)
+                             (set! body (cfg->wasm g)))
                           (call-with-output-file output-file
-                             (lambda (op) (asm-file! p op))))))))
+                             (lambda (op)
+                               (opt-file! p nthreads o-flags)
+                               (asm-file! p op))))))))
               ))))
     ((null? input-files)
      (watib (read (current-input-port) #t)))
