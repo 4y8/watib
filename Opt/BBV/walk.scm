@@ -64,6 +64,14 @@
 (define (make-types::types . elements)
    (instantiate::types (set (apply make-set elements))))
 
+(define (types-union::types . types)
+   (instantiate::types (set
+      (apply
+         set-union
+         (map
+            (lambda (t) (with-access::types t (set) set))
+            types)))))
+
 (define (types-map::types f::procedure t::types)
    (instantiate::types (set (set-map f (-> t set)))))
 
@@ -284,14 +292,16 @@
 (define (context-stack-ref::types context::context location::onstack)
    (cdr (list-ref (-> context stack) (-> location pos))))
 
+(define (registers-ref::types registers::pair-nil location::register)
+   (cond
+      ((null? registers) (error 'registers-ref "not found" location))
+      ((location-equal? (caar registers) location) (cdar registers))
+      (else (registers-ref (cdr registers) location))))
+
 (define (context-register-ref::types context::context location::register)
    (with-trace 1 'register-ref
-               (trace-item "registers=" (-> context registers) " loc=" location)
-   (let loop ((registers (-> context registers)))
-         (cond
-            ((null? registers) (error 'context-register-ref "not found" location))
-            ((location-equal? (caar registers) location) (cdar registers))
-            (else (loop (cdr registers)))))))
+      (trace-item "registers=" (-> context registers) " loc=" location)
+      (registers-ref (-> context registers) location)))
 
 (define (context-ref::types context::context location::location)
    (cond
@@ -526,7 +536,7 @@
             (multiple-value-bind (instr next-context) (walk-instr (car body) state context)
                (loop (cdr body) next-context (cons instr specialized-body)))))))))
 
-(define (reach::specialization state::bbv-state origin::cfg-node context::context from)
+(define (reach*::specialization state::bbv-state origin::cfg-node context::context from redirects)
    (with-trace 1 'reach
    (with-access::bbv-state state (reachability)
       (let ((target
@@ -554,11 +564,109 @@
                                     (-> state queue)
                                     (get-specialization-by-id state reachable))))
                (ssr-add-edge! reachability -1 id))
+            (for-each
+               (lambda (r::specialization) (ssr-redirect! reachability (-> r id) id))
+               redirects)
             target)))))
 
+(define (reach::specialization state::bbv-state origin::cfg-node context::context from)
+   (reach* state origin context from '()))
+
+(define (merge-reach::specialization state::bbv-state origin::cfg-node context::context redirects::pair-nil)
+   (reach* state origin context #f redirects))
+
+(define (partition-equivalence-classes classes)
+   (define members '())
+   (define matrix (make-hashtable))
+   (define seen '())
+   (define partitions '())
+
+   (***NotImplemented*** 'partition-equivalence-classes)
+
+   (for-each
+      (lambda (equiv) (set! members (lset-union equal? members equiv)))
+      classes)
+
+   (for-each
+      (lambda (m) (hashtable-put! matrix m (make-cell (list-copy members))))
+      members)
+
+   (for-each
+      (lambda (c1)
+         (hashtable-for-each
+            (lambda (y c2::cell)
+               (for-each
+                  (lambda (x)
+                     (when (not (eq? (member x c1) (member x (cell-ref c2))))
+                        (cell-set! c2 (filter (lambda (z) (not (= z x))) (cell-ref c2)))))
+                  members))
+            matrix))
+      classes)
+
+   (hashtable-for-each
+      (lambda (_ c2::cell)
+         (for-each
+            (lambda (x)
+               (when (not (member x seen))
+                  (set! seen (cons x seen))
+                  (set! partitions (cons (cell-ref c2) partitions))))
+            members))
+      matrix)
+
+   partitions)
+
+(define (merge-equivalences::pair-nil equivalences1::pair-nil equivalences2::pair-nil)
+   (partition-equivalence-classes (append equivalences1 equivalences2)))
+
+(define (merge-registers::pair-nil registers1::pair-nil registers2::pair-nil)
+   (if (not (= (length registers1) (length registers2)))
+       (error 'merge-registers "registers have different sizes" registers1))
+   (map
+      (lambda (reg-type)
+         (cons
+            (car reg-type)
+            (types-union
+               (registers-ref registers2 (car reg-type))
+               (cdr reg-type))))
+      registers1))
+
+(define (merge-stacks::pair-nil stack1::pair-nil stack2::pair-nil)
+   (if (not (= (length stack1) (length stack2)))
+       (error 'merge-stacks "stacks have different sizes" stack1))
+   (map
+      (lambda (loc-type1 loc-type2)
+         (if (not (location-equal? (car loc-type1) (car loc-type2)))
+             (error 'merge-stacks "stacks have format?" stack1))
+         (cons
+            (car loc-type1)
+            (types-union
+               (cdr loc-type1)
+               (cdr loc-type2))))
+      stack1
+      stack2))
+
+(define (merge state::bbv-state spec1::specialization spec2::specialization)
+   (let* ((ctx1::context (-> spec1 context))
+          (ctx2::context (-> spec2 context))
+          (origin (-> spec1 origin))
+          (merged-ctx
+             (instantiate::context
+                (registers (merge-registers (-> ctx1 registers) (-> ctx2 registers)))
+                (stack (merge-stacks (-> ctx1 stack) (-> ctx2 stack)))
+                (equivalences (merge-equivalences (-> ctx1 equivalences) (-> ctx2 equivalences))))))
+   (merge-reach state origin merged-ctx (list spec1 spec2))))
+
+(define (pick-versions-to-merge versions::pair-nil)
+   ;; todo: most similar
+   (list (car versions) (cadr versions)))
+
 (define (merge? state::bbv-state specialization::specialization version-limit::bint)
-   (when (> (get-active-specializations-count state specialization) version-limit)
-      (***NotImplemented*** 'merge?)))
+   (let loop ()
+      (when (> (get-active-specializations-count state specialization) version-limit)
+         (let* ((active-specializations (get-active-specializations state specialization))
+               (versions-to-merge (pick-versions-to-merge active-specializations)))
+            (apply merge state versions-to-merge)
+            (loop)))))
 
 ;; BBV CORE ALGO
 (define (bbv::cfg g::cfg version-limit::bint)
