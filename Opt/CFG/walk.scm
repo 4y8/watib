@@ -47,7 +47,8 @@
       ((loop-headed-by ?l1) (if (=fx l1 l)
                                    0
                                    (+fx 1 (label-index l (cdr frame)))))
-      (else (+fx 1 (label-index l (cdr frame))))))
+      (else
+       (+fx 1 (label-index l (cdr frame))))))
 
 (define-generic (children-to-access j::jump tree::pair)
    (filter merge-head? (cdr tree)))
@@ -67,7 +68,7 @@
    (with-access::node-tree (car tree) (idx intype end)
       (if (loop-header? (car tree))
           (let ((body (node-within (car tree) (filter merge-head? (cdr tree))
-                                   (cons `(loop-headed-by ,idx) ctx) intype)))
+                                   (cons `(loop-headed-by ,idx) ctx) outtype)))
              (instruction->sequence (instantiate::loop
                                      (opcode 'loop)
                                      (intype intype)
@@ -371,6 +372,21 @@
                                        (build-node (cdr l) st st '()
                                                    next labs))
                                       (dst-null (list-ref labs idx)))))))
+
+           (br_on_non_null
+            (with-access::one-arg (car l) (x outtype intype)
+               (with-access::labelidxp x (idx)
+                                       (instantiate::cfg-node
+                                        (intype seq-intype)
+                                        (outtype (reverse (cdr st)))
+                                        (body (reverse body))
+                                        (end (instantiate::on-null
+                                              (ht (reftype->heaptype (last intype)))
+                                              (dst-non-null
+                                               (list-ref labs idx))
+                                              (dst-null
+                                               (build-node (cdr l) st st '()
+                                                           next labs))))))))
 
            (else
             (let ((new-st (append (reverse outtype)

@@ -11,7 +11,7 @@ SRCS = Misc/let-if.scm Opt/optimise.scm Val/validate.scm \
 
 OBJS = $(SRCS:.scm=.o)
 
-FLAGS = -O2 -g
+FLAGS = -O2
 #FLAGS = -O3 -unsafe
 
 all: watib tools

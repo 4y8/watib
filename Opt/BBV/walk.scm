@@ -44,6 +44,33 @@
       (display (-> obj pos))
       (display "\|" port))
 
+(define-method (object-print obj::types port::output-port f::procedure)
+      (display "#\|" port)
+      (display (class-name (object-class obj)) port)
+      (display " ")
+      (display (-> obj set))
+      (display "\|" port))
+
+(define-method (object-print obj::context port::output-port f::procedure)
+      (display "#\|" port)
+      (display (class-name (object-class obj)) port)
+      (display "\n registers: ")
+      (display (-> obj registers))
+      (display "\n stack: ")
+      (display (-> obj stack))
+      (display "\n equivalences: ")
+      (display (-> obj equivalences))
+      (display "\|"))
+
+(define-method (object-print obj::specialization port::output-port f::procedure)
+      (display "#\|" port)
+      (display (class-name (object-class obj)) port)
+      (display " ")
+      (display (-> obj id))
+      (display " ")
+      (display (-> obj context))
+      (display "\n\|" port))
+
 ;; SET
 (define (make-set . elements)
    (lset-union equal? '() elements))
@@ -116,7 +143,7 @@
 
 ;; TODO
 (define (types-equal?::bool types1::types types2::types)
-   (set-equal? types1 types2))
+   (set-equal? (-> types1 set) (-> types2 set)))
 
 (define (stack-equal? stk1::pair-nil stk2::pair-nil)
    (and
@@ -149,7 +176,7 @@
    (with-access::context ctx1 ((registers1 registers) (stack1 stack) (equivalences1 equivalences))
    (with-access::context ctx2 ((registers2 registers) (stack2 stack) (equivalences2 equivalences))
       (and
-         (equivalence-class-equal? equivalences1 equivalences2)
+         (equivalences-equal? equivalences1 equivalences2)
          (registers-equal? registers1 registers2)
          (stack-equal? stack1 stack2)))))
 
@@ -197,6 +224,9 @@
             ((null? equiv1) #t)
             ((equivalence-class-has? equiv2 (car equiv1)) (loop (cdr equiv1)))
             (else #f)))))
+
+(define (equivalences-equal?::bool l1::pair-nil l2::pair-nil)
+   (lset= equivalence-class-equal? l1 l2))
 
 (define (context-get-equivalence-class::pair-nil context::context loc::location)
    (let loop ((classes (-> context equivalences)))
@@ -394,7 +424,7 @@
             #f
             (with-access::specialization (car versions) (context)
                (if (context-equal? context target-context)
-                  (get-most-recent-merge state specialization)
+                  (get-most-recent-merge state (car versions))
                   (loop (cdr versions))))))))
 
 (define (get-specializations::pair-nil state::bbv-state specialization::specialization)
@@ -403,7 +433,7 @@
       (hashtable-get all-specializations (-> origin idx)))))
 
 (define (get-active-specializations::pair-nil state::bbv-state specialization::specialization)
-   (map (lambda (spec) (reachable? state spec)) (get-specializations state specialization)))
+   (filter (lambda (spec) (reachable? state spec)) (get-specializations state specialization)))
 
 (define (get-active-specializations-count::bint state::bbv-state specialization::specialization)
    (length (get-active-specializations state specialization)))
@@ -434,17 +464,38 @@
       (multiple-value-bind
          (context-non-null context-null)
          (context-narrow-null context (instantiate::onstack (pos 0)))
-         (let ((spec-dest-non-null (and context-non-null (reach state dst-non-null context-non-null specialization)))
-               (spec-dest-null (and context-null (reach state dst-null context-null specialization))))
+         (let ((dst-non-null
+                (and context-non-null
+                     (with-access::specialization
+                      (reach state dst-non-null context-non-null specialization)
+                      (version)
+                      version)))
+               (dst-null
+                (and context-null
+                     (with-access::specialization (reach state dst-null (context-drop context-null) specialization) (version)
+                                                  version))))
             (cond
-               ((and spec-dest-non-null spec-dest-null)
+               ((and dst-non-null dst-null)
                   (duplicate::on-null
                      instr
-                     (dst-non-null spec-dest-non-null)
-                     (dst-null spec-dest-null)))
-               (spec-dest-non-null (instantiate::unconditional (dst spec-dest-non-null)))
-               (spec-dest-null (instantiate::unconditional (dst spec-dest-null)))
+                     (dst-non-null dst-non-null)
+                     (dst-null dst-null)))
+               (dst-non-null (instantiate::unconditional
+                              (dst (instantiate::cfg-node
+                                    (idx (new-id! state))
+                                    (intype (list `(ref null ,(-> instr ht))))
+                                    (outtype (list `(ref ,(-> instr ht))))
+                                    (body (list (instantiate::instruction
+                                                 (opcode 'ref.as_non_null)
+                                                 (intype (list `(ref null ,(-> instr ht))))
+                                                 (outtype (list `(ref ,(-> instr ht))))
+                                                 (parent (instantiate::modulefield)))))
+                                    (end (instantiate::unconditional (dst dst-non-null)))))))
+               (dst-null (instantiate::unconditional (dst dst-null)))
                (else (error 'walk-jump "no valid jump" instr)))))))
+
+(define-method (walk-jump jump::terminal state::bbv-state context::context specialization::specialization)
+   jump)
 
 (define-generic (walk-instr instr::instruction state::bbv-state context::context)
    (with-trace 1 'walk-instr
@@ -456,9 +507,14 @@
       (i32.ge_u
        (values instr (context-push (context-dropn context 2)
                                    (make-types (car (-> instr outtype))))))
+      (i32.add
+       (values instr (context-push (context-dropn context 2)
+                                   (make-types (car (-> instr outtype))))))
       (i32.eq
        (values instr (context-push (context-dropn context 2)
                                    (make-types (car (-> instr outtype))))))
+      (drop
+       (values instr (context-drop context)))
       (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))
 
 (define-method (walk-instr instr::one-arg state::bbv-state context::context)
@@ -558,7 +614,9 @@
 
 (define (merge? state::bbv-state specialization::specialization version-limit::bint)
    (when (> (get-active-specializations-count state specialization) version-limit)
-      (***NotImplemented*** 'merge?)))
+   (with-trace 1 'merge
+   (trace-item "versions" (get-active-specializations state specialization))
+      (***NotImplemented*** 'merge?))))
 
 ;; BBV CORE ALGO
 (define (bbv::cfg g::cfg version-limit::bint)
