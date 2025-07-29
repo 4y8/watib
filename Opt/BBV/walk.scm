@@ -64,6 +64,12 @@
 (define (make-types::types . elements)
    (instantiate::types (set (apply make-set elements))))
 
+(define (types-map::types f::procedure t::types)
+   (instantiate::types (set (set-map f (-> t set)))))
+
+(define (types-filter::types f::procedure t::types)
+   (instantiate::types (set (set-filter f (-> t set)))))
+
 ;; QUEUE
 (define (make-queue) (cons '() '()))
 (define (queue-empty? queue) (null? (car queue)))
@@ -315,9 +321,9 @@
 (define (context-narrow-null context::context location::location)
    (let* ((can-be-null? #f)
           (non-null
-             (set-filter
+             (types-filter
                 (lambda (x) x)
-                (set-map
+                (types-map
                    (match-lambda
                       ((ref null none) (set! can-be-null? #t) #f)
                       ((ref null ?ht) (set! can-be-null? #t) `(ref ,ht))
@@ -412,8 +418,16 @@
 
 (define-method (walk-jump instr::unconditional state::bbv-state context::context specialization::specialization)
    (with-access::unconditional instr (dst)
-      (let ((jump-target (reach state dst context specialization)))
-         (duplicate::unconditional instr (dst jump-target)))))
+      (let ((jump-target::specialization (reach state dst context specialization)))
+        (duplicate::unconditional instr (dst (-> jump-target version))))))
+
+(define-method (walk-jump jump::conditional state::bbv-state context::context specialization::specialization)
+   (let ((true-target::specialization (reach state (-> jump dst-true)
+                                             (context-drop context) specialization))
+         (false-target::specialization (reach state (-> jump dst-false)
+                                             (context-drop context) specialization)))
+     (duplicate::conditional jump (dst-true (-> true-target version))
+                             (dst-false (-> false-target version)))))
 
 (define-method (walk-jump instr::on-null state::bbv-state context::context specialization::specialization)
    (with-access::on-null instr (dst-null dst-non-null)
@@ -433,9 +447,23 @@
                (else (error 'walk-jump "no valid jump" instr)))))))
 
 (define-generic (walk-instr instr::instruction state::bbv-state context::context)
-   (error 'walk-instr "unknown instruction" (-> instr opcode)))
+   (with-trace 1 'walk-instr
+               (trace-item "instr=" (-> instr opcode))
+   (match-case (-> instr opcode)
+      (array.len
+       (values instr (context-push (context-drop context)
+                                   (make-types (car (-> instr outtype))))))
+      (i32.ge_u
+       (values instr (context-push (context-dropn context 2)
+                                   (make-types (car (-> instr outtype))))))
+      (i32.eq
+       (values instr (context-push (context-dropn context 2)
+                                   (make-types (car (-> instr outtype))))))
+      (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))
 
 (define-method (walk-instr instr::one-arg state::bbv-state context::context)
+  (with-trace 1 'walk-instr
+               (trace-item "instr=" (-> instr opcode) )
    (with-access::context context (stack registers)
    (with-access::one-arg instr (opcode x intype outtype)
       (match-case opcode
@@ -481,7 +509,8 @@
                            (context-narrow-null context (instantiate::onstack (pos 1)))
                            non-null)
                         2)
-                     (make-types (car outtype))))))))))
+                     (make-types (car outtype))))))
+         (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))))
 
 (define (walk state::bbv-state specialization::specialization)
    (with-trace 1 'walk
@@ -523,7 +552,7 @@
                   :onconnect (lambda (reachable)
                                  (queue-put!
                                     (-> state queue)
-                                    (get-specialization-by-id bbv-state reachable))))
+                                    (get-specialization-by-id state reachable))))
                (ssr-add-edge! reachability -1 id))
             target)))))
 
