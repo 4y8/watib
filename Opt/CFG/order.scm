@@ -10,7 +10,13 @@
 
    (export (reverse-postorder! entry::cfg-node)))
 
+(define (clean! n::cfg-node)
+   (unless (eq? (-> n idx) 'unvisited)
+      (set! (-> n idx) 'unvisited)
+      (for-each clean! (get-succs (-> n end)))))
+
 (define (dfs! n::cfg-node i::long l::pair-nil)
+
    (define (loop! succs i l)
       (if (null? succs)
           (begin
@@ -21,7 +27,7 @@
                 (set! preds (cons n preds)))
              (loop! (cdr succs) i l))))
 
-   (if (=fx (-> n idx) 1) ; is the node unvisited
+   (if (eq? (-> n idx) 'unvisited) ; is the node unvisited
        (begin
           (set! (-> n idx) 2) ;; avoid loops
           (loop! (get-succs (-> n end)) i l))
@@ -29,4 +35,5 @@
 
 ;; returns the number of nodes and a list of them in reverse postorder
 (define (reverse-postorder! entry::cfg-node)
+   (clean! entry)
    (dfs! entry 0 '()))

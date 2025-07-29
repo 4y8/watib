@@ -40,9 +40,7 @@
 
            (final-class cfg-node::object
               body::pair-nil
-              (idx::long (default 1)) ;; we take as indices integers smaller or
-                                      ;; equal to 0, 1 thus means we don't have
-                                      ;; one yet
+              (idx (default 1))
               (preds::pair-nil (default '()))
               intype::pair-nil
               outtype::pair-nil

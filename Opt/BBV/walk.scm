@@ -28,7 +28,7 @@
       context::context))
 
    (static (class bbv-state
-      (id-counter::long (default 0))
+      (id-counter::long (default 10001))
       all-specializations::obj
       all-specializations-by-id::obj
       merge-history::obj
@@ -36,6 +36,13 @@
       reachability::obj))
 
    (export (bbv::cfg g::cfg version-limit::bint)))
+
+(define-method (object-print obj::location port::output-port f::procedure)
+      (display "#\|" port)
+      (display (class-name (object-class obj)) port)
+      (display " ")
+      (display (-> obj pos))
+      (display "\|" port))
 
 ;; SET
 (define (make-set . elements)
@@ -163,10 +170,10 @@
             (list loc)
             (filter pair?
                (map
-                  (lambda (equiv) 
+                  (lambda (equiv)
                      (filter
-                        (lambda (equiv-loc-pair)
-                           (not (location-equal? loc (car equiv-loc-pair))))
+                        (lambda (equiv-loc)
+                           (not (location-equal? loc equiv-loc)))
                         equiv))
                   (-> context equivalences)))))))
 
@@ -225,15 +232,14 @@
          (cons
             (cons (instantiate::onstack (pos 0)) type)
             (map
-               (lambda (onstack-type)  (cons (on-push (car onstack-type)) (cdr onstack-type)))
+               (lambda (onstack-type) (cons (on-push (car onstack-type)) (cdr onstack-type)))
                (-> context stack))))
       (equivalences
-         (map
-            (lambda (equiv)
-               (map
-                  (lambda (loc-type) (cons (on-push (car loc-type)) (cdr loc-type)))
-                  equiv))
-            (-> context equivalences)))))
+         (cons (list (instantiate::onstack (pos 0)))
+          (map
+                (lambda (equiv)
+                  (map on-push equiv))
+                (-> context equivalences))))))
 
 (define (context-pop*::context context::context)
    (duplicate::context
@@ -248,14 +254,11 @@
             (map
                (lambda (equiv)
                   (filter
-                     (lambda (loc-type)
-                        (let ((location (car loc-type)))
-                           (not (and
-                              (isa? location onstack)
-                              (< (with-access::onstack location (pos) pos) 0)))))
-                     (map
-                        (lambda (loc-type) (cons (on-pop (car loc-type)) (cdr loc-type)))
-                        equiv)))
+                     (lambda (loc)
+                       (not (and
+                             (isa? loc onstack)
+                             (< (with-access::onstack loc (pos) pos) 0))))
+                     (map on-pop equiv)))
                (-> context equivalences))))))
 
 (define (context-pop context::context)
@@ -276,13 +279,12 @@
    (cdr (list-ref (-> context stack) (-> location pos))))
 
 (define (context-register-ref::types context::context location::register)
-   (cdr
-      (let loop ((registers (-> context registers)))
+   (with-trace 1 'register-ref
+               (trace-item "registers=" (-> context registers) " loc=" location)
+   (let loop ((registers (-> context registers)))
          (cond
             ((null? registers) (error 'context-register-ref "not found" location))
-            ((= (with-access::register (caar registers) (pos) pos)
-                (-> location pos))
-               (cdar registers))
+            ((location-equal? (caar registers) location) (cdar registers))
             (else (loop (cdr registers)))))))
 
 (define (context-ref::types context::context location::location)
@@ -297,7 +299,7 @@
                ((isa? from register) (context-register-ref context from))
                ((isa? from onstack) (context-stack-ref context from)))))
       (context-add-equivalence
-         (context-register-set context to from-type)
+         (context-register-set context (-> to pos) from-type)
          from
          to)))
 
@@ -323,8 +325,8 @@
                    (context-ref context location)))))
       (values
          (if (set-empty? non-null) #f (context-type-set context location non-null))
-         (if can-be-null? (context-type-set context location (make-set '(ref null none))) #f))))    
-      
+         (if can-be-null? (context-type-set context location (make-types '(ref null none))) #f))))
+
 ;; HELPERS
 (define (***NotImplemented*** name::symbol) (error "NotImplemented" name '?))
 
@@ -341,7 +343,7 @@
                   (all-specializations-by-id (make-hashtable))
                   (merge-history (make-hashtable))
                   (queue (make-queue))
-                  (reachability (ssr-make-graph)))))
+                  (reachability (ssr-make-graph :source -1)))))
       (with-access::bbv-state init (all-specializations)
          (for-each
             (lambda (bb)
@@ -392,7 +394,7 @@
 (define (get-specializations::pair-nil state::bbv-state specialization::specialization)
    (with-access::bbv-state state (all-specializations)
    (with-access::specialization specialization (origin)
-      (map cdr (hashtable-get all-specializations (-> origin idx))))))
+      (hashtable-get all-specializations (-> origin idx)))))
 
 (define (get-active-specializations::pair-nil state::bbv-state specialization::specialization)
    (map (lambda (spec) (reachable? state spec)) (get-specializations state specialization)))
@@ -425,7 +427,7 @@
                   (duplicate::on-null
                      instr
                      (dst-non-null spec-dest-non-null)
-                     (dst-null (spec-dest-null))))
+                     (dst-null spec-dest-null)))
                (spec-dest-non-null (instantiate::unconditional (dst spec-dest-non-null)))
                (spec-dest-null (instantiate::unconditional (dst spec-dest-null)))
                (else (error 'walk-jump "no valid jump" instr)))))))
@@ -450,25 +452,25 @@
          (i32.const
             (values
                instr
-               (context-push context (make-set (car outtype)))))
+               (context-push context (make-types (car outtype)))))
          (i64.const
             (values
                instr
-               (context-push context (make-set (car outtype)))))
+               (context-push context (make-types (car outtype)))))
          (ref.null
             (values
                instr
-               (context-push context (make-set '(ref null none)))))
+               (context-push context (make-types '(ref null none)))))
          (struct.new
             (with-access::typeidxp x (idx)
                (values
                   instr
-                  (context-push (context-dropn context (length intype)) (make-set (car outtype))))))
+                  (context-push (context-dropn context (length intype)) (make-types (car outtype))))))
          (array.new
             (with-access::typeidxp x (idx)
                (values
                   instr
-                  (context-push (context-dropn context 2) (make-set (car outtype))))))
+                  (context-push (context-dropn context 2) (make-types (car outtype))))))
          (array.get
             (with-access::typeidxp x (idx)
                (values
@@ -479,32 +481,41 @@
                            (context-narrow-null context (instantiate::onstack (pos 1)))
                            non-null)
                         2)
-                     (make-set (car outtype))))))))))
+                     (make-types (car outtype))))))))))
 
 (define (walk state::bbv-state specialization::specialization)
+   (with-trace 1 'walk
    (with-access::specialization specialization (origin context version id)
    (with-access::cfg-node origin (body end)
       (with-access::cfg-node version (idx) (set! idx id))
+      (trace-item "walking=" (-> specialization id))
       (let loop ((body body) (context context) (specialized-body '()))
          (if (null? body)
             (with-access::cfg-node version ((version-body body) (version-end end))
                (set! version-body (reverse specialized-body))
                (set! version-end (walk-jump end state context specialization)))
             (multiple-value-bind (instr next-context) (walk-instr (car body) state context)
-               (loop (cdr body) next-context (cons instr specialized-body))))))))
+               (loop (cdr body) next-context (cons instr specialized-body)))))))))
 
 (define (reach::specialization state::bbv-state origin::cfg-node context::context from)
+   (with-trace 1 'reach
    (with-access::bbv-state state (reachability)
       (let ((target
                (or
-                  (get-specialization state origin context)
-                  (let ((new-specialization
+                  (let ((existing-spec (get-specialization state origin context)))
+                     (trace-item "existing-spec="
+                                 (if existing-spec (with-access::specialization existing-spec (id) id) #f))
+                     existing-spec)
+
+                  (let ((new-specialization::specialization
                         (instantiate::specialization
                            (origin origin)
                            (id (new-id! state))
                            (version (duplicate::cfg-node origin (body '()) (idx 'dummy)))
                            (context context))))
-                     (add-specialization! state specialization)
+                     (add-specialization! state new-specialization)
+                     (trace-item "enqueue=" (-> new-specialization id))
+                     (queue-put! (-> state queue) new-specialization)
                      new-specialization))))
          (with-access::specialization target (id)
             (if from
@@ -512,8 +523,9 @@
                   :onconnect (lambda (reachable)
                                  (queue-put!
                                     (-> state queue)
-                                    (get-specialization-by-id bbv-state reachable)))))
-            target))))
+                                    (get-specialization-by-id bbv-state reachable))))
+               (ssr-add-edge! reachability -1 id))
+            target)))))
 
 (define (merge? state::bbv-state specialization::specialization version-limit::bint)
    (when (> (get-active-specializations-count state specialization) version-limit)
@@ -521,6 +533,7 @@
 
 ;; BBV CORE ALGO
 (define (bbv::cfg g::cfg version-limit::bint)
+   (with-trace 1 'bbv
    (let ((state (make-init-state g)))
       (with-access::bbv-state state (queue)
       (with-access::cfg g (entry func)
@@ -531,26 +544,33 @@
                      (if (null? args-types)
                          func-context
                          (loop
-                           (context-type-set
+                           (context-register-set
                               func-context
-                              (instantiate::register (pos i))
+                              i
                               (make-types (car args-types)))
                            (+ i 1)
                            (cdr args-types)))))
-                (new-entry (reach state entry func-context #f)))
+                (new-entry::specialization (reach state entry func-context #f)))
+            (trace-item "head=" (-> new-entry id) " type=" type)
             (let loop ()
                (when (not (queue-empty? queue))
-                  (let ((specialization (queue-get! queue)))
+                  (let ((specialization::specialization (queue-get! queue)))
+                    (trace-item "dequeue-id=" (-> specialization id))
                      (merge? state specialization version-limit)
                      (with-access::specialization specialization (version)
                      (with-access::cfg-node version (idx)
+                        (trace-item "reachable?=" (reachable? state specialization) " dummy?=" (eq? idx 'dummy))
                         (if (and (reachable? state specialization) (eq? idx 'dummy))
                             (walk state specialization))))
                      (loop))))
-            (multiple-value-bind (-size rpostorder) (reverse-postorder! entry)
+            (let ((final-entry
+                   (with-access::specialization
+                      (get-most-recent-merge state new-entry)
+                      (version) version)))
+            (multiple-value-bind (-size rpostorder) (reverse-postorder! final-entry)
                (let ((new-cfg (instantiate::cfg
-                                 (entry (get-most-recent-merge state new-entry))
+                                 (entry final-entry)
                                  (size (-fx 0 -size))
                                  (rpostorder rpostorder)
                                  (func func))))
-                  new-cfg))))))))
+                  new-cfg))))))))))
