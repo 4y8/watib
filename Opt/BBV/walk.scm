@@ -631,45 +631,39 @@
 (define (merge-reach::specialization state::bbv-state origin::cfg-node context::context redirects::pair-nil)
    (reach* state origin context #f redirects))
 
-(define (partition-equivalence-classes classes)
-   (define members '())
-   (define matrix (make-hashtable))
-   (define seen '())
-   (define partitions '())
+(define (partition-equivalence-classes classes::pair-nil)
+   (define members (apply lset-union equal? '() classes))
+   (define matrix (map (lambda (x) (cons x (list-copy members))) members))
 
-   (***NotImplemented*** 'partition-equivalence-classes)
+   (define (remove-from-classes x y)
+      (let ((slotx::pair (assoc x matrix))
+            (sloty::pair (assoc y matrix)))
+         (set-cdr! slotx (filter (lambda (z) (not (equal? y z))) (cdr slotx)))
+         (set-cdr! sloty (filter (lambda (z) (not (equal? x z))) (cdr sloty)))))
 
-   (for-each
-      (lambda (equiv) (set! members (lset-union equal? members equiv)))
-      classes)
-
-   (for-each
-      (lambda (m) (hashtable-put! matrix m (make-cell (list-copy members))))
-      members)
+   (define (in x lst::pair-nil) (not (not (member x lst))))
+   (define (inness= x y lst::pair-nil) (eq? (in x lst) (in y lst)))
 
    (for-each
-      (lambda (c1)
-         (hashtable-for-each
-            (lambda (y c2::cell)
-               (for-each
-                  (lambda (x)
-                     (when (not (eq? (member x c1) (member x (cell-ref c2))))
-                        (cell-set! c2 (filter (lambda (z) (not (= z x))) (cell-ref c2)))))
-                  members))
-            matrix))
-      classes)
-
-   (hashtable-for-each
-      (lambda (_ c2::cell)
+      (lambda (equiv::pair-nil)
          (for-each
             (lambda (x)
-               (when (not (member x seen))
-                  (set! seen (cons x seen))
-                  (set! partitions (cons (cell-ref c2) partitions))))
+               (for-each
+                  (lambda (y)
+                     (if (not (inness= x y equiv)) (remove-from-classes x y)))
+                  members))
             members))
-      matrix)
+      classes)
 
-   partitions)
+   (let ((seen '())
+         (new-classes '()))
+      (for-each
+         (lambda (x)
+            (when (not (member x seen))
+               (set! new-classes (cons (cdr (assoc x matrix)) new-classes))
+               (set! seen (apply lset-union equal? new-classes))))
+         members)
+      new-classes))
 
 (define (merge-equivalences::pair-nil equivalences1::pair-nil equivalences2::pair-nil)
    (partition-equivalence-classes (append equivalences1 equivalences2)))
@@ -712,15 +706,22 @@
                 (equivalences (merge-equivalences (-> ctx1 equivalences) (-> ctx2 equivalences))))))
    (merge-reach state origin merged-ctx (list spec1 spec2))))
 
-(define (pick-versions-to-merge versions::pair-nil)
+(define (ssr-graph-ranks graph) (vector-ref graph 1))
+(define (ssr-get-rank graph x)
+   (or (hashtable-get (ssr-graph-ranks graph) x) +inf.0))
+
+(define (pick-versions-to-merge state::bbv-state versions::pair-nil)
    ;; todo: most similar
-   (list (car versions) (cadr versions)))
+   (define (favorability a::specialization b::specialization)
+      (> (ssr-get-rank (-> state reachability) (-> a id)) (ssr-get-rank (-> state reachability) (-> b id))))
+   (let ((sorted-versions (sort favorability versions)))
+      (list (car sorted-versions) (cadr sorted-versions))))
 
 (define (merge? state::bbv-state specialization::specialization version-limit::bint)
    (let loop ()
       (when (> (get-active-specializations-count state specialization) version-limit)
          (let* ((active-specializations (get-active-specializations state specialization))
-               (versions-to-merge (pick-versions-to-merge active-specializations)))
+               (versions-to-merge (pick-versions-to-merge state active-specializations)))
             (apply merge state versions-to-merge)
             (loop)))))
 
