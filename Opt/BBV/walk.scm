@@ -859,18 +859,21 @@
 (define (merge-equivalences::pair-nil equivalences1::pair-nil equivalences2::pair-nil)
    (partition-equivalence-classes (append equivalences1 equivalences2)))
 
+(define (register-has? regs::pair-nil r::register)
+   (any (lambda (r') (location-equal? (car r') r)) regs))
+
 (define (merge-registers::pair-nil registers1::pair-nil registers2::pair-nil)
-   (if (not (= (length registers1) (length registers2)))
-       (error 'merge-registers "registers have different sizes"
-              (list (map car registers1) (map car registers2))))
-   (map
+
+   (let ((registers1 (filter (lambda (r) (register-has? registers2 (car r))) registers1))
+         (registers2 (filter (lambda (r) (register-has? registers1 (car r))) registers2)))
+     (map
       (lambda (reg-type)
          (cons
-            (car reg-type)
-            (types-union
-               (registers-ref registers2 (car reg-type))
-               (cdr reg-type))))
-      registers1))
+          (car reg-type)
+          (types-union
+           (registers-ref registers2 (car reg-type))
+           (cdr reg-type))))
+      registers1)))
 
 (define (merge-stacks::pair-nil stack1::pair-nil stack2::pair-nil)
    (if (not (= (length stack1) (length stack2)))
