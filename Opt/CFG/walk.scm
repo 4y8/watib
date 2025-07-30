@@ -355,13 +355,16 @@
            (br_on_cast
             (with-access::three-args (car l) (x y z)
                (with-access::labelidxp x (idx)
-                  (end-current-block (instantiate::on-cast
-                                      (dst-cast-fail
-                                       (build-node (cdr l) st st '()
-                                                   next labs))
-                                      (rt-src y)
-                                      (rt-dst z)
-                                      (dst-cast (list-ref labs idx)))))))
+                  (with-access::typep y ((rt-src type))
+                     (with-access::typep z ((rt-dst type))
+                        (end-current-block
+                         (instantiate::on-cast
+                          (dst-cast-fail
+                           (build-node (cdr l) st st '()
+                                       next labs))
+                          (rt-src rt-src)
+                          (rt-dst rt-dst)
+                          (dst-cast (list-ref labs idx)))))))))
 
            (br_on_null
             (with-access::one-arg (car l) (x outtype)

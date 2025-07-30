@@ -532,6 +532,57 @@
                                   (parent (instantiate::modulefield)))
                                  #f))))))))))
 
+(define-method (walk-jump instr::on-cast state::bbv-state context::context specialization::specialization)
+   (with-trace 1 'walk-jump
+   (with-access::on-cast instr (dst-cast dst-cast-fail rt-dst rt-src)
+      (multiple-value-bind
+         (context-cast context-cast-fail)
+         (context-narrow context (instantiate::onstack (pos 0))
+                         (make-types state (list rt-dst)))
+         (trace-item "ctx=" context)
+         (trace-item "ctx-cast=" context-cast)
+         (trace-item "ctx-cast-fail=" context-cast-fail)
+         (let ((dst-cast
+                (and context-cast
+                     (with-access::specialization
+                      (reach state dst-cast context-cast specialization)
+                      (version)
+                      version)))
+               (dst-cast-fail
+                (and context-cast-fail
+                     (with-access::specialization
+                      (reach state dst-cast-fail context-cast-fail
+                             specialization)
+                      (version)
+                      version))))
+            (cond
+               ((and dst-cast dst-cast-fail)
+                  (duplicate::on-cast
+                     instr
+                     (dst-cast dst-cast)
+                     (dst-cast-fail dst-cast-fail)))
+               (dst-cast (instantiate::unconditional
+                          (dst (instantiate::cfg-node
+                                (idx (new-id! state))
+                                (intype (list rt-src))
+                                (outtype (list rt-dst))
+                                (body (list (instantiate::one-arg
+                                             (opcode 'ref.cast)
+                                             (intype (list rt-src))
+                                             (outtype (list rt-dst))
+                                             (x (instantiate::typep (type rt-dst)))
+                                             (parent (instantiate::modulefield)))))
+                                (end (instantiate::unconditional (dst dst-cast)))))))
+               (dst-cast-fail
+                (instantiate::unconditional (dst dst-cast-fail)))
+               (else (instantiate::terminal
+                      (i (values (instantiate::instruction
+                                  (opcode 'unreachable)
+                                  (intype '())
+                                  (outtype '(poly))
+                                  (parent (instantiate::modulefield)))
+                                 #f))))))))))
+
 (define-method (walk-jump jump::terminal state::bbv-state context::context specialization::specialization)
    jump)
 
@@ -545,7 +596,10 @@
       ((or i32.eq i32.ne i32.lt_s i32.lt_u i32.gt_s i32.gt_u i32.le_s i32.le_u
            i32.ge_s i32.ge_u i32.add i32.sub
            i64.eq i64.ne i64.lt_s i64.lt_u i64.gt_s i64.gt_u i64.le_s i64.le_u
-           i64.ge_s i64.ge_u i64.add i64.sub)
+           i64.ge_s i64.ge_u i64.add i64.sub
+           f64.add f64.sub f64.mul f64.div f64.min f64.max f64.copysign
+           f32.add f32.sub f32.mul f32.div f32.min f32.max f32.copysign
+           )
        (values instr (context-push (context-dropn context 2)
                                    (make-types state (-> instr outtype)))))
       (drop
