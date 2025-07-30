@@ -42,7 +42,7 @@
                                               (opcode 'local.tee)
                                               (x x))
                                              (cdr right)))
-               (walk-zipper (cons (car right) left) (cdr left)))))
-       (else (walk-zipper (cons (car right) left) (cdr left)))))
+               (walk-zipper (cons (car right) left) (cdr right)))))
+       (else (walk-zipper (cons (car right) left) (cdr right)))))
 
    (set! (-> i body) (walk-zipper '() (-> i body))))

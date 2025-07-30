@@ -79,6 +79,7 @@
 (define (make-dummy-node::cfg-node)
    (instantiate::cfg-node
     (body '())
+    (idx 'dummy)
     (outtype '())
     (intype '())
     (end (instantiate::switch (dsts '(#f))))))
