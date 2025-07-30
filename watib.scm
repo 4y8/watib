@@ -107,9 +107,18 @@
            (set! (-> o-flags puredrop) #t))
 
          (("-fno-peephole" (help "Disable peephole elimination"))
-           (set! (-> o-flags puredrop) #f))
+           (set! (-> o-flags peephole) #f))
          (("-fpeephole" (help "Enable peephole elimination"))
-           (set! (-> o-flags puredrop) #t))
+           (set! (-> o-flags peephole) #t))
+
+         (("-fno-bbv" (help "Disable Basic Block Versioning"))
+          (set! (-> o-flags bbv) #f))
+         (("-fbbv" ?n (help "Enable Basic Block Versioning with a maximum of N versions"))
+          (set! (-> o-flags bbv) #t)
+          (set! (-> o-flags bbv-steps) (string->number n)))
+
+         ;;(("-fbbv-fun" ?name (help "Apply Basic Block Versioning to NAME"))
+         ;; (set! (-> o-flags bbv) (list (string->symbol name))))
 
          (("-o" ?file (help "Output binary format to FILE"))
           (set! output-file file))
@@ -173,7 +182,7 @@
      (call-with-input-file cfg-file
         (lambda (ip)
            (multiple-value-bind (g::cfg p::prog) (read-cfg/prog ip)
-              (let ((g::cfg (if bbv? (bbv g 3) g)))
+              (let ((g::cfg (if bbv? (bbv g 10 (-> p env)) g)))
                 (print-cfg-as-dot g)
                 (call-with-output-file "out.wat"
                  (lambda (op)
@@ -185,8 +194,7 @@
                           (call-with-output-file output-file
                              (lambda (op)
                                (opt-file! p nthreads o-flags)
-                               (asm-file! p op))))))))
-              ))))
+                               (asm-file! p op))))))))))))
     ((null? input-files)
      (watib (read (current-input-port) #t)))
     (else (watib `(module ,@(merge-files input-files))))))

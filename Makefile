@@ -7,11 +7,12 @@ SRCS = Misc/let-if.scm Opt/optimise.scm Val/validate.scm \
        Env/env.scm Ast/node.scm Misc/list.scm Type/type.scm Type/match.scm \
        Misc/parse.scm Asm/leb128.scm Val/instructions.scm Opt/CFG/node.scm \
        Opt/CFG/order.scm Opt/CFG/dominance.scm Opt/CFG/walk.scm \
-       Opt/CFG/dump.scm Opt/CFG/read.scm Opt/BBV/walk.scm
+       Opt/CFG/dump.scm Opt/CFG/read.scm Opt/BBV/walk.scm \
+       Type/tree.scm
 
 OBJS = $(SRCS:.scm=.o)
 
-FLAGS = -O2
+FLAGS = -O2 -g
 #FLAGS = -O3 -unsafe
 
 all: watib tools
@@ -36,5 +37,5 @@ slides.pdf: report/slides.tex
 clean:
 	latexmk -C report/report.tex
 	rm -f report-blx.bib report.bbl
-	rm -f $(OBJS) *.o *.wasm tools/*.o
+	rm -f $(OBJS) *.o tools/*.o
 	rm -f watib tools/wati-test

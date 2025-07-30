@@ -146,6 +146,9 @@
 (define (isa-ref.test? i::instruction)
    (eq? (-> i opcode) 'ref.test))
 
+(define (isa-ref.is_null? i::instruction)
+   (eq? (-> i opcode) 'ref.is_null))
+
 (define (isa-local.get? i::instruction)
    (eq? (-> i opcode) 'local.get))
 
@@ -296,6 +299,58 @@
 ;;       #t)
 ;;    #f))
 
+(define-generic (block-gen-null! i::if-then lget::one-arg var::localidxp ht)
+   (let ((ni::if-else (duplicate::if-else i
+                       (else (instantiate::sequence (intype '())
+                                                    (outtype '())
+                                                    (parent (-> i parent))
+                                                    (opcode 'nop)
+                                                    (body '()))))))
+      (if (block-gen-null! ni lget var ht)
+          (begin (set! (-> i then) (-> ni then)) #t)
+          #f)))
+
+(define-method (block-gen-null! i::if-else lget::one-arg var::localidxp ht)
+   (if-test->br! (-> i then))
+   (if-test->br! (-> i else))
+   (let ((y (local-add! (-> i parent) `(ref ,ht))))
+      (replace-var! (-> i then) (-> var idx) y `(ref ,ht))
+      (incr-labels! (-> i then) -1)
+      (with-access::sequence (-> i then) (body (ot outtype))
+         (set! body
+               `(,(instantiate::block
+                   (intype '())
+                   (outtype '())
+                   (parent (-> i parent))
+                   (opcode 'block)
+                   (body
+                    `(,lget
+                      ,(instantiate::one-arg
+                        (intype `((ref null ,ht)))
+                        (outtype `((ref ,ht)))
+                        (parent (-> i parent))
+                        (opcode 'br_on_null)
+                        (x (instantiate::labelidxp (idx 0)
+                                                   (type '()))))
+                      ,(instantiate::one-arg
+                        (intype `((ref ,ht)))
+                        (outtype '())
+                        (parent (-> i parent))
+                        (opcode 'local.set)
+                        (x (instantiate::localidxp (idx y) (init? #f)
+                                                   (type `(ref ,ht)))))
+                      ,@body
+                      ; the type here is kind of a hack, we can't really do
+                      ; better without maintaining the stack state
+                      ,(instantiate::one-arg
+                        (intype ot)
+                        (outtype '(poly))
+                        (parent (-> i parent))
+                        (opcode 'br)
+                        (x (instantiate::labelidxp (idx 1) (type ot)))))))
+                 ,@(with-access::sequence (-> i else) (body) body))))))
+
+
 (define-method (if-test->br! i::sequence)
    (define (walk-list! l::pair-nil)
       (match-case l
@@ -314,7 +369,15 @@
                            (with-access::typep rt (type) type))
                (set-car! l (duplicate::block (-> i then)))
                (set-cdr! l tl))
-               (walk-list! tl)))
+            (walk-list! tl)))
+        (((and (? isa-local.get?) ?lget::one-arg)
+          (? isa-ref.is_null?)
+          (and (? (lambda (i) (isa? i if-then))) ?i::if-then). ?tl)
+         (with-access::one-arg lget ((var x) (ot outtype))
+            (block-gen-null! i lget var (reftype->heaptype (car ot)))
+            (set-car! l (duplicate::block (-> i then)))
+            (set-cdr! l tl)
+            (walk-list! tl)))
         ((?hd . ?tl)
          (if-test->br! hd)
          (walk-list! tl))))

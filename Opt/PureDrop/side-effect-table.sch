@@ -141,7 +141,7 @@
   (ref.null        . #f)
   (ref.func        . #f)
   (ref.is_null     . #f)
-  (ref.as_non_null . #t) ; can trap
+  (ref.as_non_null . #f) ; can trap
   (ref.eq          . #f)
   (ref.test        . #f)
   (ref.cast        . #t) ; can trap

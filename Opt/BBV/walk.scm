@@ -4,7 +4,9 @@
    (library srfi1)
    (import (cfg_order "Opt/CFG/order.scm"))
    (import (ast_node "Ast/node.scm"))
-   (import (type_type "Type/type.scm"))
+   (import (type_type "Type/type.scm")
+           (type_match "Type/match.scm")
+           (type_tree "Type/tree.scm"))
 
    (static (abstract-class location
       pos::bint))
@@ -33,9 +35,11 @@
       all-specializations-by-id::obj
       merge-history::obj
       queue::obj
-      reachability::obj))
+      reachability::obj
+      env::env
+      sub::subtyping))
 
-   (export (bbv::cfg g::cfg version-limit::bint)))
+   (export (bbv::cfg g::cfg version-limit::bint env::env)))
 
 (define-method (object-print obj::location port::output-port f::procedure)
       (display "#\|" port)
@@ -72,7 +76,7 @@
       (display "\n\|" port))
 
 ;; SET
-(define (make-set . elements)
+(define (make-set elements)
    (lset-union equal? '() elements))
 (define (set-union . ss)
   (apply lset-union equal? ss))
@@ -85,25 +89,32 @@
 (define (set-filter f lst)
    (filter f lst))
 (define (set-map f lst)
-   (apply make-set (map f lst)))
+   (make-set (map f lst)))
 (define (set-empty? s) (null? s))
 
-(define (make-types::types . elements)
-   (instantiate::types (set (apply make-set elements))))
+(define (make-types::types st::bbv-state elements)
+   (instantiate::types (set (apply set-union
+                                   (map (lambda (t) (make-set (get-subvt t (-> st sub)))) elements)))))
 
 (define (types-union::types . types)
-   (instantiate::types (set
-      (apply
-         set-union
-         (map
-            (lambda (t) (with-access::types t (set) set))
-            types)))))
+   (instantiate::types (set (apply set-union
+                                   (map (lambda (t::types) (-> t set)) types)))))
 
-(define (types-map::types f::procedure t::types)
-   (instantiate::types (set (set-map f (-> t set)))))
+(define (types-intersect::types . types)
+   (instantiate::types (set (apply set-intersect
+                                   (map (lambda (t::types) (-> t set)) types)))))
 
-(define (types-filter::types f::procedure t::types)
-   (instantiate::types (set (set-filter f (-> t set)))))
+(define (types-difference::types t1::types t2::types)
+   (instantiate::types (set (set-difference (-> t1 set) (-> t2 set)))))
+
+(define (types-empty?::bool t::types)
+   (set-empty? (-> t set)))
+
+(define (types-map::types st::bbv-state f::procedure t::types)
+   (make-types st (set-map f (-> t set))))
+
+(define (types-filter::types st::bbv-state f::procedure t::types)
+   (make-types st (set-filter f (-> t set))))
 
 ;; QUEUE
 (define (make-queue) (cons '() '()))
@@ -149,7 +160,6 @@
             (lambda (pos) (list (instantiate::register (pos pos))))
             (iota nregisters)))))
 
-;; TODO
 (define (types-equal?::bool types1::types types2::types)
    (set-equal? (-> types1 set) (-> types2 set)))
 
@@ -358,20 +368,15 @@
       register
       (instantiate::onstack (pos 0))))
 
-(define (context-narrow-null context::context location::location)
-   (let* ((can-be-null? #f)
-          (non-null
-             (types-filter
-                (lambda (x) x)
-                (types-map
-                   (match-lambda
-                      ((ref null none) (set! can-be-null? #t) #f)
-                      ((ref null ?ht) (set! can-be-null? #t) `(ref ,ht))
-                      (?type type))
-                   (context-ref context location)))))
-      (values
-         (if (set-empty? non-null) #f (context-type-set context location non-null))
-         (if can-be-null? (context-type-set context location (make-types '(ref null none))) #f))))
+(define (context-narrow context::context location::location rt::types)
+   (let* ((prevt (context-ref context location))
+          (t (types-intersect prevt rt))
+          (f (types-difference prevt rt)))
+      (values (if (types-empty? t) #f (context-type-set context location t))
+              (if (types-empty? f) #f (context-type-set context location f)))))
+
+(define (context-narrow-null context::context location::location st::bbv-state)
+   (context-narrow context location (make-types st '((ref eq)))))
 
 ;; HELPERS
 (define (***NotImplemented*** name::symbol) (error "NotImplemented" name '?))
@@ -383,12 +388,14 @@
          (lambda (k v) (hashtable-put! new-table k v)))
       new-table))
 
-(define (make-init-state::bbv-state cfg::cfg)
+(define (make-init-state::bbv-state cfg::cfg env::env)
    (let ((init (instantiate::bbv-state
                   (all-specializations (make-hashtable))
                   (all-specializations-by-id (make-hashtable))
                   (merge-history (make-hashtable))
                   (queue (make-queue))
+                  (env env)
+                  (sub (build-subtypes env))
                   (reachability (ssr-make-graph :source -1)))))
       (with-access::bbv-state init (all-specializations)
          (for-each
@@ -470,10 +477,14 @@
                              (dst-false (-> false-target version)))))
 
 (define-method (walk-jump instr::on-null state::bbv-state context::context specialization::specialization)
+   (with-trace 1 'walk-jump
    (with-access::on-null instr (dst-null dst-non-null)
       (multiple-value-bind
          (context-non-null context-null)
-         (context-narrow-null context (instantiate::onstack (pos 0)))
+         (context-narrow-null context (instantiate::onstack (pos 0)) state)
+         (trace-item "ctx=" context)
+         (trace-item "ctx-non-null=" context-non-null)
+         (trace-item "ctx-null=" context-null)
          (let ((dst-non-null
                 (and context-non-null
                      (with-access::specialization
@@ -501,8 +512,25 @@
                                                  (outtype (list `(ref ,(-> instr ht))))
                                                  (parent (instantiate::modulefield)))))
                                     (end (instantiate::unconditional (dst dst-non-null)))))))
-               (dst-null (instantiate::unconditional (dst dst-null)))
-               (else (error 'walk-jump "no valid jump" instr)))))))
+               (dst-null
+                (instantiate::unconditional
+                 (dst (instantiate::cfg-node
+                       (idx (new-id! state))
+                       (intype (list `(ref null ,(-> instr ht))))
+                       (outtype (list `(ref ,(-> instr ht))))
+                       (body (list (instantiate::instruction
+                                    (opcode 'drop)
+                                    (intype (list `(ref null ,(-> instr ht))))
+                                    (outtype '())
+                                    (parent (instantiate::modulefield)))))
+                       (end (instantiate::unconditional (dst dst-null)))))))
+               (else (instantiate::terminal
+                      (i (values (instantiate::instruction
+                                  (opcode 'unreachable)
+                                  (intype '())
+                                  (outtype '(poly))
+                                  (parent (instantiate::modulefield)))
+                                 #f))))))))))
 
 (define-method (walk-jump jump::terminal state::bbv-state context::context specialization::specialization)
    jump)
@@ -513,19 +541,41 @@
    (match-case (-> instr opcode)
       (array.len
        (values instr (context-push (context-drop context)
-                                   (make-types (car (-> instr outtype))))))
-      (i32.ge_u
+                                   (make-types state (-> instr outtype)))))
+      ((or i32.eq i32.ne i32.lt_s i32.lt_u i32.gt_s i32.gt_u i32.le_s i32.le_u
+           i32.ge_s i32.ge_u i32.add i32.sub
+           i64.eq i64.ne i64.lt_s i64.lt_u i64.gt_s i64.gt_u i64.le_s i64.le_u
+           i64.ge_s i64.ge_u i64.add i64.sub)
        (values instr (context-push (context-dropn context 2)
-                                   (make-types (car (-> instr outtype))))))
-      (i32.add
-       (values instr (context-push (context-dropn context 2)
-                                   (make-types (car (-> instr outtype))))))
-      (i32.eq
-       (values instr (context-push (context-dropn context 2)
-                                   (make-types (car (-> instr outtype))))))
+                                   (make-types state (-> instr outtype)))))
       (drop
        (values instr (context-drop context)))
+
+      ;;; modify to affect the context when followed by a if
+      (ref.eq
+       (values instr (context-push (context-dropn context 2)
+                                   (make-types state (-> instr outtype)))))
+
+      (ref.is_null
+          (values
+           instr
+           (context-push (context-drop context)
+                         (make-types state (-> instr outtype)))))
+
       (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))
+
+(define-macro (bind-narrow-unreachable name narrow instr body)
+   `(multiple-value-bind (,name _)
+     ,narrow
+     (if ,name
+         (values ,instr
+                 ,body)
+         (values (instantiate::instruction
+                  (opcode 'unreachable)
+                  (intype '())
+                  (outtype '(poly))
+                  (parent (-> ,instr parent)))
+                 #f))))
 
 (define-method (walk-instr instr::one-arg state::bbv-state context::context)
   (with-trace 1 'walk-instr
@@ -546,37 +596,83 @@
          (i32.const
             (values
                instr
-               (context-push context (make-types (car outtype)))))
+               (context-push context (make-types state outtype))))
          (i64.const
             (values
                instr
-               (context-push context (make-types (car outtype)))))
+               (context-push context (make-types state outtype))))
          (ref.null
             (values
                instr
-               (context-push context (make-types '(ref null none)))))
+               (context-push context (make-types state '((ref null none))))))
          (struct.new
+            (print (make-types state outtype))
             (with-access::typeidxp x (idx)
                (values
                   instr
-                  (context-push (context-dropn context (length intype)) (make-types (car outtype))))))
+                  (context-push (context-dropn context (length intype))
+                                (make-types state outtype)))))
          (array.new
             (with-access::typeidxp x (idx)
                (values
                   instr
-                  (context-push (context-dropn context 2) (make-types (car outtype))))))
+                  (context-push (context-dropn context 2)
+                                (make-types state outtype)))))
+
          (array.get
             (with-access::typeidxp x (idx)
-               (values
+               (bind-narrow-unreachable non-null
+                  (context-narrow-null context (instantiate::onstack (pos 1))
+                                       state)
                   instr
-                  (context-push
-                     (context-dropn
-                        (multiple-value-bind (non-null _)
-                           (context-narrow-null context (instantiate::onstack (pos 1)))
-                           non-null)
-                        2)
-                     (make-types (car outtype))))))
+                  (context-push (context-dropn non-null 2)
+                                (make-types state outtype)))))
+
+         (ref.test
+          (values
+           instr
+           (context-push (context-drop context) (make-types state outtype))))
+
+         (global.get
+          (values instr (context-push context (make-types state outtype))))
+
+         (global.set
+          (values instr (context-drop context)))
+
+         (call
+          (values
+           instr
+           (context-push (context-dropn context (length intype))
+                         (make-types state outtype))))
+
+         (array.new_default
+          (values instr (context-push context (make-types state outtype))))
+
+         (ref.cast
+            (with-access::typep x (type)
+               (bind-narrow-unreachable cast
+                  (context-narrow context
+                                  (instantiate::onstack (pos 0))
+                                  (make-types state (list type)))
+                  instr
+                  (context-push cast (make-types state outtype)))))
+
          (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))))
+
+(define-method (walk-instr instr::two-args state::bbv-state context::context)
+   (with-access::two-args instr (opcode x y intype outtype)
+   (match-case (-> instr opcode)
+      ((or struct.get struct.get_u struct.get_s)
+       (with-access::typeidxp x (idx)
+          (with-access::typeidxp x (idx)
+               (bind-narrow-unreachable non-null
+                  (context-narrow-null context (instantiate::onstack (pos 0))
+                                       state)
+                  instr
+                  (context-push (context-drop non-null)
+                                (make-types state outtype))))))
+
+      (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))
 
 (define (walk state::bbv-state specialization::specialization)
    (with-trace 1 'walk
@@ -590,7 +686,11 @@
                (set! version-body (reverse specialized-body))
                (set! version-end (walk-jump end state context specialization)))
             (multiple-value-bind (instr next-context) (walk-instr (car body) state context)
-               (loop (cdr body) next-context (cons instr specialized-body)))))))))
+               (if next-context
+                   (loop (cdr body) next-context (cons instr specialized-body))
+                   (with-access::cfg-node version ((version-body body) (version-end end))
+                     (set! version-body (reverse specialized-body))
+                     (set! version-end (instantiate::terminal (i instr))))))))))))
 
 (define (reach*::specialization state::bbv-state origin::cfg-node context::context from redirects)
    (with-trace 1 'reach
@@ -696,6 +796,7 @@
       stack2))
 
 (define (merge state::bbv-state spec1::specialization spec2::specialization)
+   (***NotImplemented*** 'jftygh)
    (let* ((ctx1::context (-> spec1 context))
           (ctx2::context (-> spec2 context))
           (origin (-> spec1 origin))
@@ -726,9 +827,9 @@
             (loop)))))
 
 ;; BBV CORE ALGO
-(define (bbv::cfg g::cfg version-limit::bint)
+(define (bbv::cfg g::cfg version-limit::bint env::env)
    (with-trace 1 'bbv
-   (let ((state (make-init-state g)))
+   (let ((state (make-init-state g env)))
       (with-access::bbv-state state (queue)
       (with-access::cfg g (entry func)
       (with-access::func func (locals formals type)
@@ -741,7 +842,7 @@
                            (context-register-set
                               func-context
                               i
-                              (make-types (car args-types)))
+                              (make-types state (list (car args-types))))
                            (+ i 1)
                            (cdr args-types)))))
                 (new-entry::specialization (reach state entry func-context #f)))

@@ -13,7 +13,9 @@
            (opt_const "Opt/Const/walk.scm")
            (opt_puredrop "Opt/PureDrop/walk.scm")
            (opt_peephole "Opt/Peephole/walk.scm")
-           (opt_copyprop "Opt/CopyProp/walk.scm"))
+           (opt_copyprop "Opt/CopyProp/walk.scm")
+           (opt_bbv "Opt/BBV/walk.scm")
+           (cfg_walk "Opt/CFG/walk.scm"))
    (import (misc_letif "Misc/let-if.scm"))
    (export (class opt-flags::object
                   (testbr::bool (default #t))
@@ -22,7 +24,9 @@
                   (unreachable::bool (default #t))
                   (const::bool (default #t))
                   (puredrop::bool (default #t))
-                  (peephole::bool (default #t)))
+                  (peephole::bool (default #t))
+                  (bbv (default #f))
+                  (bbv-steps::long (default 0)))
 
            (opt-file! p::prog nthreads::bint flags::opt-flags)))
 
@@ -31,6 +35,8 @@
 
 (define (opt-func! f::func p::prog flags::opt-flags)
    (opt testbr f)
+   (if (-> flags bbv)
+       (set! (-> f body) (cfg->wasm (bbv (func->cfg f) (-> flags bbv-steps) (-> p env)))))
    (opt copyprop f)
    (opt uncast (-> p env) f)
    (opt unreachable f)
