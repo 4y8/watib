@@ -151,14 +151,48 @@
 (define-method (location-equal?::bool loc1::register loc2::location)
    (and (isa? loc2 register) (= (-> loc1 pos) (-> loc2 pos))))
 
-(define (make-empty-context nregisters::bint)
-   (instantiate::context
-      (registers '())
-      (stack '())
-      (equivalences
-         (map
-            (lambda (pos) (list (instantiate::register (pos pos))))
-            (iota nregisters)))))
+(define (make-init-context::context arg-types::pair-nil loc-types::pair-nil st::bbv-state)
+   (define init-ctx (instantiate::context
+                     (registers '())
+                     (stack '())
+                     (equivalences
+                      (map
+                       (lambda (pos) (list (instantiate::register (pos pos))))
+                       (iota (+fx (length arg-types) (length loc-types)))))))
+
+   (define args-ctx
+     (let loop ((ctx init-ctx) (i 0) (arg-types arg-types))
+       (if (null? arg-types)
+           ctx
+           (loop
+            (context-register-set
+             ctx
+             i
+             (make-types st (list (car arg-types))))
+            (+ i 1)
+            (cdr arg-types)))))
+
+   (let loop ((ctx args-ctx) (i (length arg-types)) (loc-types loc-types))
+      (if (null? loc-types)
+          ctx
+          (loop
+           (cond
+            ((not (defaultable? (car loc-types)))
+             ctx)
+            ((numtype? (car loc-types))
+             (context-register-set
+              ctx
+              i
+              (make-types st (list (car loc-types)))))
+            ((reftype? (car loc-types))
+             (context-register-set
+              ctx
+              i
+              (make-types st '((ref null none)))))
+            (else (error "make-empty-context" "unknown defaultable type"
+                         (car loc-types))))
+           (+fx i 1)
+           (cdr loc-types)))))
 
 (define (types-equal?::bool types1::types types2::types)
    (set-equal? (-> types1 set) (-> types2 set)))
@@ -824,7 +858,8 @@
 
 (define (merge-registers::pair-nil registers1::pair-nil registers2::pair-nil)
    (if (not (= (length registers1) (length registers2)))
-       (error 'merge-registers "registers have different sizes" registers1))
+       (error 'merge-registers "registers have different sizes"
+              (list (map car registers1) (map car registers2))))
    (map
       (lambda (reg-type)
          (cons
@@ -850,7 +885,7 @@
       stack2))
 
 (define (merge state::bbv-state spec1::specialization spec2::specialization)
-   (***NotImplemented*** 'jftygh)
+;;   (***NotImplemented*** 'jftygh)
    (let* ((ctx1::context (-> spec1 context))
           (ctx2::context (-> spec2 context))
           (origin (-> spec1 origin))
@@ -887,19 +922,8 @@
       (with-access::bbv-state state (queue)
       (with-access::cfg g (entry func)
       (with-access::func func (locals formals type)
-         (let* ((init-context (make-empty-context (+ (length formals) (length locals))))
-                (func-context
-                  (let loop ((func-context init-context) (i 0) (args-types (car type)))
-                     (if (null? args-types)
-                         func-context
-                         (loop
-                           (context-register-set
-                              func-context
-                              i
-                              (make-types state (list (car args-types))))
-                           (+ i 1)
-                           (cdr args-types)))))
-                (new-entry::specialization (reach state entry func-context #f)))
+         (let* ((init-context (make-init-context (car type) locals state))
+                (new-entry::specialization (reach state entry init-context #f)))
             (trace-item "head=" (-> new-entry id) " type=" type)
             (let loop ()
                (when (not (queue-empty? queue))

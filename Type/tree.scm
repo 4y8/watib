@@ -54,7 +54,7 @@
    (cond
     ((deftype? t) (vector-ref (-> sub dt) (cer t)))
     ((number? t) (vector-ref (-> sub dt) t))
-    ((eq? 'eq t) (-> sub eq))
+    ((eq? 'eq t) (cons 'i31 (-> sub eq)))
     ((eq? 'func t) (-> sub func))
     ((eq? 'array t) (-> sub array))
     ((eq? 'struct t) (-> sub struct))
