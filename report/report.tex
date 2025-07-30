@@ -19,7 +19,6 @@
 \usepackage{graphicx}
 
 \usepackage{titlesec}
-
 \titleformat{\subsubsection}[runin]
   {\normalfont\itshape}
   {\normalfont\bfseries(\thesubsubsection)}
@@ -27,6 +26,7 @@
   {}
   [.]
 
+\titlespacing*{\section}{0pt}{2\baselineskip}{1\baselineskip}
 \titlespacing*{\subsubsection}
   {0pt}{6pt}{\wordsep}  % left, before, after spacing
 
@@ -72,8 +72,8 @@
 \sloppy
 \maketitle
 \begin{abstract}
-  WebAssembly (Wasm) is a code format providing efficient and safe execution.
-  The latest drafts of its standard offer features making it a suitable
+  WebAssembly (Wasm) is a code format providing portable and safe execution.
+  The latest draft of its standard offers features making it a suitable
   compilation target for functional programming languages. These features led to
   the development of Wasm backends for compilers such as the Bigloo Scheme
   compiler. However, Bigloo's Wasm backend relied on binaryen, an external
@@ -83,41 +83,44 @@
   toolchain is integrated into the Bigloo compiler and is also available as a
   standalone tool. We compare \textsf{watib} with binaryen, showing how the
   former deals with the mentioned issues of the latter. We also benchmark
-  \textsf{watib}'s optimisation passes.
+  \textsf{watib}'s optimisation passes showing that they do not impact most
+  Scheme programs except for two tests that got a noticeable improvement. We end
+  by presenting a promising work-in-progress adaptation of Static Basic Block
+  Versioning to Wasm.
 \end{abstract}
 
 \section{Introduction}
 In 2024, a Wasm backend was added to the Bigloo Scheme compiler~\cite{Bigloo}.
 This backend produced textual Wasm and relied on an external toolchain to
-assembly it into the binary format. We developed \textsf{watib} as a replacement
-for this toolchain. It is part of the Bigloo compiler and is also available as a
+assemble it into binary format. We developed \textsf{watib} as a replacement for
+this toolchain. It is part of the Bigloo compiler and is also available as a
 standalone tool with a command-line
 interface\footnote{\url{https://www.normalesup.org/~boussaa/watib/}}.
 
 The rest of this section gives an overview of WebAssembly and \textsf{watib}.
 Section~\ref{val} details \textsf{watib}'s type checker. Section~\ref{opt}
 describes the different optimisation passes. Section~\ref{bench} compares
-\textsf{watib}'s and existing tools' performances, and Section~\ref{sbbv}
+\textsf{watib}'s and existing tools' performance, and Section~\ref{sbbv}
 discusses a work-in-progress optimisation. This presentation omits the assembly
-phase as, once we have an intermediate representation, it is a straightforward
-transcription of the specification.
+phase as it is a straightforward transcription of the interlediate
+representation into the format binary of the specification.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
 language endowed with an efficient binary format. Unlike traditional assembly,
 Wasm is statically typed and only supports structured control flow. Support for
-Wasm in existing compilers is growing~\cite{emscripten, kotlin, ocaml}.
+Wasm in existing compilers is growing~\cite{emscripten, kotlin, ocaml, ruby}.
 
 \subsubsection{The standard}
 The WebAssembly specification~\cite{WebAssemblyCoreSpecification3} specifies
 typing rules (called validation rules), operational semantics, an abstract
 representation of Wasm modules, on which the previous rules are stated, and two
 grammars for concrete formats. The binary format represents WebAssembly modules
-as a sequence of bytes. Wasm virtual machines such as V8~\cite{V8} or
-SpiderMonkey~\cite{SpiderMonkey} and toolchains such as binaryen~\cite{Binaryen}
-or wasm-tools~\cite{WasmTools} receive this format. The textual format
-represents WebAssembly modules as S-expressions. Toolchains receive this format
-and humans (and compilers such as Bigloo) write it.
+as a sequence of bytes. Wasm virtual machines such as the ones implemented in
+V8~\cite{V8} or SpiderMonkey~\cite{SpiderMonkey} and toolchains such as
+binaryen~\cite{Binaryen} or wasm-tools~\cite{WasmTools} receive this format. The
+textual format represents WebAssembly modules as S-expressions. Toolchains
+receive this format and humans (and compilers such as Bigloo) write it.
 
 \subsubsection{New features}
 The third version of the standard adds features facilitating compiling from
@@ -179,7 +182,7 @@ supports using an arbitrary number of threads for these passes using the
 integration with the Bigloo compiler, which can't rely on an external library.
 We have set up continuous integration using tests bundled with the
 specification. As \textsf{watib} does not support the whole standard yet, we
-maintain a repository of tests patched to only use the parts of the
+maintain a repository of tests patched to use only the parts of the
 specification covered by \textsf{watib}.
 
 The WebAssembly platform is in constant evolution, and long-term maintenance is
@@ -196,7 +199,7 @@ account the new instruction.
 
 We now review some differences between \textsf{watib} and already existing
 toolchains (apart from the lack of features and maturity of the former),
-focusing on bynarien (and its assembler \textsf{wasm-as}), the toolchain most
+focusing on binaryen (and its assembler \textsf{wasm-as}), the toolchain most
 compilers use~\cite{Binaryen}, including Bigloo before \textsf{watib}'s
 development.
 \subsubsection{Fault tolerance}
@@ -220,11 +223,12 @@ planned.\footnotetext{in fact, the proofreading induced by our cautious study of
   the specification resulted in a dozen (minor) pull requests and issue reports
   its draft}
 
-Before the introduction of \textsf{watib}, Bigloo's Wasm backend was generating
-code ill-typed according to the standard but which was still accepted by
-\textsf{wasm-as} without any warning. In fact, the original implementation of
-exceptions was incorrect and a spec-compliant validation would have rejected the
-code. The integration of \textsf{watib} in Bigloo revealed the bug.
+For instance, before the introduction of \textsf{watib}, Bigloo's Wasm backend
+was generating code ill-typed according to the standard but which was still
+accepted by \textsf{wasm-as} without any warning. In fact, the original
+implementation of exceptions was incorrect and a spec-compliant validation would
+have rejected the code. The integration of \textsf{watib} in Bigloo revealed the
+bug.
 
 \subsubsection{Linear IR}
 Binaryen's optimiser, \textsf{wasm-opt}, has a tree like IR, in part for
@@ -275,8 +279,8 @@ rules of typing and subtyping.
 \subsubsection{Contexts}
 We state all the following rules in an implicit \emph{context}, which we note
 $C$ in the formal rules. Contexts are records; the only relevant field in the
-following is \textsf{types} which maps type indices to \emph{defined types},
-defined in~\ref{deft}.
+following is \textsf{types} which maps type indices to \emph{defined types}
+(see \S\ref{deft}).
 
 \subsubsection{Value Types}
 Wasm's main types are \emph{value types}, which we will note $t, t_1, t_2$, etc.
@@ -302,14 +306,15 @@ $\funt{t_1}^*\to{t_2}^*$ (recall that a function can have multiple outputs).
 The specification states inference rules to give \emph{instruction types} to
 instructions. These types indicate which values on the stack an instruction
 pops, which values it pushes and which local variables it sets\footnote{to
-forbid, at the type level, using a variable not initialised yet}. We omit this
-last piece of information in our presentation to stay simple. We write
-instruction types like function types: ${t_1}^*\twoheadrightarrow{t_2}^*$ for an
-instruction that pops ${t_1}^*$ and pushes ${t_2}^*$\footnote{the WebAssembly
-standard uses the same arrow for instruction and function types, we distinguish
-them for improved readability}. They obey the classical rule of subtyping for
-functions as presented in~\cite{cardelli1988semantics}. An instruction can
-accept smaller types as inputs and produce bigger types as outputs.
+forbid, at the type level, using a variable not initialised yet}. For the sake
+of simplicity, we omit this last piece of information in this presentation. We
+write instruction types like function types: ${t_1}^*\twoheadrightarrow{t_2}^*$
+for an instruction that pops ${t_1}^*$ and pushes ${t_2}^*$\footnote{the
+WebAssembly standard uses the same arrow for instruction and function types, we
+distinguish them for improved readability}. They obey the classical rule of
+subtyping for functions as presented in~\cite{cardelli1988semantics}. An
+instruction can accept smaller types as inputs and produce bigger types as
+outputs.
 %% réécrire la suite ?
 An additional subtyping rule reflects the stack-based semantics of Wasm: an
 instruction can add arbitrary value types before the input and output types as
@@ -359,13 +364,14 @@ subtype of $\strt {(mut'_i\ t'_i)}_{i=1}^n$, if $mut_i\ t_i\leq mut'_i\ t'_i$
 for all $1\leq i\leq n$.
 
 \subsubsection{Declared subtyping}
-Wasm's subtyping is \emph{declared} as the subtyping relations between the types
-defined have to be specified as part of the subtype's definition to be used.
-Their validity can be checked with the type definition's validation. For
-example, the definition of \texttt{\$pair} in Figure~\ref{ex} states that it is
-a subtype of \texttt{\$pair-nil}. If the \texttt{sub \$pair-nil} part wasn't in
-the definition, the type tests and the casts would be ill-typed, as a value can
-be cast or tested against a type $rt$ if and only if $rt$ is a subtype of the
+Wasm's subtyping is \emph{declared}. This means that a subtyping relation
+between two types defined in a program has to be specified as part of the
+subtype's definition to be used. The validity of the subtyping relations can be
+checked with the type definition's validation. For example, the definition of
+\texttt{\$pair} in Figure~\ref{ex} states that it is a subtype of
+\texttt{\$pair-nil}. If the \texttt{sub \$pair-nil} part wasn't in the
+definition, the type tests and the casts would be ill-typed, as a value can be
+cast or tested against a type $rt$ if and only if $rt$ is a subtype of the
 value's static type.
 
 Each type definition can specify a supertype (the current specification only
@@ -417,7 +423,7 @@ specification. For the subtyping of \emph{value types}, we rewrote the rules to
 have equivalent ones without the transitivity rules\footnote{they are
 implemented by the function \texttt{<ht=} of the \texttt{Type/match.scm} and
 reproduced in Appendix~\ref{subtyping}}, and for \emph{instruction types}, we
-rely on a stack and most general types, as defined in~\ref{mgt}.
+rely on a stack and most general types, as defined in \S\ref{mgt}.
 
 \subsubsection{Most general instruction types}\label{mgt}
 Most instructions have a most general type (i.e.\ an admissible type for the
@@ -444,7 +450,7 @@ compose well.
 We describe how one instruction $i$ modifies the state of this stack. Either we
 treat the instruction in an ad-hoc way (function \texttt{adhoc-instr}), or we
 apply the following procedure (function \texttt{valid-instr}) if the instruction
-falls in one of the two categories of~\ref{mgt}:
+falls in one of the two categories of \S\ref{mgt}:
 \begin{itemize}\setlength{\itemsep}{0pt}
 \item Let ${t_n\ldots t_1}^*\twoheadrightarrow{t'}^*$ be the type of $i$.
 \item Check that the $j^{\text{th}}$ type on the stack is a subtype of $t_j$ and
@@ -503,11 +509,12 @@ following procedure when encountering an instruction $i$:
     associated to $l$ and $\textsf{acp}$ at the end of the block. The upper
     bound of a list of tables assigns $y$ to the $x$ if all tables do and gives
     no information on $x$ otherwise.
-  \item When $i$ is a loop, reset \textsf{acp} to remove all the
-    assignments as we may jump to the beginning of the loop from later in the
+  \item When $i$ is a loop, reset \textsf{acp} to remove all the assignments as
+    we may jump to the beginning of the loop from later in the
     block\footnote{this is suboptimal for global copy propagation, but it is
     sufficient for the code we get, and this optimisation could be replaced by
-    the optimisation we describe in~\ref{sbbv}}. Then treat the loop's body.
+    the optimisation we describe in Section~\ref{sbbv}}. Then treat the loop's
+    body.
   \item When $i$ is an if statement, treat each branch as a block and
     take the upper bound of the two resulting tables.
   \item When protecting a block with some \textsf{catch} clauses, append
@@ -653,26 +660,24 @@ optimisation enabled.
 \end{figure}
 \subsubsection{The results}
 Figure~\ref{r7rs} shows the results of our benchmarks. The red line indicates
-the performance when all \textsf{watib} are enabled, and the blue bars indicates
-the performance without any of them. Our optimisation passes do not impact
-running time of most benchmarks. There is a noticeable negative impact on only
-\texttt{conform} which runs 10\% slower with optimisations. Two benchmarks
-benefit from the optimisations: \texttt{early} and \texttt{fib} with a
-respective speedup of 17\% and 10\%.
+the performance when all of \textsf{watib}'s passes are enabled, and the blue
+bars indicates the performance of the previous backend. Our optimisation passes
+do not impact running time of most benchmarks. There is a noticeable negative
+impact on only \texttt{conform} which runs 10\% slower with optimisations. Two
+benchmarks benefit from the optimisations: \texttt{early} and \texttt{fib} with
+a respective speedup of 17\% and 10\%.
 
 We are investigating the reasons of the slowdown on \texttt{conform}; we found
 that:
 \begin{itemize}
   \item Disabling the Cast Elimination pass solves the issue.
-  \item The SpiderMonkey engine doesn't suffer from the same performance
-    penalty.
-  \item V8's TurboFan, a multi-pass compiler, doesn't suffer either from the
-    same performance penalty.
+  \item The SpiderMonkey engine doesn't suffer from this performance penalty.
+  \item V8's TurboFan, a multi-pass compiler, doesn't suffer either from this
+    performance penalty.
 \end{itemize}
 \section{Static Basic Block Versioning}\label{sbbv}
-We present here a new pass we are working on. \textsf{Watib} does not support
-this pass yet, but we implemented the necessary machinery to experiment with
-hand-optimised programs.
+We present here a work in progress pass. This pass is not complete but works on
+toy programs.
 \subsubsection{Control-Flow Graphs}\label{cfg}
 Some optimisations and code transformations manipulate a \emph{Control-Flow
 Graph} (CFG). It is a graph whose nodes are \emph{basic blocks} (sequences of
@@ -734,7 +739,12 @@ The new head would then branch to one of the previous heads with a
 execution overhead.
 
 We also plan to test not applying the optimisation to some parts of the graph
-where it generates a non-reducible CFG.
+where it generates a non-reducible CFG\@.
+
+\subsubsection{Preliminary results}
+We tested our implementation of SBBV on a toy program written to benefit from
+SBBV (see Appendix~\ref{toy}). Applying this pass to the toy program gives a
+program 28\% faster with V8 and 102\% faster with SpiderMonkey, on an M1 Mac.
 
 \section{Conclusion}
 We reviewed and motivated some of \textsf{watib}'s design choices and we
@@ -831,4 +841,41 @@ is assembled to:
 \inferrule{\text{\textsf{unroll}} (deftype)= (symbol\ldots)\\ C\vdash symbol\leq\text{\textsf{eq}}}
             {C\vdash deftype\leq\text{\textsf{eq}}}
 \end{mathpar}
+\section{A toy program to test SBBV}\label{toy}
+\begin{lstlisting}
+(module
+  (type $boxed-int (struct (field i32)))
+  (type $int-array (array i32))
+
+  (func $f
+    (export "cfg")
+    (param $array (ref $int-array))
+    (result (ref null $boxed-int))
+    (local $i i32)
+    (local $len i32)
+    (local $acc (ref null $boxed-int))
+
+    (local.set $i (i32.const 0))
+    (local.set $len (array.len (local.get $array)))
+    (local.set $acc (ref.null $boxed-int))
+    (block $break
+       (loop $continue
+          (br_if $break (i32.ge_u (local.get $i) (local.get $len)))
+          (if $l (i32.eq (i32.const -1)
+                   (array.get $int-array (local.get $array)
+                      (local.get $i)))
+              (then (local.set $acc (ref.null $boxed-int)))
+              (else (block $br (result (ref $boxed-int))
+                       (br_on_non_null $br (local.get $acc))
+                       (local.set $acc
+                         (struct.new $boxed-int
+                           (array.get $int-array
+                              (local.get $array)
+                              (local.get $i))))
+                       (br $l))
+                    (drop)))
+          (local.set $i (i32.add (i32.const 1) (local.get $i)))
+          (br $continue)))
+    (local.get $acc)))
+\end{lstlisting}
 \end{document}
