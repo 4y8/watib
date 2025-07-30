@@ -44,7 +44,7 @@ instructions on packed types, defaulting to unsigned.
 ## Replacement of block input values by locals
 Binaryen's README mentions that block input values are represented in the IR by
 `pop` subexpressions for `catch` blocks and not supported for the others. It is
-not mentionned that code using block input values will be replaced by the use
+not mentioned that code using block input values will be replaced by the use
 local variables. For instance, the following code:
 ```wasm
 (i32.const 0) 
