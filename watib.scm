@@ -14,6 +14,7 @@
            (cfg_walk     "Opt/CFG/walk.scm")
            (cfg_read     "Opt/CFG/read.scm")
            (env_env      "Env/env.scm")
+           (opt_bbv      "Opt/BBV/walk.scm")
            ))
 
 ;; the following is a hack as indices taken as number are not replaced with
@@ -40,6 +41,7 @@
    (define dump-cfg #f)
    (define dump-cfg-wat #f)
    (define cfg-file #f)
+   (define bbv? #f)
 
    (define (parse-args args)
       (args-parse args
@@ -121,6 +123,9 @@
          (("--read-cfg" ?file (help "Reads the CFG in FILE and dumps it"))
           (set! cfg-file file))
 
+         (("--bbv" (help "Applies BBV to the CFG"))
+          (set! bbv? #t))
+
          (else
           (set! input-files (cons else input-files)))))
 
@@ -167,15 +172,21 @@
     (cfg-file
      (call-with-input-file cfg-file
         (lambda (ip)
-           (multiple-value-bind (g::cfg p) (read-cfg/prog ip)
-              (print-cfg-as-dot g)
-              (call-with-output-file "out.wat"
+           (multiple-value-bind (g::cfg p::prog) (read-cfg/prog ip)
+              (let ((g::cfg (if bbv? (bbv g 3) g)))
+                (print-cfg-as-dot g)
+                (call-with-output-file "out.wat"
                  (lambda (op)
-                    (with-output-to-port op
+                    (with-output-to-port (current-output-port)
                        (lambda ()
-                          (dump-instr (cfg->wasm g) 0)
+                          ;;(dump-instr (cfg->wasm g) 0)
+                          (with-access::func (-> g func) (body)
+                             (set! body (cfg->wasm g)))
                           (call-with-output-file output-file
-                             (lambda (op) (asm-file! p op)))))))))))
+                             (lambda (op)
+                               (opt-file! p nthreads o-flags)
+                               (asm-file! p op))))))))
+              ))))
     ((null? input-files)
      (watib (read (current-input-port) #t)))
     (else (watib `(module ,@(merge-files input-files))))))

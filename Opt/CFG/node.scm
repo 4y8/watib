@@ -33,11 +33,14 @@
               dst-cast::cfg-node
               dst-cast-fail::cfg-node)
 
+            (class on-null::jump
+              ht
+              dst-null::cfg-node
+              dst-non-null::cfg-node)
+
            (final-class cfg-node::object
               body::pair-nil
-              (idx (default 1)) ;; we take as indices integers smaller or
-                                      ;; equal to 0, 1 thus means we don't have
-                                      ;; one yet
+              (idx (default 1))
               (preds::pair-nil (default '()))
               intype::pair-nil
               outtype::pair-nil
@@ -70,6 +73,9 @@
 (define-method (get-succs j::on-cast)
    (list (-> j dst-cast) (-> j dst-cast-fail)))
 
+(define-method (get-succs j::on-null)
+   (list (-> j dst-null) (-> j dst-non-null)))
+
 (define (make-dummy-node::cfg-node)
    (instantiate::cfg-node
     (body '())
@@ -89,4 +95,7 @@
    (cdr outtype))
 
 (define-method (remove-top-outtype j::on-cast outtype::pair-nil)
-   (cdr outtype))
+   outtype)
+
+(define-method (remove-top-outtype j::on-null outtype::pair-nil)
+  outtype)
