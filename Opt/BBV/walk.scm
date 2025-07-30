@@ -780,7 +780,7 @@
                      (set! version-body (reverse specialized-body))
                      (set! version-end (instantiate::terminal (i instr))))))))))))
 
-(define (reach*::specialization state::bbv-state origin::cfg-node context::context from redirects)
+(define (reach*::specialization state::bbv-state origin::cfg-node context::context from merge-from)
    (with-trace 1 'reach
    (with-access::bbv-state state (reachability)
       (let ((target
@@ -809,15 +809,18 @@
                                     (get-specialization-by-id state reachable))))
                (ssr-add-edge! reachability -1 id))
             (for-each
-               (lambda (r::specialization) (ssr-redirect! reachability (-> r id) id))
-               redirects)
+               (lambda (r::specialization)
+                  (with-access::bbv-state state (merge-history)
+                     (hashtable-put! merge-history (-> r id) id)
+                     (ssr-redirect! reachability (-> r id) id)))
+               merge-from)
             target)))))
 
 (define (reach::specialization state::bbv-state origin::cfg-node context::context from)
    (reach* state origin context from '()))
 
-(define (merge-reach::specialization state::bbv-state origin::cfg-node context::context redirects::pair-nil)
-   (reach* state origin context #f redirects))
+(define (merge-reach::specialization state::bbv-state origin::cfg-node context::context merge-from::pair-nil)
+   (reach* state origin context #f merge-from))
 
 (define (partition-equivalence-classes classes::pair-nil)
    (define members (apply lset-union equal? '() classes))
