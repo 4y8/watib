@@ -797,6 +797,15 @@
                   instr
                   (context-push (context-drop non-null)
                                 (make-types state outtype))))))
+
+      (struct.set
+       (with-access::typeidxp x (idx)
+          (bind-narrow-unreachable non-null
+             (context-narrow-null context (instantiate::onstack (pos 1))
+                                  state)
+                  instr
+                  (context-push (context-dropn non-null 2)
+                                (make-types state outtype)))))
       (array.new_data
        (values instr (context-push (context-dropn context 2)
                                    (make-types state outtype))))
