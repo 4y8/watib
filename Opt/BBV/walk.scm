@@ -468,7 +468,7 @@
    (with-access::bbv-state state (all-specializations-by-id)
       (hashtable-get all-specializations-by-id id)))
 
-(define (get-specialization-by-node::specialization state::bbv-state n::cfg-node)
+(define (get-specialization-by-node state::bbv-state n::cfg-node)
    (with-access::bbv-state state (all-specializations-by-node)
       (hashtable-get all-specializations-by-node n)))
 
@@ -1010,11 +1010,14 @@
    #f)
 
 (define (fix-jumps!::cfg-node entry::cfg-node st::bbv-state)
-   (let ((entry::cfg-node (with-access::specialization
-      (get-most-recent-merge-by-id st
-         (with-access::specialization (get-specialization-by-node st entry)
-                                      (id) id))
-      (version) version)))
+   (let* ((spec (get-specialization-by-node st entry))
+          (entry::cfg-node (if spec
+                               (with-access::specialization
+                                (get-most-recent-merge-by-id
+                                 st
+                                 (with-access::specialization spec (id) id))
+                                (version) version)
+                               entry)))
      (unless (isa? entry visited-node)
         (widen!::visited-node entry)
         (fix-end! (-> entry end) st))

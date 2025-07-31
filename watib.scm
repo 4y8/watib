@@ -171,8 +171,6 @@
                       (lambda ()
                         (dump-instr (cfg->wasm cfg) 0))))))))
         (else
-         (with-access::prog p (funcs env)
-                            (print-cfg-as-dot (func->cfg (vector-ref funcs 51))))
          (opt-file! p nthreads o-flags)
          (call-with-output-file output-file
             (lambda (op)

@@ -42,7 +42,6 @@
                                        (vector-ref subtypes i)
                                        (vector-ref subtypes (cer idx))))))))
 
-
       (instantiate::subtyping
        (dt subtypes)
        (eq (iota n))
