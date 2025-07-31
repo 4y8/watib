@@ -38,6 +38,7 @@
 
 (define (opt-func! f::func p::prog flags::opt-flags)
    (opt testbr f)
+   ;;(print-cfg-as-dot (bbv (func->cfg f) (-> flags bbv-steps) (-> p env)))
    (if (-> flags bbv)
        (set! (-> f body) (cfg->wasm (bbv (func->cfg f) (-> flags bbv-steps) (-> p env)))))
    (opt copyprop f)

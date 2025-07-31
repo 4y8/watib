@@ -67,7 +67,7 @@
 (define (do-tree::sequence tree::pair ctx::pair-nil outtype::pair-nil)
    (with-access::node-tree (car tree) (idx intype end)
       (if (loop-header? (car tree))
-          (let ((body (node-within (car tree) (filter merge-head? (cdr tree))
+          (let ((body (node-within (car tree) (children-to-access end tree)
                                    (cons `(loop-headed-by ,idx) ctx) outtype)))
              (instruction->sequence (instantiate::loop
                                      (opcode 'loop)
