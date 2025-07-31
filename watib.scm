@@ -137,7 +137,6 @@
          (else
           (set! input-files (cons else input-files)))))
 
-   (print (-> o-flags bbv))
 
    (define (watib m)
       (let ((p (with-handler
@@ -172,9 +171,12 @@
                       (lambda ()
                         (dump-instr (cfg->wasm cfg) 0))))))))
         (else
+         (with-access::prog p (funcs env)
+                            (print-cfg-as-dot (func->cfg (vector-ref funcs 51))))
          (opt-file! p nthreads o-flags)
          (call-with-output-file output-file
-            (lambda (op) (asm-file! p op)))))))
+            (lambda (op)
+              (asm-file! p op)))))))
 
    (parse-args (cdr argv))
 
@@ -189,7 +191,6 @@
                  (lambda (op)
                     (with-output-to-port (current-output-port)
                        (lambda ()
-                          ;;(dump-instr (cfg->wasm g) 0)
                           (with-access::func (-> g func) (body)
                              (set! body (cfg->wasm g)))
                           (call-with-output-file output-file

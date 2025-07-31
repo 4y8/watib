@@ -19,10 +19,9 @@
 (define (build-subtypes::subtyping env::env)
    (let* ((n (-> env ntype))
           (subtypes (make-vector n '()))
-          (func '())
+          (func (filter (lambda (x) x) (vector->list (-> env func-types))))
           (array '())
-          (struct '())
-          )
+          (struct '()))
 
       (define (add-ht s::symbol i::long)
          (match-case s
@@ -43,6 +42,7 @@
                                        (vector-ref subtypes i)
                                        (vector-ref subtypes (cer idx))))))))
 
+
       (instantiate::subtyping
        (dt subtypes)
        (eq (iota n))
@@ -52,7 +52,10 @@
 
 (define (get-subht::pair-nil t sub::subtyping)
    (cond
-    ((deftype? t) (vector-ref (-> sub dt) (cer t)))
+    ((deftype? t)
+     (if (=fx (cer t) -1)
+         (list t)
+         (vector-ref (-> sub dt) (cer t))))
     ((number? t) (vector-ref (-> sub dt) t))
     ((eq? 'eq t) (cons 'i31 (-> sub eq)))
     ((eq? 'func t) (-> sub func))

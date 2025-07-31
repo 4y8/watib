@@ -647,12 +647,22 @@
            i64.eq i64.ne i64.lt_s i64.lt_u i64.gt_s i64.gt_u i64.le_s i64.le_u
            i64.ge_s i64.ge_u i64.add i64.sub
            f64.add f64.sub f64.mul f64.div f64.min f64.max f64.copysign
-           f32.add f32.sub f32.mul f32.div f32.min f32.max f32.copysign
-           )
+           f32.add f32.sub f32.mul f32.div f32.min f32.max f32.copysign)
        (values instr (context-push (context-dropn context 2)
                                    (make-types state (-> instr outtype)))))
       (drop
        (values instr (context-drop context)))
+
+      ((or i32.wrap_i64 i32.trunc_f32_s i32.trunc_f32_u i32.trunc_f64_s
+           i32.trunc_f64_u i64.extend_i32_s i64.extend_i32_u i64.trunc_f32_s
+           i64.trunc_f32_u i64.trunc_f64_s i64.trunc_f64_u f64.convert_i32_s
+           f64.convert_i32_u f64.convert_i64_s f64.convert_i64_u f32.demote_f64
+           f64.convert_i64_s f64.promote_f32 i32.reinterpret_f32
+           i64.reinterpret_f64 f32.reinterpret_i32 f64.reinterpret_i64
+           i32.extend8_s i32.extend16_s i64.extend8_s i64.extend16_s
+           i64.extend32_s)
+       (values instr (context-push (context-drop context)
+                                   (make-types state (-> instr outtype)))))
 
       ;;; modify to affect the context when followed by a if
       (ref.eq
@@ -664,6 +674,8 @@
            instr
            (context-push (context-drop context)
                          (make-types state (-> instr outtype)))))
+
+      (unreachable (values instr #f))
 
       (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))
 
@@ -704,6 +716,10 @@
             (values
                instr
                (context-push context (make-types state outtype))))
+         (ref.func
+            (values
+               instr
+               (context-push context (make-types state outtype))))
          (ref.null
             (values
                instr
@@ -730,6 +746,14 @@
                   (context-push (context-dropn non-null 2)
                                 (make-types state outtype)))))
 
+         (array.set
+            (with-access::typeidxp x (idx)
+               (bind-narrow-unreachable non-null
+                  (context-narrow-null context (instantiate::onstack (pos 2))
+                                       state)
+                  instr
+                  (context-dropn non-null 3))))
+
          (ref.test
           (values
            instr
@@ -741,7 +765,7 @@
          (global.set
           (values instr (context-drop context)))
 
-         (call
+         ((or call_ref call)
           (values
            instr
            (context-push (context-dropn context (length intype))
@@ -775,6 +799,10 @@
                                 (make-types state outtype))))))
       (array.new_data
        (values instr (context-push (context-dropn context 2)
+                                   (make-types state outtype))))
+
+      (array.new_fixed
+       (values instr (context-push (context-dropn context (length intype))
                                    (make-types state outtype))))
 
       (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))

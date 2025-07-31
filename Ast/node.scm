@@ -192,7 +192,7 @@
 
               (nfunc::long (default 0))
               (func-table (default (create-hashtable eqtest: eq?)))
-              (func-types::vector (default (make-vector 1000000)))
+              (func-types::vector (default (make-vector 1000000 #f)))
               (func-names::vector (default (make-vector 1000000)))
 
               (ntag::long (default 0))
