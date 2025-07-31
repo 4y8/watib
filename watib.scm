@@ -14,8 +14,7 @@
            (cfg_walk     "Opt/CFG/walk.scm")
            (cfg_read     "Opt/CFG/read.scm")
            (env_env      "Env/env.scm")
-           (opt_bbv      "Opt/BBV/walk.scm")
-           ))
+           (opt_bbv      "Opt/BBV/walk.scm")))
 
 ;; the following is a hack as indices taken as number are not replaced with
 ;; their new index
@@ -137,6 +136,8 @@
 
          (else
           (set! input-files (cons else input-files)))))
+
+   (print (-> o-flags bbv))
 
    (define (watib m)
       (let ((p (with-handler

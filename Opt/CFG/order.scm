@@ -14,6 +14,8 @@
    (unless (eq? (-> n idx) 'unvisited)
       (set! (-> n idx) 'unvisited)
       (set! (-> n preds) '())
+      (if (wide-object? n)
+          (shrink! n))
       (for-each clean! (get-succs (-> n end)))))
 
 (define (dfs! n::cfg-node i::long l::pair-nil)

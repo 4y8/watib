@@ -15,7 +15,10 @@
            (opt_peephole "Opt/Peephole/walk.scm")
            (opt_copyprop "Opt/CopyProp/walk.scm")
            (opt_bbv "Opt/BBV/walk.scm")
-           (cfg_walk "Opt/CFG/walk.scm"))
+           (cfg_walk "Opt/CFG/walk.scm")
+
+
+           (cfg_dump     "Opt/CFG/dump.scm"))
    (import (misc_letif "Misc/let-if.scm"))
    (export (class opt-flags::object
                   (testbr::bool (default #t))

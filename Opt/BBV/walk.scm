@@ -32,12 +32,15 @@
    (static (class bbv-state
       (id-counter::long (default 10001))
       all-specializations::obj
+      all-specializations-by-node
       all-specializations-by-id::obj
       merge-history::obj
       queue::obj
       reachability::obj
       env::env
       sub::subtyping))
+
+   (static (wide-class visited-node::cfg-node))
 
    (export (bbv::cfg g::cfg version-limit::bint env::env)))
 
@@ -132,6 +135,9 @@
     (set-cdr! queue entry)
     x))
 (define (queue-peek queue) (if (queue-empty? queue) #f (caar queue)))
+
+(define (queue->list q)
+   (car q))
 
 ;; CONTEXT
 (define-generic (on-popn::location location::location n::bint) location)
@@ -374,7 +380,7 @@
 
 (define (context-register-ref::types context::context location::register)
    (with-trace 1 'register-ref
-      (trace-item "registers=" (-> context registers) " loc=" location)
+      ;;(trace-item "registers=" (-> context registers) " loc=" location)
       (registers-ref (-> context registers) location)))
 
 (define (context-ref::types context::context location::location)
@@ -426,6 +432,7 @@
    (let ((init (instantiate::bbv-state
                   (all-specializations (make-hashtable))
                   (all-specializations-by-id (make-hashtable))
+                  (all-specializations-by-node (create-hashtable :eqtest eq?))
                   (merge-history (make-hashtable))
                   (queue (make-queue))
                   (env env)
@@ -443,9 +450,11 @@
    (-> state id-counter))
 
 (define (add-specialization! state::bbv-state specialization::specialization)
-   (with-access::bbv-state state (all-specializations all-specializations-by-id)
-   (with-access::specialization specialization (origin)
+   (with-access::bbv-state state (all-specializations all-specializations-by-id
+                                                      all-specializations-by-node)
+   (with-access::specialization specialization (origin version)
       (hashtable-put! all-specializations-by-id (-> specialization id) specialization)
+      (hashtable-put! all-specializations-by-node version specialization)
       (hashtable-put!
          all-specializations
          (-> origin idx)
@@ -459,14 +468,20 @@
    (with-access::bbv-state state (all-specializations-by-id)
       (hashtable-get all-specializations-by-id id)))
 
-(define (get-most-recent-merge::specialization state::bbv-state specialization::specialization)
+(define (get-specialization-by-node::specialization state::bbv-state n::cfg-node)
+   (with-access::bbv-state state (all-specializations-by-node)
+      (hashtable-get all-specializations-by-node n)))
+
+(define (get-most-recent-merge-by-id::specialization state::bbv-state id::long)
    (with-access::bbv-state state (merge-history)
-   (with-access::specialization specialization (id)
       (let loop ((id id))
          (let ((merged-to (hashtable-get merge-history id)))
             (if (or (not merged-to) (= merged-to id))
                (get-specialization-by-id state id)
-               (loop merged-to)))))))
+               (loop merged-to))))))
+
+(define (get-most-recent-merge::specialization state::bbv-state specialization::specialization)
+   (get-most-recent-merge-by-id state (-> specialization id)))
 
 (define (get-specialization state::bbv-state origin::cfg-node target-context::context)
    (with-access::bbv-state state (all-specializations)
@@ -694,7 +709,6 @@
                instr
                (context-push context (make-types state '((ref null none))))))
          (struct.new
-            (print (make-types state outtype))
             (with-access::typeidxp x (idx)
                (values
                   instr
@@ -759,6 +773,9 @@
                   instr
                   (context-push (context-drop non-null)
                                 (make-types state outtype))))))
+      (array.new_data
+       (values instr (context-push (context-dropn context 2)
+                                   (make-types state outtype))))
 
       (else (error 'walk-instr "unknown instruction" (-> instr opcode))))))
 
@@ -780,12 +797,22 @@
                      (set! version-body (reverse specialized-body))
                      (set! version-end (instantiate::terminal (i instr))))))))))))
 
-(define (reach*::specialization state::bbv-state origin::cfg-node context::context from merge-from)
-   (with-trace 1 'reach
-   (with-access::bbv-state state (reachability)
-      (let ((target
-               (or
-                  (let ((existing-spec (get-specialization state origin context)))
+(define (reach*::specialization state::bbv-state origin::cfg-node
+                                context::context from merge-from root?::bool)
+   (let* ((n (length (-> origin intype)))
+          (context (duplicate::context context
+                    (stack (take (-> context stack) n))
+                    (equivalences
+                     (filter pair? (map (lambda (l::pair-nil)
+                                          (filter (lambda (loc::location)
+                                                    (or (isa? loc register)
+                                                        (<fx (-> loc pos) n))) l))
+                                        (-> context equivalences)))))))
+     (with-trace 1 'reach
+        (with-access::bbv-state state (reachability)
+           (let ((target
+                  (or
+                   (let ((existing-spec (get-specialization state origin context)))
                      (trace-item "existing-spec="
                                  (if existing-spec (with-access::specialization existing-spec (id) id) #f))
                      existing-spec)
@@ -794,33 +821,46 @@
                         (instantiate::specialization
                            (origin origin)
                            (id (new-id! state))
-                           (version (duplicate::cfg-node origin (body '()) (idx 'dummy)))
+                           (version (duplicate::cfg-node origin (body '()) (idx 'bbv-dummy)))
                            (context context))))
                      (add-specialization! state new-specialization)
                      (trace-item "enqueue=" (-> new-specialization id))
-                     (queue-put! (-> state queue) new-specialization)
                      new-specialization))))
-         (with-access::specialization target (id)
-            (if from
-               (ssr-add-edge! reachability (with-access::specialization from (id) id) id
-                  :onconnect (lambda (reachable)
-                                 (queue-put!
-                                    (-> state queue)
-                                    (get-specialization-by-id state reachable))))
-               (ssr-add-edge! reachability -1 id))
-            (for-each
-               (lambda (r::specialization)
-                  (with-access::bbv-state state (merge-history)
-                     (hashtable-put! merge-history (-> r id) id)
-                     (ssr-redirect! reachability (-> r id) id)))
-               merge-from)
-            target)))))
 
-(define (reach::specialization state::bbv-state origin::cfg-node context::context from)
-   (reach* state origin context from '()))
+             (queue-put! (-> state queue) target)
+             (with-access::specialization target (id)
+                (if root?
+                        (ssr-add-edge! reachability -1 id))
+                (if from
+                    (ssr-add-edge! reachability (with-access::specialization from (id) id) id
+                                   :onconnect (lambda (reachable)
+                                                (queue-put!
+                                                 (-> state queue)
+                                                 (get-specialization-by-id state reachable)))))
+                (for-each
+                 (lambda (r::specialization)
+                    (with-access::bbv-state state (merge-history)
+                       (hashtable-put! merge-history (-> r id) id)
+                       (ssr-redirect! reachability (-> r id) id
+                                      :onconnect (lambda (reachable)
+                                                    (queue-put!
+                                                     (-> state queue)
+                                                     (get-specialization-by-id
+                                                      state reachable))))))
+                 merge-from)
+                target))))))
 
-(define (merge-reach::specialization state::bbv-state origin::cfg-node context::context merge-from::pair-nil)
-   (reach* state origin context #f merge-from))
+(define (reach::specialization state::bbv-state origin::cfg-node
+                               context::context from::specialization)
+   (reach* state origin context from '() #f))
+
+(define (reach-root::specialization state::bbv-state origin::cfg-node
+                                    context::context)
+   (reach* state origin context #f '() #t))
+
+(define (merge-reach::specialization state::bbv-state origin::cfg-node
+                                     context::context merge-from::pair-nil)
+   (reach* state origin context #f merge-from #f))
 
 (define (partition-equivalence-classes classes::pair-nil)
    (define members (apply lset-union equal? '() classes))
@@ -891,7 +931,7 @@
       stack2))
 
 (define (merge state::bbv-state spec1::specialization spec2::specialization)
-;;   (***NotImplemented*** 'jftygh)
+   ;;(***NotImplemented*** 'jftygh)
    (let* ((ctx1::context (-> spec1 context))
           (ctx2::context (-> spec2 context))
           (origin (-> spec1 origin))
@@ -921,6 +961,36 @@
             (apply merge state versions-to-merge)
             (loop)))))
 
+(define-generic (fix-end! j::jump st::bbv-state))
+
+(define-method (fix-end! j::unconditional st::bbv-state)
+   (set! (-> j dst) (fix-jumps! (-> j dst) st)))
+
+(define-method (fix-end! j::conditional st::bbv-state)
+   (set! (-> j dst-true) (fix-jumps! (-> j dst-true) st))
+   (set! (-> j dst-false) (fix-jumps! (-> j dst-false) st)))
+
+(define-method (fix-end! j::on-cast st::bbv-state)
+   (set! (-> j dst-cast) (fix-jumps! (-> j dst-cast) st))
+   (set! (-> j dst-cast-fail) (fix-jumps! (-> j dst-cast-fail) st)))
+
+(define-method (fix-end! j::on-null st::bbv-state)
+   (set! (-> j dst-null) (fix-jumps! (-> j dst-null) st))
+   (set! (-> j dst-non-null) (fix-jumps! (-> j dst-non-null) st)))
+
+(define-method (fix-end! j::terminal st::bbv-state)
+   #f)
+
+(define (fix-jumps!::cfg-node entry::cfg-node st::bbv-state)
+  (print (with-access::specialization (get-specialization-by-node st entry) (id) id))
+   (let ((entry::cfg-node (with-access::specialization
+      (get-most-recent-merge-by-id st (-> entry idx))
+      (version) version)))
+     (unless (isa? entry visited-node)
+        (widen!::visited-node entry)
+        (fix-end! (-> entry end) st))
+     entry))
+
 ;; BBV CORE ALGO
 (define (bbv::cfg g::cfg version-limit::bint env::env)
    (with-trace 1 'bbv
@@ -929,27 +999,24 @@
       (with-access::cfg g (entry func)
       (with-access::func func (locals formals type)
          (let* ((init-context (make-init-context (car type) locals state))
-                (new-entry::specialization (reach state entry init-context #f)))
+                (new-entry::specialization (reach-root state entry init-context)))
             (trace-item "head=" (-> new-entry id) " type=" type)
             (let loop ()
                (when (not (queue-empty? queue))
+                  (trace-item "queue=" (map (lambda (s::specialization) (-> s id)) (queue->list queue)))
                   (let ((specialization::specialization (queue-get! queue)))
                     (trace-item "dequeue-id=" (-> specialization id))
                      (merge? state specialization version-limit)
                      (with-access::specialization specialization (version)
                      (with-access::cfg-node version (idx)
                         (trace-item "reachable?=" (reachable? state specialization) " dummy?=" (eq? idx 'dummy))
-                        (if (and (reachable? state specialization) (eq? idx 'dummy))
+                        (if (and (reachable? state specialization) (eq? idx 'bbv-dummy))
                             (walk state specialization))))
                      (loop))))
-            (let ((final-entry
-                   (with-access::specialization
-                      (get-most-recent-merge state new-entry)
-                      (version) version)))
+            (let ((final-entry (fix-jumps! (-> new-entry version) state)))
             (multiple-value-bind (-size rpostorder) (reverse-postorder! final-entry)
-               (let ((new-cfg (instantiate::cfg
-                                 (entry final-entry)
-                                 (size (-fx 0 -size))
-                                 (rpostorder rpostorder)
-                                 (func func))))
-                  new-cfg))))))))))
+               (instantiate::cfg
+                (entry final-entry)
+                (size (-fx 0 -size))
+                (rpostorder rpostorder)
+                (func func)))))))))))
