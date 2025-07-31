@@ -54,7 +54,7 @@
    (filter merge-head? (cdr tree)))
 
 (define-method (children-to-access j::on-cast tree::pair)
-   (filter (lambda (n) (or (eq? (-> j dst-cast) (car n)) (merge-head? n)))
+   (filter (lambda (n) (or (eq? (-> j dst-cast-fail) (car n)) (merge-head? n)))
            (cdr tree)))
 
 (define-method (children-to-access j::on-null tree::pair)
@@ -151,14 +151,14 @@
 
 (define-method (branch-after-body::pair-nil j::on-cast src::node-tree
                                             ctx::pair-nil outtype::pair-nil)
-   (with-access::sequence (do-branch src (-> j dst-cast-fail) ctx outtype)
+   (with-access::sequence (do-branch src (-> j dst-cast) ctx outtype)
                           (body)
-      (with-access::node-tree (-> j dst-cast) (intype idx)
+      (with-access::node-tree (-> j dst-cast-fail) (intype idx)
          (cons
           (instantiate::three-args
-           (opcode 'br_on_cast)
+           (opcode 'br_on_cast_fail)
            (intype `(,(-> j rt-src)))
-           (outtype `(,(-> j rt-src))) ;; to fix with diff
+           (outtype `(,(-> j rt-dst))) ;; to fix with diff
            (parent (instantiate::modulefield)) ;; to fix
            (x (instantiate::labelidxp
                (idx (label-index idx ctx))
