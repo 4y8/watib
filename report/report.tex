@@ -79,14 +79,14 @@
   compiler. However, Bigloo's Wasm backend relied on binaryen, an external
   toolchain with user-friendliness and spec-compliance issues.
 
-  We present \textsf{watib}, a new WebAssembly Toolchain written In Bigloo. This
+  We present \textsf{watib}, a new WebAssembly Toolchain written in Bigloo. This
   toolchain is integrated into the Bigloo compiler and is also available as a
   standalone tool. We compare \textsf{watib} with binaryen, showing how the
-  former deals with the mentioned issues of the latter. We also benchmark
-  \textsf{watib}'s optimisation passes showing that they do not impact most
-  Scheme programs except for two tests that got a noticeable improvement. We end
-  by presenting a promising work-in-progress adaptation of Static Basic Block
-  Versioning to Wasm.
+  former deals with the mentioned issues of the latter. On benchmarks, we have
+  observed that \textsf{watib}'s optimisation passes do not impact most Scheme
+  programs except for two tests that got a noticeable improvement and one that
+  got an unexplained regression. We conclude by presenting a promising
+  work-in-progress adaptation of Static Basic Block Versioning to Wasm.
 \end{abstract}
 
 \section{Introduction}
@@ -749,7 +749,11 @@ program 28\% faster with V8 and 102\% faster with SpiderMonkey, on an M1 Mac.
 \section{Conclusion}
 We reviewed and motivated some of \textsf{watib}'s design choices and we
 compared it to existing toolchains. We also detailed the type checking
-algorithm, and the optimisation passes.
+algorithm, and the optimisation passes. Benchmarks showed that these passes are
+not sufficient to impact most code produced by Bigloo. To adress this issue, we
+ended by presenting our on-going implementation of SBBV for Wasm.
+
+Our work on \textsf{watib} is far from finished. We plan
 
 
 \renewcommand{\baselinestretch}{1}
