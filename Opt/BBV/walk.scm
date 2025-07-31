@@ -982,9 +982,10 @@
    #f)
 
 (define (fix-jumps!::cfg-node entry::cfg-node st::bbv-state)
-  (print (with-access::specialization (get-specialization-by-node st entry) (id) id))
    (let ((entry::cfg-node (with-access::specialization
-      (get-most-recent-merge-by-id st (-> entry idx))
+      (get-most-recent-merge-by-id st
+         (with-access::specialization (get-specialization-by-node st entry)
+                                      (id) id))
       (version) version)))
      (unless (isa? entry visited-node)
         (widen!::visited-node entry)
