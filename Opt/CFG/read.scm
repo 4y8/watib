@@ -100,6 +100,7 @@
           (multiple-value-bind (i outtype) (valid-instrs env instrs intype)
              (let ((end (read-jump j nodes env outtype)))
                 (instantiate::cfg-node
+                 (parent-loops '()) ;; to fix
                  (intype intype)
                  (outtype (reverse (remove-top-outtype end outtype)))
                  (body i)

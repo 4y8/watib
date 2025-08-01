@@ -42,6 +42,8 @@
               body::pair-nil
               (idx (default 1))
               (preds::pair-nil (default '()))
+              (loop-head?::bool (default #f))
+              parent-loops::pair-nil
               intype::pair-nil
               outtype::pair-nil
               end::jump)
@@ -82,6 +84,7 @@
     (idx 'dummy)
     (outtype '())
     (intype '())
+    (parent-loops '())
     (end (instantiate::switch (dsts '(#f))))))
 
 
