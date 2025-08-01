@@ -314,7 +314,7 @@
           (set! (-> dummy-node outtype) (-> loop-head outtype))
           (set! (-> dummy-node end) (-> loop-head end))
           (set! (-> dummy-node loop-head?) #t)
-          (set! (-> dummy-node parent-loops) parent-loops)
+          (set! (-> dummy-node parent-loops) (cons dummy-node parent-loops))
 
           (end-current-block
            (instantiate::unconditional (dst dummy-node))))))
