@@ -21,7 +21,7 @@
 \usepackage{titlesec}
 \titleformat{\subsubsection}[runin]
   {\normalfont\itshape}
-  {\normalfont\bfseries(\thesubsubsection)}
+  {\hspace*{\parindent}\normalfont\bfseries(\thesubsubsection)}
   {1.5\wordsep}
   {}
   [.]
@@ -102,8 +102,8 @@ Section~\ref{val} details \textsf{watib}'s type checker. Section~\ref{opt}
 describes the different optimisation passes. Section~\ref{bench} compares
 \textsf{watib}'s and existing tools' performance, and Section~\ref{sbbv}
 discusses a work-in-progress optimisation. This presentation omits the assembly
-phase as it is a straightforward transcription of the interlediate
-representation into the format binary of the specification.
+phase as it is a straightforward transcription of the intermediate
+representation into the binary format of the specification.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
@@ -131,6 +131,7 @@ stable and already implemented by the major Wasm engines. Bigloo's Wasm backend
 relies on these features.
 
 \subsubsection{An Example}
+ééé
 The example of Figure~\ref{ex} demonstrates the features mentioned earlier. For
 a more detailed introduction to WebAssembly,
 see~\cite[Section~2.1]{phipps2023continuing} or~\cite{haas2017bringing}. This
@@ -356,15 +357,16 @@ iso-recursive subtyping}.
 
 Function types are endowed with the same first rule described for instruction
 types (the contravariant/covariant one). An array type $\arrt mut\ t$ is a
-subtype of $\arrt mut'\ t'$ if $mut\ t\leq mut'\ t'$. It means that $mut$ is
-equal to $mut'$ and that $t$ is a subtype of $t'$. When both types are mutable
-we also require that $t'$ is a subtype of $t$, i.e.\ that both types are
-equivalent. A structure type $\strt {(mut_i\ t_i)}_{i=1}^n {(mut\ t)}^*$ is a
-subtype of $\strt {(mut'_i\ t'_i)}_{i=1}^n$, if $mut_i\ t_i\leq mut'_i\ t'_i$
-for all $1\leq i\leq n$.
+subtype of $\arrt mut'\ t'$ if, and only if, $mut\ t$ is a subtype of
+$mut'\ t'$. This means that $mut$ is equal to $mut'$ and that $t$ is a subtype
+of $t'$. When both types are mutable we also require that $t'$ is a subtype of
+$t$, i.e.\ that both types are equivalent. A structure type $\strt
+{(mut_i\ t_i)}_{i=1}^n {(mut\ t)}^*$ is a subtype of $\strt
+{(mut'_i\ t'_i)}_{i=1}^n$ if, and only if, $mut_i\ t_i$ is a subtype of
+$mut'_i\ t'_i$ for all $1\leq i\leq n$.
 
 \subsubsection{Declared subtyping}
-Wasm's subtyping is \emph{declared}. This means that a subtyping relation
+Wasm's subtyping is \emph{declared}; this means that a subtyping relation
 between two types defined in a program has to be specified as part of the
 subtype's definition to be used. The validity of the subtyping relations can be
 checked with the type definition's validation. For example, the definition of
@@ -409,6 +411,9 @@ a defined type of the form $(\rect st^*).i$ by the $i^{\text{th}}$ type of $st$
 where the indices of the form $\rect j$ have been replaced by $(\rect st^*).j$.
 
 \subsection{A type checker for WebAssembly}\label{algo}
+We now describe \textsf{watib}'s type checker for instructions and sequences of
+instructions. The main difficulty encountered was implementing the transitivity
+rule for instructions.
 \subsubsection{The problem of transitivity}
 The typing rules given by the third section of the specification are purely
 declarative. They give more than one type to many instructions and rely on the
@@ -665,15 +670,22 @@ bars indicates the performance of the previous backend. Our optimisation passes
 do not impact running time of most benchmarks. There is a noticeable negative
 impact on only \texttt{conform} which runs 10\% slower with optimisations. Two
 benchmarks benefit from the optimisations: \texttt{early} and \texttt{fib} with
-a respective speedup of 17\% and 10\%.
+a respective speedup of 17\% and 10\%. The overall absent impact of our
+optimisations on these benchmarks isn't surprising: the benchmark mode of the
+Bigloo compiler already removes type tests. Using less agressive optimisation
+levels shows a better performance gain.
 
 We are investigating the reasons of the slowdown on \texttt{conform}; we found
 that:
 \begin{itemize}
-  \item Disabling the Cast Elimination pass solves the issue.
+  \item Disabling the Cast Elimination pass solves the issue. In fact, removing
+    three useless casts from the original program is enough to have a program
+    10\% slower. We do not remove this optimisation as it reduces code size and
+    doesn't cause the same issues in other conditions.
   \item The SpiderMonkey engine doesn't suffer from this performance penalty.
   \item V8's TurboFan, a multi-pass compiler, doesn't suffer either from this
     performance penalty.
+  \item Other programs do not benefit from disabling cast elimination.
 \end{itemize}
 \section{Static Basic Block Versioning}\label{sbbv}
 We present here a work in progress pass. This pass is not complete but works on
@@ -695,17 +707,17 @@ that. In \textsf{watib}, SSBV could subsume Copy Propagation and Cast
 Elimination.
 
 \subsubsection{Construction of a control-flow graph}
-Constructing a CFG from a Wasm program is straightforward except for exceptions
-which we don't support yet. One only needs to follow the program's control flow,
-while keeping a state of the types on the stack to annotate the basic blocks
-with types.
+Constructing a CFG from a Wasm program is straightforward except for
+\textsf{try\_table} which we don't support yet. One only needs to follow the
+program's control flow, while keeping a state of the types on the stack to
+annotate the basic blocks with types.
 
 \subsubsection{Reconstruction of Wasm}
-As we don't have a general goto instruction, the translation of a CFG to a a
-valid Wasm program isn't as easy. To reconstruct structured control flow, we
-implement the algorithm described in~\cite{ramsey2022beyond}. This algorithm
-relies on the \emph{dominance tree} of the CFG, which we compute using the
-algorithm of~\cite{cooper2001simple}. We adaptated Ramsey's algorithm to support
+Absence of a goto instruction complexifies the translation of a CFG to a valid
+Wasm program. To reconstruct structured control flow, we implement the algorithm
+described in~\cite{ramsey2022beyond}. This algorithm relies on the
+\emph{dominance tree} of the CFG, which we compute using the algorithm
+of~\cite{cooper2001simple}. We adaptated Ramsey's algorithm to support
 \textsf{br\_on\_cast} as a way to jump out of a block and to use the type
 annotations on the CFG to type the Wasm blocks. The latter addition allows
 preserving block parameters and output values in the input program.
@@ -714,8 +726,8 @@ preserving block parameters and output values in the input program.
 Ramsey's algorithm works on \emph{reducible} CFGs. Intuitively, a CFG is
 reducible when each loop has a single entry point. WebAssembly's structured
 control flow only produce such CFGs. But the SBBV we work on can modify the CFG
-of a program with no guaranty on reducibility, at least in its current
-formulation.
+of a program with no guaranty on reducibility. We found some programs where the
+CFGs obtained after applying SBBV were not reducible anymore.
 
 \subsubsection{Fixing non-reducibility}
 We are considering two different ways to obtain a reducible CFG after this pass.
@@ -741,6 +753,14 @@ execution overhead.
 We also plan to test not applying the optimisation to some parts of the graph
 where it generates a non-reducible CFG\@.
 
+\subsubsection{Keeping the graph reducible}
+Node splitting turns a non-reducible CFG into a reducible one by duplicating
+basic blocks, but SBBV already duplicates some basic blocks. We are thus
+investigating a way to maintain a reducible CFG at each step of the algorithm.
+To do so, each basic block contains, in its corresponding context, a stack of
+the loops is belongs to. This allows forbidding jumping inside a loop from a
+basic block outside the loop (unless the destination is the loop head).
+
 \subsubsection{Preliminary results}
 We tested our implementation of SBBV on a toy program written to benefit from
 SBBV (see Appendix~\ref{toy}). Applying this pass to the toy program gives a
@@ -753,17 +773,14 @@ algorithm, and the optimisation passes. Benchmarks showed that these passes are
 not sufficient to impact most code produced by Bigloo. To adress this issue, we
 ended by presenting our on-going implementation of SBBV for Wasm.
 
-Our work on \textsf{watib} is far from finished. We plan
-
-
 \renewcommand{\baselinestretch}{1}
 \printbibliography
 \renewcommand{\baselinestretch}{1.05}
 
 \newpage
 \appendix
-\section{Wasm-as' extensions to the specification}\label{wasmasex}
-We try to list wasm-as' extensions to the spec, i.e.\ code modification made by
+\section{Wasm-as's extensions to the specification}\label{wasmasex}
+We try to list wasm-as's extensions to the spec, i.e.\ code modification made by
 wasm-as silently that do not appear specification. To our knowledge, this
 behaviours are not documented. The list is non-exhaustive. Feel free to contact
 us if you find anything missing.
