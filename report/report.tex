@@ -131,7 +131,6 @@ stable and already implemented by the major Wasm engines. Bigloo's Wasm backend
 relies on these features.
 
 \subsubsection{An Example}
-ééé
 The example of Figure~\ref{ex} demonstrates the features mentioned earlier. For
 a more detailed introduction to WebAssembly,
 see~\cite[Section~2.1]{phipps2023continuing} or~\cite{haas2017bringing}. This
@@ -477,7 +476,7 @@ empty or equal to \textsf{(poly)}.
 \textsf{Watib} performs several optimisation passes that all maintain type
 information. Our optimiser is transformation-based: it applies sequentially
 small indepedent code transformations. As noted in the introduction
-of~\cite{jones1998transformation}, this design increases modularity of the the
+of~\cite{jones1998transformation}, this design increases modularity of the
 toolchain, and it facilitates experimenting with the order of the passes.
 
 %% As we show it later, some code is unnecessary execution-wise but
@@ -531,8 +530,8 @@ At the end of each block, remove all the assignments in \textsf{acp} whose
 right-hand side is uninitialised in the parent block.
 \subsubsection{Pure Drops Elimination}
 When an instruction produces a single value that is then popped by a
-\textsf{drop}, both instructions are useless, except for the side effects of the
-former. The Pure Drops Elimination pass removes such patterns that do no side
+\textsf{drop}, both instructions are useless except for the side effects of the
+former. The Pure Drops Elimination pass removes such patterns that have no side
 effects apart from popping values on the stack. When a removed instruction
 popped values of the stack, each popped value gets a corresponding \textsf{drop}
 that can be removed by the pass.
@@ -661,7 +660,9 @@ optimisation enabled.
 \begin{figure}[h!]
   %\centering
   \includegraphics[width=1\textwidth]{report/bench.pdf}
-  \caption{Benchmarks against the a subset of the R7RS benchmarks suite.}\label{r7rs}
+  \caption{Benchmarks against the a subset of the R7RS benchmarks suite. The
+    blue bars represent the ratio between the execution times after and before
+    the introduction of \textsf{watib} (higher is better)}\label{r7rs}
 \end{figure}
 \subsubsection{The results}
 Figure~\ref{r7rs} shows the results of our benchmarks. The red line indicates
@@ -700,11 +701,14 @@ consider CFGs whose basic blocks have instruction types.
 \subsubsection{The optimisation}
 We are working to adapt Static Basic Block Versioning or
 SBBV~\cite{melanccon2024static} (which works on CFGs) to WebAssembly. This
-optimisation produces different versions of a same basic block. Each version has
-more precise information about the context it begins in (with information on
-local variables for instance) and can specialise its instructions to reflect
-that. In \textsf{watib}, SSBV could subsume Copy Propagation and Cast
-Elimination.
+optimisation associates to each basic block a context which contains information
+on the program at the beginning of the block (for instance wether some reference
+is null). This pass then duplicates some blocks when they to reflect for each
+context. Each version can specialise its instructions to take into account the
+context (by removing redundant type tests for instance). A same basic block can
+be duplicated up to a fixed limit. When this limit is reached, the pass merges
+two versions of the block. In \textsf{watib}, SSBV could subsume Copy
+Propagation and Cast Elimination.
 
 \subsubsection{Construction of a control-flow graph}
 Constructing a CFG from a Wasm program is straightforward except for
@@ -758,8 +762,9 @@ Node splitting turns a non-reducible CFG into a reducible one by duplicating
 basic blocks, but SBBV already duplicates some basic blocks. We are thus
 investigating a way to maintain a reducible CFG at each step of the algorithm.
 To do so, each basic block contains, in its corresponding context, a stack of
-the loops is belongs to. This allows forbidding jumping inside a loop from a
-basic block outside the loop (unless the destination is the loop head).
+the loops it belongs to. This allows forbidding jumping inside a loop from a
+basic block outside the loop (unless the destination is the loop's head). When
+such a jump should occur, the jumps target is duplicated.
 
 \subsubsection{Preliminary results}
 We tested our implementation of SBBV on a toy program written to benefit from
