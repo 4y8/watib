@@ -644,8 +644,8 @@ $l$ with a parameter of type $rt$. The else branch follows the
 \textsf{br\_on\_cast} which branches to $l$. The block labeled by $l$ puts its
 parameter in the local variable $y$ and replaces $x$ by $y$ in the then branch
 following the same procedure as Copy Propagation. This whole code is contained
-in a block which the else branch goes to at the end. Cast Elimination can then
-removes useless tests.
+in a block which the else branch jumps to at the end. Cast Elimination can then
+removes tests made useless.
 
 While the code after the transformation is bigger, some instructions \texttt{(br
   \$end)} can be removed on real examples.
@@ -717,11 +717,11 @@ program's control flow, while keeping a state of the types on the stack to
 annotate the basic blocks with types.
 
 \subsubsection{Reconstruction of Wasm}
-Absence of a goto instruction complexifies the translation of a CFG to a valid
+Absence of a goto instruction complicates the translation of a CFG to a valid
 Wasm program. To reconstruct structured control flow, we implement the algorithm
 described in~\cite{ramsey2022beyond}. This algorithm relies on the
 \emph{dominance tree} of the CFG, which we compute using the algorithm
-of~\cite{cooper2001simple}. We adaptated Ramsey's algorithm to support
+of~\cite{cooper2001simple}. We adapted Ramsey's algorithm to support
 \textsf{br\_on\_cast} as a way to jump out of a block and to use the type
 annotations on the CFG to type the Wasm blocks. The latter addition allows
 preserving block parameters and output values in the input program.
@@ -775,8 +775,8 @@ program 28\% faster with V8 and 102\% faster with SpiderMonkey, on an M1 Mac.
 We reviewed and motivated some of \textsf{watib}'s design choices and we
 compared it to existing toolchains. We also detailed the type checking
 algorithm, and the optimisation passes. Benchmarks showed that these passes are
-not sufficient to impact most code produced by Bigloo. To adress this issue, we
-ended by presenting our on-going implementation of SBBV for Wasm.
+not sufficient to impact most code produced by Bigloo. To address this issue, we
+ended by presenting our ongoing implementation of SBBV for Wasm.
 
 \renewcommand{\baselinestretch}{1}
 \printbibliography
