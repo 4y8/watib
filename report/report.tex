@@ -7,14 +7,14 @@
 %\usepackage{Baskervaldx}
 \usepackage[xcharter]{newtx}
 
-\renewcommand{\baselinestretch}{1.05}
+\renewcommand{\baselinestretch}{1.06}
 %\usepackage{MnSymbol}
 \usepackage{inconsolata}
 \usepackage[scaled=0.92]{sourcesanspro}
 \usepackage{xcolor}
 \usepackage[utf8]{inputenc}
 \usepackage[english]{babel}
-\usepackage[a4paper, left=1.3in, right=1.3in]{geometry}
+\usepackage[a4paper, left=1.33in, right=1.33in]{geometry}
 \usepackage{calc}
 \usepackage{graphicx}
 
@@ -578,11 +578,11 @@ the previous ones.
 \subsubsection{Cast Elimination}
 The Cast Elimination pass removes redundant casts and replaces type tests by
 constants if their result can be determined. Such casts and tests could be
-introduced by copy-propagation as when we may replace a variable with another
-one of a smaller type or by the next optimisation. To stay conservative about
-side effects, eliminated tests are replaced by a \textsf{drop} and the result of
-the test, which is a constant. Pure Drop Elimination will remove some useless
-computation. Constant folding will propagate the result of the test.
+introduced by copy propagation or by the next optimisation, as both may
+replace a variable with another one of a smaller type. To stay conservative
+about side effects, eliminated tests are replaced by a \textsf{drop} and the
+result of the test, which is a constant. Pure Drop Elimination will remove some
+useless computation. Constant folding will propagate the result of the test.
 
 To check for type tests to eliminate, we compare the argument's actual type
 (which may be smaller than its static type) against the type it is tested for.
@@ -657,6 +657,10 @@ While the code after the transformation is bigger, some instructions \texttt{(br
   \$end)} can be removed on real examples.
 
 \section{Benchmarks}\label{bench}
+We now describe our benchmark procedure and comment on the results. One of our
+benchmarks has a counterintuitive outcome --- which happens often when
+optimising Wasm~\cite{romano2023function}. Thus, we conclude by listing the
+experiments we made to try to understand this unexpected result.
 \subsubsection{The methodology}
 We tested our toolchain by running, on Bigloo's Wasm backend, a subset of the
 R7RS benchmarks~\cite{r7rsbench}, the standard benchmark suite for Scheme. We
@@ -672,7 +676,7 @@ optimisation enabled.
 \end{figure}
 \subsubsection{The results}
 Figure~\ref{r7rs} shows the results of our benchmarks. The red line indicates
-the performance whith all of \textsf{watib}'s optimisation passes enabled,
+the performance with all of \textsf{watib}'s optimisation passes enabled,
 and the blue bars indicates the performance of the previous backend. Our
 optimisation passes do not impact running time of most benchmarks. There is a
 noticeable negative impact on only \texttt{conform} which runs 10\% slower with
