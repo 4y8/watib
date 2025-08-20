@@ -80,13 +80,14 @@
   toolchain with user-friendliness and spec-compliance issues.
 
   We present \textsf{watib}, a new WebAssembly Toolchain written in Bigloo. This
-  toolchain is integrated into the Bigloo compiler and is also available as a
-  standalone tool. We compare \textsf{watib} with binaryen, showing how the
-  former deals with the mentioned issues of the latter. On benchmarks, we have
-  observed that \textsf{watib}'s optimisation passes do not impact most Scheme
-  programs except for two tests that got a noticeable improvement and one that
-  got an unexplained regression. We conclude by presenting a promising
-  work-in-progress adaptation of Static Basic Block Versioning to Wasm.
+  optimising toolchain is integrated into the Bigloo compiler and is also
+  available as a standalone tool. We compare \textsf{watib} with binaryen,
+  showing how the former deals with the mentioned issues of the latter. On
+  benchmarks, we have observed that \textsf{watib}'s optimisation passes do not
+  impact most Scheme programs except for two tests that got a noticeable
+  improvement and one that got an unexplained regression. We conclude by
+  presenting a promising work-in-progress adaptation of Static Basic Block
+  Versioning to Wasm.
 \end{abstract}
 
 \section{Introduction}
@@ -98,12 +99,12 @@ standalone tool with a command-line
 interface\footnote{\url{https://www.normalesup.org/~boussaa/watib/}}.
 
 The rest of this section gives an overview of WebAssembly and \textsf{watib}.
-Section~\ref{val} details \textsf{watib}'s type checker. Section~\ref{opt}
+Section~\ref{val} details \textsf{watib}'s type checker; Section~\ref{opt}
 describes the different optimisation passes. Section~\ref{bench} compares
 \textsf{watib}'s and existing tools' performance, and Section~\ref{sbbv}
 discusses a work-in-progress optimisation. This presentation omits the assembly
 phase as it is a straightforward transcription of the intermediate
-representation into the binary format of the specification.
+representation into the binary format defined in the specification.
 \subsection{WebAssembly}
 WebAssembly~\cite{haas2017bringing} is an assembly-like language for a
 stack-based virtual machine. It aims at providing a fast, safe and portable
@@ -261,9 +262,9 @@ a node takes its two inputs from a single node.
 \end{figure}
 
 \textsf{Watib}'s IR is closer to modern Wasm by representing the instructions in
-a linear way. It allows to output code that use block parameters without
-additional burden. We hope that this choice will enable more optimisations
-opportunities and a better treatment of code written using WebAssembly's new
+a linear way. It allows the output of code that use block parameters without
+additional burden. We hope that this choice will provide more optimisations
+opportunities and improve the processing of code written using WebAssembly's new
 features.
 
 \section{Validation}\label{val}
