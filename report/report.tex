@@ -314,9 +314,9 @@ presentation. We write instruction types like function types:
 ${t_1}^*\twoheadrightarrow{t_2}^*$ for an instruction that pops ${t_1}^*$ and
 pushes ${t_2}^*$\footnote{the WebAssembly standard uses the same arrow for
 instruction and function types, we distinguish them for improved readability}.
-These types obey the classical rule of subtyping for functions as presented
-in~\cite{cardelli1988semantics}. An instruction can accept smaller types as
-inputs and produce bigger types as outputs.
+These types obey the classical rule of subtyping for functions as stated by
+Cardelli in~\cite{cardelli1988semantics}. An instruction can accept smaller
+types as inputs and produce bigger types as outputs.
 %% réécrire la suite ?
 An additional subtyping rule reflects the stack-based semantics of Wasm: an
 instruction can add arbitrary value types before the input and output types as
@@ -397,9 +397,8 @@ of Figure~\ref{tdef} is:
 &(\funt\ (\reft \rect 0)\to (\reft \rect 2))).
 \end{align*}
 A defined type is then a vector of type definitions and an index in this vector.
-The \textsf{types} field of the context then maps each type index with a
-corresponding defined type. For instance, for Figure~\ref{tdef}, \textsf{\$a}
-has index 0, \textsf{\$b} has index 1, etc.
+For instance, for Figure~\ref{tdef}, \textsf{\$a} has index 0, \textsf{\$b} has
+index 1, etc.
 
 With this representation, a defined type $t$ will be a subtype of another
 defined type $t'$ if they are equal or if the program declares $t$ as a subtype
@@ -464,7 +463,7 @@ falls in one of the two categories of \S\ref{mgt}:
   all $j$, consider that the $j^{\text{th}}$ type on the stack is $\bot$, making
   the previous test successful.
 \item If ${t'}^*$ is equal to \textsf{(poly)}, replace the stack by
-  \textsf{(poly)}, otherwise push the return types on top of the stack.
+  \textsf{(poly)}, otherwise push the return types on the stack.
 \end{itemize}
 
 \subsubsection{Type checking blocks}
@@ -477,8 +476,8 @@ empty or equal to \textsf{(poly)}.
 \section{Optimisation}\label{opt}
 \textsf{Watib} performs several optimisation passes that all maintain type
 information. Our optimiser is transformation-based: it applies sequentially
-small indepedent code transformations. As noted in the introduction
-of~\cite{jones1998transformation}, this design increases modularity of the
+small indepedent code transformations. As noted by Peyton Jones et al.
+in~\cite{jones1998transformation}, this design increases modularity of the
 toolchain and facilitates experimenting with the order of the passes.
 
 %% As we show it later, some code is unnecessary execution-wise but
@@ -532,8 +531,8 @@ when encountering an instruction $i$:
     to. Once again this is coarse.
 \end{itemize}
 
-At the end of each block, remove all the assignments in \textsf{acp} whose
-right-hand side is uninitialised in the parent block.
+At the end of each block, unset $\textsf{acp}[x]$ if the variable $x$ is
+uninitialised in the parent block.
 \subsubsection{Pure Drops Elimination}
 When an instruction produces a single value that is then popped by a
 \textsf{drop}, both instructions are useless except for the side effects of the
@@ -561,7 +560,7 @@ unreachable code can be deleted otherwise.
 
 \subsubsection{Peephole Optimisation}
 Some small patterns in Wasm code are equivalent to smaller or faster code. For
-instance a sequence of \textsf{local.set} and \textsf{local.get} with the same
+instance a sequence of \textsf{local.set} and \textsf{local.get} on the the same
 variable is equivalent to a \textsf{local.tee} which assigns to a variable the
 value on top of the stack without popping it. The Peephole Optimisation pass
 recognises such patterns and replaces them.
@@ -578,11 +577,11 @@ the previous ones.
 \subsubsection{Cast Elimination}
 The Cast Elimination pass removes redundant casts and replaces type tests by
 constants if their result can be determined. Such casts and tests could be
-introduced by copy propagation or by the next optimisation, as both may
-replace a variable with another one of a smaller type. To stay conservative
-about side effects, eliminated tests are replaced by a \textsf{drop} and the
-result of the test, which is a constant. Pure Drop Elimination will remove some
-useless computation. Constant folding will propagate the result of the test.
+introduced by copy propagation or by the next optimisation, as both may replace
+a variable with another one of a smaller type. To stay conservative about side
+effects, the pass replaces eliminated tests by a \textsf{drop} and the result of
+the test, which is a constant. Pure Drop Elimination will remove some useless
+computation. Constant folding will propagate the result of the test.
 
 To check for type tests to eliminate, we compare the argument's actual type
 (which may be smaller than its static type) against the type it is tested for.
@@ -653,14 +652,14 @@ following the same procedure as Copy Propagation. This whole code is contained
 in a block which the else branch jumps to at the end. Cast Elimination can then
 remove tests made useless.
 
-While the code after the transformation is bigger, some instructions \texttt{(br
-  \$end)} can be removed on real examples.
+While the code after the transformation is bigger, some instructions like
+\texttt{(br \$end)} will be useless and removed on real examples.
 
 \section{Benchmarks}\label{bench}
 We now describe our benchmark procedure and comment on the results. One of our
-benchmarks has a counterintuitive outcome --- which happens often when
-optimising Wasm~\cite{romano2023function}. Thus, we conclude by listing the
-experiments we made to try to understand this unexpected result.
+benchmarks has a counterintuitive outcome --- it is not the first time this
+happens when optimising Wasm~\cite{romano2023function}. Thus, we conclude by
+listing the experiments we made to try to understand this unexpected result.
 \subsubsection{The methodology}
 We tested our toolchain by running, on Bigloo's Wasm backend, a subset of the
 R7RS benchmarks~\cite{r7rsbench}, the standard benchmark suite for Scheme. We
