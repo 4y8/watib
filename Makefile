@@ -33,6 +33,9 @@ report.pdf: report/report.tex report/report.bib report/bench.pdf
 slides.pdf: report/slides.tex
 	latexmk -pdflua report/slides.tex
 
+slides2.pdf: report/slides2.tex
+	latexmk -pdflua report/slides2.tex
+
 clean:
 	latexmk -C report/report.tex
 	rm -f report-blx.bib report.bbl

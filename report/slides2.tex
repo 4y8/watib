@@ -1,0 +1,87 @@
+\documentclass{beamer}
+\author{Aghilas Y. Boussaa \texttt{<aghilas.boussaa@ens.fr>}}
+\title{watib: Architecture et implémentation d'une chaîne d'outils optimisante pour WebAssembly}
+\subtitle{\url{https://github.com/4y8/watib}}
+\usepackage[french]{babel}
+\institute{École normale supérieure}
+\usepackage{sourcesanspro}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{calc}
+\usepackage{mathpartir}
+\begin{document}
+\frame{\titlepage}
+\date{École normale suéprieure, 10 septembre, 2025}
+\begin{frame}
+\frametitle{Table des matières}
+\tableofcontents
+\end{frame}
+\AtBeginSection[]
+{
+  \begin{frame}
+    \frametitle{Table des matières}
+    \tableofcontents[currentsection]
+  \end{frame}
+}
+
+\section{Présentation du contexte}
+\begin{frame}{WebAssembly}
+  \begin{itemize}
+    \item Un langage portable et sécurisé
+    \item Une représentation efficace et standardisée
+    \item Sémantique à pile et typage statique\pause
+    \item Now with a GC, tail calls, exceptions, etc.\pause
+    \item Wasm textual backend for Bigloo with external tools (last year)\pause
+    \item Wasm backend fully integrated in Bigloo (this internship)
+  \end{itemize}
+\end{frame}
+\begin{frame}[fragile]{A concrete example}
+\footnotesize
+\begin{verbatim}
+(type $pair-nil (sub (struct)))
+(type $pair (sub $pair-nil (struct (field $cdr (ref $pair-nil))
+                                   (field $car i32))))
+\end{verbatim}
+\pause
+\begin{verbatim}
+(func $find-zero
+  (param $l (ref $pair-nil))
+  (result i32)
+  (if (ref.test (ref $pair) (local.get $l))
+    (then
+      (if (i32.eqz (struct.get $pair $car
+                     (ref.cast (ref $pair) (local.get $l))))
+        (then (return (i32.const 1)))
+        (else
+          (return_call $find-zero
+            (struct.get $pair $cdr
+              (ref.cast (ref $pair) (local.get $l)))))))
+    (else (return (i32.const 0))))
+  (unreachable))
+\end{verbatim}
+\end{frame}
+\begin{frame}
+  \frametitle{Watib}
+  \begin{itemize}
+    \item Bigloo integration\pause
+    \item User-friendliness
+      \begin{itemize}
+        \item Fault tolerance
+        \item Detailed error messages (WIP)
+      \end{itemize}\pause
+    \item Zealous respect of the spec
+      \begin{itemize}
+        \item Wasm-as implements a superset of Wasm
+        \item Can make debugging harder
+        \item Watib follows the spec
+      \end{itemize}\pause
+    \item Linear IR
+      \begin{itemize}
+        \item Some code can't be produced by wasm-as
+        \item Closer to modern Wasm
+        \item New optimisation opportunities
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\end{document}
