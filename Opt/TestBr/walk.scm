@@ -124,8 +124,9 @@
 
 (define-method (incr-labels! i::try_table threshold::long)
    (define (incr-labels-catch! c::catch-branch)
-     (if (>= (-> c label) threshold)
-       (set! (-> c label) (+fx 1 (-> c label)))))
+      (with-access::labelidxp (-> c label) (idx)
+	 (if (>=fx idx threshold)
+	     (set! idx (+fx 1 idx)))))
    (for-each incr-labels-catch! (-> i catches))
    (call-next-method))
 

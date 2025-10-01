@@ -271,29 +271,37 @@
 (define (clean-mod-rectype! env::env l x::long)
    ; the `(rec ...) in the environment assures rolling
    (let ((sts (map-in-order
-                 (match-lambda
-                    ((type (and (? ident?) ?id) ?st)
-                     (add-type! env id (econs 'rec (list (-fx (-> env ntype) x))
-                                              (-> env ntype))) st)
-                    ((type ?st)
-                     (add-type! env #f (econs 'rec (list (-fx (-> env ntype) x))
-                                              (-> env ntype))) st)
-                    ((type ?x ?-)
-                     (raise `((expected ident) ,x)))
-                    (?x (raise `(expected-typedef ,x)))) l)))
-      (define (valid-st st x)
-         (with-default-value env '(sub final (error)) `(at-pos ,(cer st))
-               (match-case st
-                  ((sub final ?ct) `(sub final ,(valid-ct env ct x)))
-                  ((sub final (and ?y (? idx?)) ?ct)
-                   `(sub final ,(type-get env y) ,(valid-ct env ct x)))
-                  ((sub (and ?y (? idx?)) ?ct)
-                   `(sub ,(type-get env y) ,(valid-ct env ct x)))
-                  ((sub ?ct)
-                   `(sub ,(valid-ct env ct x)))
-                  (else
-                   (replace-exception 'expected-comptype 'expected-subtype
-                      `(sub final ,(valid-ct env st x)))))))
+		 (lambda (t)
+		    (match-case t
+		       ((type (and (? ident?) ?id) ?st)
+			(add-type! env id
+			   (econs 'rec (list (-fx (-> env ntype) x))
+			      (-> env ntype)))
+			(cons st t))
+		       ((type ?st)
+			(add-type! env #f
+			   (econs 'rec (list (-fx (-> env ntype) x))
+			      (-> env ntype)))
+			(cons st t))
+		       ((type ?x ?-)
+			(raise `((expected ident) ,x)))
+		       (?x (raise `(expected-typedef ,x)))))
+		 l)))
+      (define (valid-st t x)
+	 (let ((st (car t)))
+	    (with-default-value env '(sub final (error))
+	       `(at-pos ,(if (epair? st) (cer st) (cer (cdddr t))))
+	       (match-case st
+		  ((sub final ?ct) `(sub final ,(valid-ct env ct x)))
+		  ((sub final (and ?y (? idx?)) ?ct)
+		   `(sub final ,(type-get env y) ,(valid-ct env ct x)))
+		  ((sub (and ?y (? idx?)) ?ct)
+		   `(sub ,(type-get env y) ,(valid-ct env ct x)))
+		  ((sub ?ct)
+		   `(sub ,(valid-ct env ct x)))
+		  (else
+		   (replace-exception 'expected-comptype 'expected-subtype
+		      `(sub final ,(valid-ct env st x))))))))
 
       (let ((rolled-sts (map valid-st sts (iota (length sts) x 1))))
          (for-each (lambda (i)
@@ -542,7 +550,7 @@
 
 (define (adhoc-instr?::bool s)
    (or (eq? s 'br_table) (eq? s 'br_on_null) (eq? s 'ref.as_non_null)
-       (eq? s 'ref.is_null)))
+       (eq? s 'ref.is_null) (eq? s 'br_on_cast)))
 
 (define (adhoc-instr env::env i::pair st::pair-nil)
    (match-case i
@@ -595,6 +603,26 @@
                        (append (cons `(ref ,ht) (reverse t*))
                                (check-stack env st t*)))))))
 
+      ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.196
+      ((br_on_cast ?lab ?t1 ?t2 . ?tl)
+       (let* ((l::labelidxp (labelidx env lab))
+              (t* (-> l type)))
+	  (multiple-value-bind (i st) (valid-instrs env tl st)
+             (multiple-value-bind (ht st) (stack-drop-reftype st)
+                (values (append i `(,(instantiate::three-args
+					(intype `(,@(reverse t*) ,t1))
+					(outtype `(,@(reverse t*) ,t2))
+					(parent (-> env parent))
+					(x (instantiate::labelidxp
+					      (-> l idx)
+					      (type (list t2))))
+					(y (instantiate::typep (type t1)))
+					(z (instantiate::typep (type ht)))
+					(opcode 'br_on_cast)
+					(x l))))
+		   (append (reverse t*)
+		      (check-stack env (cons t2 st) t*)))))))
+      
       ; https://webassembly.github.io/spec/versions/core/WebAssembly-3.0-draft.pdf#subsubsection*.99
       ((ref.is_null . ?tl)
        (multiple-value-bind (i st) (valid-instrs env tl st)
@@ -615,6 +643,7 @@
                                    (parent (-> env parent))
                                    (opcode 'ref.as_non_null))))
                      (cons `(ref ,ht) st)))))))
+
 
 ;; returns the desuggared instructions and the new stack state
 (define (valid-instrs env::env l::pair-nil st::pair-nil)
@@ -987,7 +1016,7 @@
        (sprintf "expected a value type, got ~a" s))
 
       ((empty-stack ?t)
-       (sprintf "expected ~a on stack but got nothing" (type->string (car t))))
+       (sprintf "expected ~a but got empty stack" (type->string (car t))))
 
       ((value-left-stack ?t)
        (sprintf "expected empty stack, got a value of type ~a on top"
