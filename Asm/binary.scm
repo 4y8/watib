@@ -53,7 +53,6 @@
    (display n out-port))
 
 (define (write-type t op::output-port)
-   (tprint "write-type t=" t)
    (match-case t
       ((? valtype-symbol?)
        (write-byte (hashtable-get *valtype-symbols* t) op))
