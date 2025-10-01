@@ -16,7 +16,7 @@
    (eq? 'i32.const (-> i opcode)))
 
 (define (isa-if? i::instruction)
-   (isa? if-then i))
+   (isa? i if-then))
 
 (define-generic (const-fold-if! i::if-then x::i32p)
    (if (= 0 (-> x num))
